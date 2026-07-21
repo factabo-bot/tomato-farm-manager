@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>トマト栽培管理</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e7d32">
+<link rel="stylesheet" href="styles.css?v=20260721a">
+</head>
+<body>
+<header>
+  <h1>🍅 トマト栽培管理</h1>
+  <div class="header-sub">
+    <span id="date-display"></span>
+    <span id="user-info"></span>
+  </div>
+  <nav class="mode-nav">
+    <a href="index.html" class="current">🏠 ホーム</a>
+    <a href="work.html">📝 作業記録</a>
+    <a href="pesticide.html">🧪 農薬記録</a>
+    <a href="history.html">📋 履歴</a>
+  </nav>
+</header>
+
+<main>
+  <div id="queue-badge" class="queue-badge" hidden></div>
+
+  <section class="summary-card">
+    <h2>今日の記録</h2>
+    <div class="summary-row">
+      <div class="summary-tile">
+        <span class="summary-num" id="work-count">0</span>
+        <span class="summary-label">作業記録</span>
+      </div>
+      <div class="summary-tile">
+        <span class="summary-num" id="pesticide-count">0</span>
+        <span class="summary-label">農薬記録</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <a href="work.html" class="btn-primary shortcut">📝 作業を記録する</a>
+    <a href="pesticide.html" class="btn-secondary shortcut">🧪 農薬散布を記録する</a>
+    <a href="history.html" class="btn-secondary shortcut">📋 履歴を見る</a>
+  </section>
+
+  <section>
+    <h2>今日の記録一覧</h2>
+    <div id="today-list"></div>
+  </section>
+
+  <section class="settings-box">
+    <h2>表示名の設定</h2>
+    <div class="grid-2">
+      <input type="text" id="display-name-input" placeholder="記録者として表示する名前">
+      <button id="save-name" class="btn-secondary" type="button">保存</button>
+    </div>
+    <p class="hint">複数人で使う場合、この端末で記録する人の名前を設定してください</p>
+  </section>
+</main>
+
+<div id="toast" hidden></div>
+
+<script src="config.js?v=20260721a"></script>
+<script src="masters-default.js?v=20260721a"></script>
+<script src="common.js?v=20260721a"></script>
+<script src="index.js?v=20260721a"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>

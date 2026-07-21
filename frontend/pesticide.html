@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>農薬散布記録 - トマト栽培管理</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e7d32">
+<link rel="stylesheet" href="styles.css?v=20260721a">
+</head>
+<body>
+<header>
+  <h1>🍅 トマト栽培管理</h1>
+  <div class="header-sub">
+    <span id="date-display"></span>
+    <span id="user-info"></span>
+  </div>
+  <nav class="mode-nav">
+    <a href="index.html">🏠 ホーム</a>
+    <a href="work.html">📝 作業記録</a>
+    <a href="pesticide.html" class="current">🧪 農薬記録</a>
+    <a href="history.html">📋 履歴</a>
+  </nav>
+</header>
+
+<main>
+  <div id="queue-badge" class="queue-badge" hidden></div>
+
+  <p class="hint law-hint">農薬取締法に基づく省令第9条により、★の5項目は帳簿記載が求められています（努力義務）。</p>
+
+  <section>
+    <h2>使用年月日 <span class="req">★必須</span></h2>
+    <input type="date" id="use-date" class="date-input">
+  </section>
+
+  <section>
+    <h2>使用場所（拠点） <span class="req">★必須</span></h2>
+    <div id="base-buttons" class="btn-row"></div>
+  </section>
+
+  <section>
+    <h2>棟・区画</h2>
+    <div id="building-buttons" class="btn-row"></div>
+  </section>
+
+  <section>
+    <h2>農作物の種類 <span class="req">★必須</span></h2>
+    <select id="crop-select"></select>
+  </section>
+
+  <section>
+    <h2>農薬の種類・名称 <span class="req">★必須</span></h2>
+    <input type="text" id="pesticide-name" list="pesticide-list" placeholder="薬剤名を選択または入力">
+    <datalist id="pesticide-list"></datalist>
+  </section>
+
+  <section>
+    <h2>希釈倍数 または 使用量 <span class="req">★いずれか必須</span></h2>
+    <div class="grid-2">
+      <div>
+        <label>希釈倍数</label>
+        <input type="text" id="dilution" placeholder="例: 1000倍">
+      </div>
+      <div class="grid-2 inner">
+        <input type="number" id="amount" placeholder="使用量" inputmode="decimal">
+        <input type="text" id="amount-unit" placeholder="単位 例: L/10a">
+      </div>
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>散布液量合計(L)</label>
+      <input type="number" id="total-volume" inputmode="decimal">
+    </div>
+    <div>
+      <label>対象病害虫</label>
+      <input type="text" id="target-pest">
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>天候</label>
+      <select id="weather">
+        <option value="">選択なし</option>
+        <option value="晴れ">晴れ</option>
+        <option value="曇り">曇り</option>
+        <option value="雨">雨</option>
+        <option value="雪">雪</option>
+      </select>
+    </div>
+    <div>
+      <label>気温(℃)</label>
+      <input type="number" id="temperature" inputmode="decimal">
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>作業者名</label>
+      <input type="text" id="worker-name" placeholder="未入力なら記録者名">
+    </div>
+    <div>
+      <label>保護具着用</label>
+      <input type="text" id="ppe" placeholder="例: マスク・手袋">
+    </div>
+  </section>
+
+  <section>
+    <textarea id="note" placeholder="備考（任意）"></textarea>
+    <button id="submit" class="btn-primary" type="button">記録する</button>
+  </section>
+
+  <section>
+    <h2>今日の農薬記録</h2>
+    <div id="my-records"></div>
+    <p class="hint">法定帳簿のため取消は理由入力が必須で、記録自体は残ります（当日分のみ）</p>
+  </section>
+</main>
+
+<div id="toast" hidden></div>
+
+<script src="config.js?v=20260721a"></script>
+<script src="masters-default.js?v=20260721a"></script>
+<script src="common.js?v=20260721a"></script>
+<script src="pesticide.js?v=20260721a"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>

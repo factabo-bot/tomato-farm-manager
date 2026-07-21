@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>作業記録 - トマト栽培管理</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e7d32">
+<link rel="stylesheet" href="styles.css?v=20260721a">
+</head>
+<body>
+<header>
+  <h1>🍅 トマト栽培管理</h1>
+  <div class="header-sub">
+    <span id="date-display"></span>
+    <span id="user-info"></span>
+  </div>
+  <nav class="mode-nav">
+    <a href="index.html">🏠 ホーム</a>
+    <a href="work.html" class="current">📝 作業記録</a>
+    <a href="pesticide.html">🧪 農薬記録</a>
+    <a href="history.html">📋 履歴</a>
+  </nav>
+</header>
+
+<main>
+  <div id="queue-badge" class="queue-badge" hidden></div>
+
+  <section>
+    <h2>作業日</h2>
+    <input type="date" id="work-date" class="date-input">
+  </section>
+
+  <section>
+    <h2>① 拠点</h2>
+    <div id="base-buttons" class="btn-row"></div>
+  </section>
+
+  <section>
+    <h2>② 棟・区画</h2>
+    <div id="building-buttons" class="btn-row"></div>
+  </section>
+
+  <section>
+    <h2>③ 作業</h2>
+    <div id="work-buttons" class="btn-row"></div>
+    <textarea id="work-detail" placeholder="作業内容を記入" hidden></textarea>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>開始時刻</label>
+      <input type="time" id="start-time">
+    </div>
+    <div>
+      <label>終了時刻</label>
+      <input type="time" id="end-time">
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>数量</label>
+      <input type="number" id="quantity" placeholder="例: 120" inputmode="decimal">
+    </div>
+    <div>
+      <label>単位</label>
+      <input type="text" id="quantity-unit" placeholder="例: 株、kg">
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>天候</label>
+      <select id="weather">
+        <option value="">選択なし</option>
+        <option value="晴れ">晴れ</option>
+        <option value="曇り">曇り</option>
+        <option value="雨">雨</option>
+        <option value="雪">雪</option>
+      </select>
+    </div>
+    <div>
+      <label>気温(℃)</label>
+      <input type="number" id="temperature" inputmode="decimal">
+    </div>
+  </section>
+
+  <section>
+    <textarea id="note" placeholder="備考（任意）：気づいたこと、課題など"></textarea>
+    <button id="submit" class="btn-primary" type="button">記録する</button>
+  </section>
+
+  <section>
+    <h2>今日の記録</h2>
+    <div id="my-records"></div>
+    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（当日分のみ）</p>
+  </section>
+</main>
+
+<div id="toast" hidden></div>
+
+<script src="config.js?v=20260721a"></script>
+<script src="masters-default.js?v=20260721a"></script>
+<script src="common.js?v=20260721a"></script>
+<script src="work.js?v=20260721a"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>

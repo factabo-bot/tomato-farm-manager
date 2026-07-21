@@ -1,0 +1,277 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+[hidden] { display: none !important; }
+
+body {
+  font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  background: #f5f5f0;
+  color: #333;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+header {
+  background: #2e7d32;
+  color: #fff;
+  padding: 12px 16px;
+}
+header h1 { font-size: 1.2rem; }
+.header-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+main { padding: 12px; }
+
+section { margin-bottom: 18px; }
+
+h2 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  color: #2e7d32;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.req {
+  font-size: 0.75rem;
+  color: #c62828;
+  font-weight: normal;
+}
+
+.law-hint {
+  background: #fff3cd;
+  color: #8a6d00;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn {
+  min-height: 48px;
+  padding: 8px 16px;
+  font-size: 1rem;
+  border: 2px solid #bbb;
+  border-radius: 10px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  flex: 1 1 auto;
+}
+.btn.active {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+  font-weight: bold;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.grid-2.inner { gap: 6px; }
+
+input, select, textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 10px;
+  font-size: 1rem;
+  border: 2px solid #bbb;
+  border-radius: 10px;
+  font-family: inherit;
+  background: #fff;
+}
+textarea {
+  min-height: 64px;
+  padding: 10px;
+}
+
+.btn-primary, .btn-secondary {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  line-height: 56px;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: bold;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-top: 8px;
+  text-decoration: none;
+  box-sizing: border-box;
+  border: none;
+}
+.btn-primary {
+  background: #e65100;
+  color: #fff;
+}
+.btn-secondary {
+  background: #fff;
+  color: #2e7d32;
+  border: 2px dashed #2e7d32;
+  line-height: 52px;
+}
+.shortcut { margin-top: 10px; }
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  font-size: 0.92rem;
+}
+.item .sub {
+  color: #888;
+  font-size: 0.8rem;
+  margin-left: 8px;
+}
+.item .del {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  border: none;
+  background: #eee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #c62828;
+  font-weight: bold;
+}
+
+.history-item.cancelled {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.cancelled-label {
+  color: #c62828;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-decoration: none;
+  margin-left: 8px;
+}
+
+.tab-row {
+  display: flex;
+  gap: 8px;
+}
+.tab {
+  flex: 1;
+  min-height: 44px;
+  border: 2px solid #2e7d32;
+  background: #fff;
+  color: #2e7d32;
+  border-radius: 10px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.tab.active {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.summary-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+}
+.summary-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.summary-tile {
+  flex: 1;
+  text-align: center;
+  background: #e8f5e9;
+  border-radius: 10px;
+  padding: 14px 0;
+}
+.summary-num {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #2e7d32;
+}
+.summary-label {
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.settings-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.mode-nav {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.mode-nav a {
+  flex: 1;
+  text-align: center;
+  padding: 10px 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+.mode-nav a.current {
+  background: #fff;
+  color: #2e7d32;
+}
+
+.queue-badge {
+  display: inline-block;
+  background: #fff3cd;
+  color: #8a6d00;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 6px;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 24px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  z-index: 10;
+  max-width: 90%;
+  text-align: center;
+}
