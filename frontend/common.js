@@ -177,8 +177,6 @@ function mockSaveWork(payload) {
     所要時間分: payload.durationMin || "",
     数量: payload.quantity || "",
     数量単位: payload.quantityUnit || "",
-    天候: payload.weather || "",
-    気温: payload.temperature || "",
     記録者: payload.recorder || "",
     userId: payload.userId || "",
     備考: payload.note || "",
@@ -207,15 +205,25 @@ function mockUpdateWork(payload) {
   return { ok: true };
 }
 
+// 防除記録は「気軽に残す簡易帳簿」という位置づけ。法定5項目のうち
+// 農薬名・使用量/希釈倍数は明細（items）側でチェックする（GAS側 validatePesticide_ と同じロジック）
 function validatePesticidePayload(payload) {
   const missing = [];
   if (!payload.useDate) missing.push("使用年月日");
   if (!payload.base) missing.push("使用場所（拠点）");
   if (!payload.crop) missing.push("農作物の種類");
-  if (!payload.pesticideName) missing.push("農薬の種類・名称");
-  const hasDilution = !!payload.dilution;
-  const hasAmount = !!(payload.amount && payload.amountUnit);
-  if (!hasDilution && !hasAmount) missing.push("希釈倍数または使用量のいずれか");
+  const items = payload.items || [];
+  if (items.length === 0) {
+    missing.push("農薬（少なくとも1件）");
+  } else {
+    items.forEach((it, idx) => {
+      const n = idx + 1;
+      if (!it.pesticideName) missing.push(n + "件目の農薬名");
+      const hasDilution = !!it.dilution;
+      const hasAmount = !!(it.amount && it.amountUnit);
+      if (!hasDilution && !hasAmount) missing.push(n + "件目の希釈倍数または使用量");
+    });
+  }
   return missing;
 }
 
@@ -231,23 +239,20 @@ function mockSavePesticide(payload) {
     拠点: payload.base,
     "棟・区画": payload.building || "",
     農作物の種類: payload.crop,
-    "農薬の種類・名称": payload.pesticideName,
-    希釈倍数: payload.dilution || "",
-    使用量: payload.amount || "",
-    使用量単位: payload.amountUnit || "",
-    散布液量合計L: payload.totalVolumeL || "",
     対象病害虫: payload.targetPest || "",
-    天候: payload.weather || "",
-    気温: payload.temperature || "",
-    作業者名: payload.workerName || "",
-    保護具着用: payload.ppe || "",
+    レシピ名: payload.recipeName || "",
     記録者: payload.recorder || "",
     userId: payload.userId || "",
     備考: payload.note || "",
     状態: "完了",
-    取消理由: "",
-    取消日時: "",
     更新日時: nowStr,
+    items: payload.items.map((it) => ({
+      薬剤名: it.pesticideName,
+      希釈倍数: it.dilution || "",
+      使用量: it.amount || "",
+      使用量単位: it.amountUnit || "",
+      散布液量L: it.totalVolumeL || "",
+    })),
   });
   localStorage.setItem(MOCK_PESTICIDE_KEY, JSON.stringify(all));
   return { ok: true, id };
@@ -266,17 +271,14 @@ function mockCancelWork(payload) {
   return { ok: true };
 }
 
-// 農薬散布記録の取消。GAS側 cancelPesticide_ と同じく取消理由を必須にする（法定帳簿のため）
+// 防除記録の取消。簡易帳簿として運用するため理由は求めない（本人チェックのみ）
 function mockCancelPesticide(payload) {
-  if (!payload.reason) return { ok: false, error: "取消理由を入力してください" };
   const all = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]");
   const target = all.find((r) => r.記録ID === payload.id);
   if (!target) return { ok: false, error: "対象の記録が見つかりません" };
-  const nowStr = nowTimestamp();
+  if (target.userId !== (payload.userId || "")) return { ok: false, error: "本人の記録のみ取消できます" };
   target.状態 = "取消";
-  target.取消理由 = payload.reason;
-  target.取消日時 = nowStr;
-  target.更新日時 = nowStr;
+  target.更新日時 = nowTimestamp();
   localStorage.setItem(MOCK_PESTICIDE_KEY, JSON.stringify(all));
   return { ok: true };
 }
@@ -356,6 +358,9 @@ function mockGet(action, params) {
     });
     return { ok: true, items };
   }
+
+  if (action === "weather") return { ok: true, weather: null };
+  if (action === "weatherRange") return { ok: true, items: [] };
 
   return { ok: true };
 }

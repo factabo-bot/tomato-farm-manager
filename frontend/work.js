@@ -98,8 +98,6 @@ async function submit() {
     durationMin: computeDuration(),
     quantity: $("quantity").value,
     quantityUnit: $("quantity-unit").value.trim(),
-    weather: $("weather").value,
-    temperature: $("temperature").value,
     recorder: state.profile.displayName,
     userId: state.profile.userId,
     note: $("note").value.trim(),
@@ -141,8 +139,6 @@ function resetForm() {
   $("end-time").value = "";
   $("quantity").value = "";
   $("quantity-unit").value = "";
-  $("weather").value = "";
-  $("temperature").value = "";
   $("note").value = "";
   renderWorkTypes();
 }

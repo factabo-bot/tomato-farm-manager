@@ -56,6 +56,15 @@ label {
   font-size: 0.8rem;
 }
 
+.ppe-hint {
+  background: #fde0dc;
+  color: #b71c1c;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  margin-top: 6px;
+}
+
 .btn-row {
   display: flex;
   flex-wrap: wrap;
@@ -155,6 +164,21 @@ textarea {
   cursor: pointer;
   color: #c62828;
   font-weight: bold;
+}
+
+.weather-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  margin: 10px 0 4px;
+  font-size: 0.82rem;
+  color: #555;
+  border-bottom: 1px solid #ddd;
+}
+.weather-date {
+  font-weight: bold;
+  color: #2e7d32;
 }
 
 .history-item.cancelled {

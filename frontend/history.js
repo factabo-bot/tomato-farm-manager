@@ -53,23 +53,46 @@ async function load() {
     base: $("base-filter").value,
   };
   const action = state.tab === "work" ? "records" : "pesticides";
-  const res = await apiGet(action, params);
-  render(res.records || []);
+  const [recordsRes, weatherRes] = await Promise.all([
+    apiGet(action, params),
+    apiGet("weatherRange", { from: params.from, to: params.to }),
+  ]);
+  const weatherMap = {};
+  (weatherRes.items || []).forEach((w) => { weatherMap[w.日付] = w; });
+  render(recordsRes.records || [], weatherMap);
 }
 
-function render(records) {
+function weatherLine(w) {
+  if (!w) return "気象データなし";
+  const kubun = w.取得区分 === "実績" ? "" : "（予報）";
+  return `${w.天気概況}${kubun}　最高${w.最高気温}℃ / 最低${w.最低気温}℃`;
+}
+
+function render(records, weatherMap) {
   const box = $("record-list");
   box.innerHTML = "";
   $("empty-hint").hidden = records.length > 0;
+  let lastDate = null;
   records.forEach((r) => {
+    const date = state.tab === "work" ? r.作業日 : r.使用年月日;
+    if (date !== lastDate) {
+      lastDate = date;
+      const wRow = el("div", "weather-row");
+      wRow.appendChild(el("span", "weather-date", date));
+      wRow.appendChild(el("span", "", weatherLine(weatherMap[date])));
+      box.appendChild(wRow);
+    }
+
     const row = el("div", "item history-item" + (r.状態 === "取消" ? " cancelled" : ""));
     if (state.tab === "work") {
-      const label = `${r.作業日} ${r.拠点}/${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`;
+      const label = `${r.拠点}/${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`;
       row.appendChild(el("span", "", label));
       if (r.数量) row.appendChild(el("span", "sub", `${r.数量}${r.数量単位 || ""}`));
     } else {
-      const dose = r.希釈倍数 || (r.使用量 ? r.使用量 + r.使用量単位 : "");
-      const label = `${r.使用年月日} ${r.拠点}/${r["棟・区画"]} / ${r["農薬の種類・名称"]}（${dose}）`;
+      const names = (r.items || [])
+        .map((it) => `${it.薬剤名}（${it.希釈倍数 || (it.使用量 + it.使用量単位)}）`)
+        .join("・");
+      const label = `${r.拠点}/${r["棟・区画"]} / ${names}`;
       row.appendChild(el("span", "", label));
       if (r.対象病害虫) row.appendChild(el("span", "sub", r.対象病害虫));
     }
