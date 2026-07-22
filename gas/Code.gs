@@ -10,6 +10,11 @@
  *    - アクセスできるユーザー: 全員
  * 5. 発行されたURL（…/exec）を frontend/config.js の GAS_URL に設定
  *
+ * コードを更新した後は、Apps Scriptエディタで関数を実行するだけでなく、
+ * 「デプロイ」→「デプロイを管理」→ 既存デプロイの編集 →
+ * バージョン「新バージョン」を選んで再デプロイしないと、公開URL（/exec）は
+ * 古いコードのまま動き続ける（エディタでの実行と公開URLは別物）。
+ *
  * スタッフ運用に切り替える際は、プロジェクトの設定 > スクリプトプロパティに
  * APP_TOKEN を設定し、frontend/config.js の APP_TOKEN に同じ値を入れると
  * 簡易トークン認証が有効になる（未設定の間は誰でも書き込める）。
@@ -20,6 +25,11 @@
  * このアプリの防除記録は「日々の記録を気軽に残す簡易帳簿」として設計している。
  * 正式な法定帳簿（農薬取締法省令9条）としてそのまま提出する場合は、
  * 別途、内容を確認のうえ正式な様式へ転記することを想定している。
+ *
+ * データの読み書きはすべて「シートの実際のヘッダー行を都度読んで列名で対応させる」
+ * 方式にしている（ensureSheet_が既存シートに新しい列を追加するとき「末尾」に
+ * 追加するため、コード側のヘッダー定義の並び順とシートの物理的な列順は一致しない
+ * ことがある。列インデックスを決め打ちすると値がズレるので、必ず名前で引く）。
  */
 
 var TZ = "Asia/Tokyo";
@@ -115,7 +125,9 @@ function ensureSheet_(ss, name, headers) {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  // 既存シートに不足列があれば末尾に追加（後からの機能追加に対応）
+  // 既存シートに不足列があれば末尾に追加（後からの機能追加に対応）。
+  // 追加位置は末尾固定＝物理的な列順はコードのヘッダー定義と一致しなくなるため、
+  // 値の読み書きは必ずヘッダー名で行う（headerMap_ / rowToObjectBySheet_ / objectToRowBySheet_）
   var lastCol = Math.max(1, sheet.getLastColumn());
   var existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   headers.forEach(function (h) {
@@ -125,6 +137,32 @@ function ensureSheet_(ss, name, headers) {
     }
   });
   return sheet;
+}
+
+// 実際のシートのヘッダー行を読み取り、ヘッダー名→列インデックス(0-based)のマップを返す
+function headerMap_(sheet) {
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var map = {};
+  headerRow.forEach(function (h, i) { if (h) map[h] = i; });
+  return map;
+}
+
+// {ヘッダー名: 値} のオブジェクトを、シートの実際の列順に並べた配列に変換する（appendRow/setValues用）
+function objectToRowBySheet_(sheet, obj) {
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  return headerRow.map(function (h) { return obj[h] !== undefined ? obj[h] : ""; });
+}
+
+// headerMap_ で得た列位置に従い、1行分の配列を {ヘッダー名: 値} に変換する（Date型は文字列化）
+function rowToObjectBySheet_(headerMap, row) {
+  var obj = {};
+  Object.keys(headerMap).forEach(function (h) {
+    var v = row[headerMap[h]];
+    obj[h] = v instanceof Date ? Utilities.formatDate(v, TZ, "yyyy-MM-dd HH:mm:ss") : v;
+  });
+  return obj;
 }
 
 // マスタが空のときだけ初期データを投入する（2回目以降のsetup実行では上書きしない）
@@ -226,25 +264,26 @@ function saveWork_(data) {
   var now = new Date();
   var nowStr = Utilities.formatDate(now, TZ, "yyyy-MM-dd HH:mm:ss");
   var id = Utilities.getUuid();
-  sheet.appendRow([
-    id,
-    data.workDate || Utilities.formatDate(now, TZ, "yyyy-MM-dd"),
-    nowStr,
-    data.base,
-    data.building || "",
-    data.workType,
-    data.workDetail || "",
-    data.startTime || "",
-    data.endTime || "",
-    data.durationMin || "",
-    data.quantity || "",
-    data.quantityUnit || "",
-    data.recorder || "",
-    data.userId || "",
-    data.note || "",
-    "完了",
-    nowStr,
-  ]);
+  var obj = {
+    "記録ID": id,
+    "作業日": data.workDate || Utilities.formatDate(now, TZ, "yyyy-MM-dd"),
+    "記録日時": nowStr,
+    "拠点": data.base,
+    "棟・区画": data.building || "",
+    "作業分類": data.workType,
+    "作業詳細": data.workDetail || "",
+    "開始時刻": data.startTime || "",
+    "終了時刻": data.endTime || "",
+    "所要時間分": data.durationMin || "",
+    "数量": data.quantity || "",
+    "数量単位": data.quantityUnit || "",
+    "記録者": data.recorder || "",
+    "userId": data.userId || "",
+    "備考": data.note || "",
+    "状態": "完了",
+    "更新日時": nowStr,
+  };
+  sheet.appendRow(objectToRowBySheet_(sheet, obj));
   return json_({ ok: true, id: id });
 }
 
@@ -281,26 +320,34 @@ function savePesticide_(data) {
   var id = Utilities.getUuid();
 
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
-  sheet.appendRow([
-    id,
-    data.useDate,
-    data.base,
-    data.building || "",
-    data.crop,
-    data.targetPest || "",
-    data.recipeName || "",
-    data.recorder || "",
-    data.userId || "",
-    data.note || "",
-    "完了",
-    nowStr,
-  ]);
+  var obj = {
+    "記録ID": id,
+    "使用年月日": data.useDate,
+    "拠点": data.base,
+    "棟・区画": data.building || "",
+    "農作物の種類": data.crop,
+    "対象病害虫": data.targetPest || "",
+    "レシピ名": data.recipeName || "",
+    "記録者": data.recorder || "",
+    "userId": data.userId || "",
+    "備考": data.note || "",
+    "状態": "完了",
+    "更新日時": nowStr,
+  };
+  sheet.appendRow(objectToRowBySheet_(sheet, obj));
 
   var itemSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE_ITEMS);
-  var itemRows = data.items.map(function (it) {
-    return [id, it.pesticideName, it.dilution || "", it.amount || "", it.amountUnit || "", it.totalVolumeL || ""];
+  data.items.forEach(function (it) {
+    var itemObj = {
+      "記録ID": id,
+      "薬剤名": it.pesticideName,
+      "希釈倍数": it.dilution || "",
+      "使用量": it.amount || "",
+      "使用量単位": it.amountUnit || "",
+      "散布液量L": it.totalVolumeL || "",
+    };
+    itemSheet.appendRow(objectToRowBySheet_(itemSheet, itemObj));
   });
-  itemSheet.getRange(itemSheet.getLastRow() + 1, 1, itemRows.length, PESTICIDE_ITEM_HEADERS.length).setValues(itemRows);
 
   return json_({ ok: true, id: id });
 }
@@ -309,9 +356,10 @@ function savePesticide_(data) {
 function updateRecord_(data) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WORK);
   var values = sheet.getDataRange().getValues();
-  var idCol = WORK_HEADERS.indexOf("記録ID");
-  var dateCol = WORK_HEADERS.indexOf("作業日");
-  var uidCol = WORK_HEADERS.indexOf("userId");
+  var hm = headerMap_(sheet);
+  var idCol = hm["記録ID"];
+  var dateCol = hm["作業日"];
+  var uidCol = hm["userId"];
   var todayStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
 
   for (var i = 1; i < values.length; i++) {
@@ -324,37 +372,39 @@ function updateRecord_(data) {
     }
     var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
     var updated = values[i].slice();
-    setIfDefined_(updated, WORK_HEADERS, "拠点", data.base);
-    setIfDefined_(updated, WORK_HEADERS, "棟・区画", data.building);
-    setIfDefined_(updated, WORK_HEADERS, "作業分類", data.workType);
-    setIfDefined_(updated, WORK_HEADERS, "作業詳細", data.workDetail);
-    setIfDefined_(updated, WORK_HEADERS, "開始時刻", data.startTime);
-    setIfDefined_(updated, WORK_HEADERS, "終了時刻", data.endTime);
-    setIfDefined_(updated, WORK_HEADERS, "所要時間分", data.durationMin);
-    setIfDefined_(updated, WORK_HEADERS, "数量", data.quantity);
-    setIfDefined_(updated, WORK_HEADERS, "数量単位", data.quantityUnit);
-    setIfDefined_(updated, WORK_HEADERS, "備考", data.note);
-    updated[WORK_HEADERS.indexOf("更新日時")] = nowStr;
-    sheet.getRange(i + 1, 1, 1, WORK_HEADERS.length).setValues([updated]);
+    setIfDefinedByMap_(updated, hm, "拠点", data.base);
+    setIfDefinedByMap_(updated, hm, "棟・区画", data.building);
+    setIfDefinedByMap_(updated, hm, "作業分類", data.workType);
+    setIfDefinedByMap_(updated, hm, "作業詳細", data.workDetail);
+    setIfDefinedByMap_(updated, hm, "開始時刻", data.startTime);
+    setIfDefinedByMap_(updated, hm, "終了時刻", data.endTime);
+    setIfDefinedByMap_(updated, hm, "所要時間分", data.durationMin);
+    setIfDefinedByMap_(updated, hm, "数量", data.quantity);
+    setIfDefinedByMap_(updated, hm, "数量単位", data.quantityUnit);
+    setIfDefinedByMap_(updated, hm, "備考", data.note);
+    updated[hm["更新日時"]] = nowStr;
+    sheet.getRange(i + 1, 1, 1, updated.length).setValues([updated]);
     return json_({ ok: true });
   }
   return json_({ ok: false, error: "対象の記録が見つかりません" });
 }
 
-function setIfDefined_(rowArray, headers, headerName, value) {
+function setIfDefinedByMap_(rowArray, headerMap, headerName, value) {
   if (value === undefined) return;
-  rowArray[headers.indexOf(headerName)] = value;
+  var idx = headerMap[headerName];
+  if (idx !== undefined) rowArray[idx] = value;
 }
 
 // 作業記録の取消（論理削除）。当日・本人のみ
 function cancelRecord_(data) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WORK);
   var values = sheet.getDataRange().getValues();
-  var idCol = WORK_HEADERS.indexOf("記録ID");
-  var dateCol = WORK_HEADERS.indexOf("作業日");
-  var uidCol = WORK_HEADERS.indexOf("userId");
-  var stateCol = WORK_HEADERS.indexOf("状態");
-  var updatedCol = WORK_HEADERS.indexOf("更新日時");
+  var hm = headerMap_(sheet);
+  var idCol = hm["記録ID"];
+  var dateCol = hm["作業日"];
+  var uidCol = hm["userId"];
+  var stateCol = hm["状態"];
+  var updatedCol = hm["更新日時"];
   var todayStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
 
   for (var i = 1; i < values.length; i++) {
@@ -377,10 +427,11 @@ function cancelRecord_(data) {
 function cancelPesticide_(data) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
   var values = sheet.getDataRange().getValues();
-  var idCol = PESTICIDE_HEADERS.indexOf("記録ID");
-  var uidCol = PESTICIDE_HEADERS.indexOf("userId");
-  var stateCol = PESTICIDE_HEADERS.indexOf("状態");
-  var updatedCol = PESTICIDE_HEADERS.indexOf("更新日時");
+  var hm = headerMap_(sheet);
+  var idCol = hm["記録ID"];
+  var uidCol = hm["userId"];
+  var stateCol = hm["状態"];
+  var updatedCol = hm["更新日時"];
 
   for (var i = 1; i < values.length; i++) {
     if (values[i][idCol] !== data.id) continue;
@@ -418,49 +469,39 @@ function getMasters_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   return json_({
     ok: true,
-    bases: sheetToObjects_(ss, SHEET_MASTER_BASE, MASTER_BASE_HEADERS),
-    workTypes: sheetToObjects_(ss, SHEET_MASTER_WORKTYPE, MASTER_WORKTYPE_HEADERS),
-    pesticides: sheetToObjects_(ss, SHEET_MASTER_PESTICIDE, MASTER_PESTICIDE_HEADERS),
-    crops: sheetToObjects_(ss, SHEET_MASTER_CROP, MASTER_CROP_HEADERS),
-    recipes: sheetToObjects_(ss, SHEET_RECIPE, RECIPE_HEADERS),
-    recipeItems: sheetToObjects_(ss, SHEET_RECIPE_ITEMS, RECIPE_ITEM_HEADERS),
+    bases: sheetToObjects_(ss, SHEET_MASTER_BASE),
+    workTypes: sheetToObjects_(ss, SHEET_MASTER_WORKTYPE),
+    pesticides: sheetToObjects_(ss, SHEET_MASTER_PESTICIDE),
+    crops: sheetToObjects_(ss, SHEET_MASTER_CROP),
+    recipes: sheetToObjects_(ss, SHEET_RECIPE),
+    recipeItems: sheetToObjects_(ss, SHEET_RECIPE_ITEMS),
   });
 }
 
-function sheetToObjects_(ss, name, headers) {
+function sheetToObjects_(ss, name) {
   var sheet = ss.getSheetByName(name);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
-  return values.map(function (row) {
-    var obj = {};
-    headers.forEach(function (h, i) { obj[h] = row[i]; });
-    return obj;
-  });
-}
-
-function rowToObject_(row, headers) {
-  var obj = {};
-  headers.forEach(function (h, i) {
-    var v = row[i];
-    obj[h] = v instanceof Date ? Utilities.formatDate(v, TZ, "yyyy-MM-dd HH:mm:ss") : v;
-  });
-  return obj;
+  var hm = headerMap_(sheet);
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
+  return values.map(function (row) { return rowToObjectBySheet_(hm, row); });
 }
 
 function getRecords_(params) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WORK);
   var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
   var from = params.from || "0000-00-00";
   var to = params.to || "9999-99-99";
   var base = params.base || "";
-  var dateCol = WORK_HEADERS.indexOf("作業日");
-  var baseCol = WORK_HEADERS.indexOf("拠点");
+  var dateCol = hm["作業日"];
+  var baseCol = hm["拠点"];
   var records = [];
   for (var i = 1; i < values.length; i++) {
     var d = dateKey_(values[i][dateCol]);
     if (d < from || d > to) continue;
     if (base && values[i][baseCol] !== base) continue;
-    records.push(rowToObject_(values[i], WORK_HEADERS));
+    records.push(rowToObjectBySheet_(hm, values[i]));
   }
   records.reverse(); // 新しい記録から
   return json_({ ok: true, records: records });
@@ -470,10 +511,11 @@ function getRecords_(params) {
 function getPesticideItems_(recordId) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE_ITEMS);
   var values = sheet.getDataRange().getValues();
-  var idCol = PESTICIDE_ITEM_HEADERS.indexOf("記録ID");
+  var hm = headerMap_(sheet);
+  var idCol = hm["記録ID"];
   var items = [];
   for (var i = 1; i < values.length; i++) {
-    if (values[i][idCol] === recordId) items.push(rowToObject_(values[i], PESTICIDE_ITEM_HEADERS));
+    if (values[i][idCol] === recordId) items.push(rowToObjectBySheet_(hm, values[i]));
   }
   return items;
 }
@@ -481,17 +523,18 @@ function getPesticideItems_(recordId) {
 function getPesticides_(params) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
   var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
   var from = params.from || "0000-00-00";
   var to = params.to || "9999-99-99";
   var base = params.base || "";
-  var dateCol = PESTICIDE_HEADERS.indexOf("使用年月日");
-  var baseCol = PESTICIDE_HEADERS.indexOf("拠点");
+  var dateCol = hm["使用年月日"];
+  var baseCol = hm["拠点"];
   var records = [];
   for (var i = 1; i < values.length; i++) {
     var d = dateKey_(values[i][dateCol]);
     if (d < from || d > to) continue;
     if (base && values[i][baseCol] !== base) continue;
-    var rec = rowToObject_(values[i], PESTICIDE_HEADERS);
+    var rec = rowToObjectBySheet_(hm, values[i]);
     rec.items = getPesticideItems_(rec["記録ID"]);
     records.push(rec);
   }
@@ -506,28 +549,30 @@ function getMyToday_(params) {
 
   var workSheet = ss.getSheetByName(SHEET_WORK);
   var workValues = workSheet.getDataRange().getValues();
-  var wDateCol = WORK_HEADERS.indexOf("作業日");
-  var wUidCol = WORK_HEADERS.indexOf("userId");
-  var wStateCol = WORK_HEADERS.indexOf("状態");
+  var whm = headerMap_(workSheet);
+  var wDateCol = whm["作業日"];
+  var wUidCol = whm["userId"];
+  var wStateCol = whm["状態"];
   var work = [];
   for (var i = 1; i < workValues.length; i++) {
     if (dateKey_(workValues[i][wDateCol]) !== today) continue;
     if (workValues[i][wUidCol] !== uid) continue;
     if (workValues[i][wStateCol] === "取消") continue;
-    work.push(rowToObject_(workValues[i], WORK_HEADERS));
+    work.push(rowToObjectBySheet_(whm, workValues[i]));
   }
 
   var pestSheet = ss.getSheetByName(SHEET_PESTICIDE);
   var pestValues = pestSheet.getDataRange().getValues();
-  var pDateCol = PESTICIDE_HEADERS.indexOf("使用年月日");
-  var pUidCol = PESTICIDE_HEADERS.indexOf("userId");
-  var pStateCol = PESTICIDE_HEADERS.indexOf("状態");
+  var phm = headerMap_(pestSheet);
+  var pDateCol = phm["使用年月日"];
+  var pUidCol = phm["userId"];
+  var pStateCol = phm["状態"];
   var pesticide = [];
   for (var j = 1; j < pestValues.length; j++) {
     if (dateKey_(pestValues[j][pDateCol]) !== today) continue;
     if (pestValues[j][pUidCol] !== uid) continue;
     if (pestValues[j][pStateCol] === "取消") continue;
-    var rec = rowToObject_(pestValues[j], PESTICIDE_HEADERS);
+    var rec = rowToObjectBySheet_(phm, pestValues[j]);
     rec.items = getPesticideItems_(rec["記録ID"]);
     pesticide.push(rec);
   }
@@ -545,26 +590,28 @@ function getHistory_(params) {
 
   var workSheet = ss.getSheetByName(SHEET_WORK);
   var workValues = workSheet.getDataRange().getValues();
-  var wDateCol = WORK_HEADERS.indexOf("作業日");
-  var wStateCol = WORK_HEADERS.indexOf("状態");
+  var whm = headerMap_(workSheet);
+  var wDateCol = whm["作業日"];
+  var wStateCol = whm["状態"];
   for (var i = 1; i < workValues.length; i++) {
     var d = dateKey_(workValues[i][wDateCol]);
     if (d < sinceKey) continue;
     if (workValues[i][wStateCol] === "取消") continue;
-    var o = rowToObject_(workValues[i], WORK_HEADERS);
+    var o = rowToObjectBySheet_(whm, workValues[i]);
     o._type = "work";
     items.push(o);
   }
 
   var pestSheet = ss.getSheetByName(SHEET_PESTICIDE);
   var pestValues = pestSheet.getDataRange().getValues();
-  var pDateCol = PESTICIDE_HEADERS.indexOf("使用年月日");
-  var pStateCol = PESTICIDE_HEADERS.indexOf("状態");
+  var phm = headerMap_(pestSheet);
+  var pDateCol = phm["使用年月日"];
+  var pStateCol = phm["状態"];
   for (var j = 1; j < pestValues.length; j++) {
     var d2 = dateKey_(pestValues[j][pDateCol]);
     if (d2 < sinceKey) continue;
     if (pestValues[j][pStateCol] === "取消") continue;
-    var o2 = rowToObject_(pestValues[j], PESTICIDE_HEADERS);
+    var o2 = rowToObjectBySheet_(phm, pestValues[j]);
     o2._type = "pesticide";
     o2.items = getPesticideItems_(o2["記録ID"]);
     items.push(o2);
@@ -601,9 +648,11 @@ function getWeather_(params) {
   var date = params.date || Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WEATHER);
   var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+  var dateCol = hm["日付"];
   for (var i = 1; i < values.length; i++) {
-    if (dateKey_(values[i][0]) === date) {
-      return json_({ ok: true, weather: rowToObject_(values[i], WEATHER_HEADERS) });
+    if (dateKey_(values[i][dateCol]) === date) {
+      return json_({ ok: true, weather: rowToObjectBySheet_(hm, values[i]) });
     }
   }
   return json_({ ok: true, weather: null });
@@ -614,11 +663,13 @@ function getWeatherRange_(params) {
   var to = params.to || "9999-99-99";
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WEATHER);
   var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+  var dateCol = hm["日付"];
   var items = [];
   for (var i = 1; i < values.length; i++) {
-    var d = dateKey_(values[i][0]);
+    var d = dateKey_(values[i][dateCol]);
     if (d < from || d > to) continue;
-    items.push(rowToObject_(values[i], WEATHER_HEADERS));
+    items.push(rowToObjectBySheet_(hm, values[i]));
   }
   return json_({ ok: true, items: items });
 }
@@ -643,31 +694,38 @@ function fetchAndSaveWeather_() {
   var today = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WEATHER);
   var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
   var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
-  var dateCol = WEATHER_HEADERS.indexOf("日付");
-  var fetchedCol = WEATHER_HEADERS.indexOf("取得日時");
+  var dateCol = hm["日付"];
+  var fetchedCol = hm["取得日時"];
 
   daily.time.forEach(function (dateStr) {
     var idx = daily.time.indexOf(dateStr);
     var kubun = dateStr < today ? "実績" : "予報"; // past_days分＝実績、当日分＝予報
-    var row = [
-      dateStr, kubun,
-      daily.temperature_2m_max[idx], daily.temperature_2m_min[idx],
-      weatherCodeToLabel_(daily.weather_code[idx]), daily.weather_code[idx],
-      daily.precipitation_probability_max ? daily.precipitation_probability_max[idx] : "",
-      nowStr, nowStr,
-    ];
+    var obj = {
+      "日付": dateStr,
+      "取得区分": kubun,
+      "最高気温": daily.temperature_2m_max[idx],
+      "最低気温": daily.temperature_2m_min[idx],
+      "天気概況": weatherCodeToLabel_(daily.weather_code[idx]),
+      "天気コード": daily.weather_code[idx],
+      "降水確率": daily.precipitation_probability_max ? daily.precipitation_probability_max[idx] : "",
+      "取得日時": nowStr,
+      "更新日時": nowStr,
+    };
     var found = -1;
     for (var i = 1; i < values.length; i++) {
       if (dateKey_(values[i][dateCol]) === dateStr) { found = i; break; }
     }
     if (found >= 0) {
-      row[fetchedCol] = values[found][fetchedCol]; // 取得日時（初回）は保持
-      sheet.getRange(found + 1, 1, 1, WEATHER_HEADERS.length).setValues([row]);
+      obj["取得日時"] = values[found][fetchedCol]; // 取得日時（初回）は保持
+      var row = objectToRowBySheet_(sheet, obj);
+      sheet.getRange(found + 1, 1, 1, row.length).setValues([row]);
       values[found] = row;
     } else {
-      sheet.appendRow(row);
-      values.push(row);
+      var newRow = objectToRowBySheet_(sheet, obj);
+      sheet.appendRow(newRow);
+      values.push(newRow);
     }
   });
 }
