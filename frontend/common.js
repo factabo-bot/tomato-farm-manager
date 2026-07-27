@@ -73,6 +73,56 @@ async function apiPost(payload) {
   return res.json();
 }
 
+// ---------- マスタのキャッシュ ----------
+// GASのAPIは応答に5秒前後かかる（Apps Script側の構造的な遅さ）。
+// マスタは滅多に変わらないので、前回取得した内容をlocalStorageに残しておき、
+// 画面は即座にそれで描画してから、裏で最新版を取りに行く。
+
+const MASTERS_CACHE_KEY = "tfm_masters_cache";
+
+function getCachedMasters() {
+  try {
+    const raw = localStorage.getItem(MASTERS_CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (err) {
+    console.warn("マスタキャッシュの読み込みに失敗", err);
+  }
+  return null;
+}
+
+function saveMastersCache(masters) {
+  try {
+    localStorage.setItem(MASTERS_CACHE_KEY, JSON.stringify(masters));
+  } catch (err) {
+    console.warn("マスタキャッシュの保存に失敗", err);
+  }
+}
+
+// キャッシュがあれば待たずにそれを返し、裏で最新版を取得する。
+// 取得結果がキャッシュと違っていたときだけ onFresh(最新マスタ) が呼ばれる
+// （利用者が入力中に画面が作り替わるのを避けるため、変化がなければ何もしない）。
+// キャッシュがない初回だけは取得を待つ。
+async function loadMasters(onFresh) {
+  const cached = getCachedMasters();
+
+  const fetching = apiGet("masters")
+    .then((fresh) => {
+      if (!fresh || !fresh.ok) return null;
+      const changed = JSON.stringify(fresh) !== JSON.stringify(cached);
+      saveMastersCache(fresh);
+      if (changed && cached && onFresh) onFresh(fresh);
+      return fresh;
+    })
+    .catch((err) => {
+      console.warn("マスタの取得に失敗（キャッシュで継続）", err);
+      return null;
+    });
+
+  if (cached) return cached;
+  const fresh = await fetching;
+  return fresh || Object.assign({ ok: true }, MASTERS_DEFAULT);
+}
+
 // オフライン等でsubmitが失敗したときに使う。送信キューに積んで later flush する
 async function apiPostWithQueue(payload) {
   if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;

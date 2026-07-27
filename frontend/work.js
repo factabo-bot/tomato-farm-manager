@@ -15,13 +15,20 @@ async function init() {
   $("user-info").textContent = state.profile.displayName + (isMock ? "（お試しモード）" : "");
   $("work-date").value = formatToday();
 
-  state.masters = await apiGet("masters");
+  // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
+  $("submit").addEventListener("click", submit);
+
+  // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
+  state.masters = await loadMasters(function (fresh) {
+    state.masters = fresh;
+    renderBases();
+    renderWorkTypes();
+  });
 
   renderBases();
   renderWorkTypes();
-  await loadMyRecords();
 
-  $("submit").addEventListener("click", submit);
+  loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
 }
 
 function renderBases() {

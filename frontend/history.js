@@ -17,26 +17,38 @@ async function init() {
   $("from-date").value = formatDate(from);
   $("to-date").value = formatToday();
 
-  state.masters = await apiGet("masters");
-  renderBaseFilter();
-
+  // 通信を待つ前にイベントを登録する（待っている間の操作を取りこぼさないため）
   $("tab-work").addEventListener("click", () => switchTab("work"));
   $("tab-pesticide").addEventListener("click", () => switchTab("pesticide"));
   $("from-date").addEventListener("change", load);
   $("to-date").addEventListener("change", load);
   $("base-filter").addEventListener("change", load);
 
-  await load();
+  load(); // 一覧の取得は拠点フィルタの描画を待たずに始める
+
+  state.masters = await loadMasters(function (fresh) {
+    state.masters = fresh;
+    renderBaseFilter();
+  });
+  renderBaseFilter();
 }
 
+// マスタが更新されたときに呼び直されるので、毎回作り直す（選択中の拠点は保つ）
 function renderBaseFilter() {
   const sel = $("base-filter");
+  const current = sel.value;
+  sel.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "すべて";
+  sel.appendChild(all);
   activeBases(state.masters).forEach((name) => {
     const opt = document.createElement("option");
     opt.value = name;
     opt.textContent = name;
     sel.appendChild(opt);
   });
+  sel.value = current;
 }
 
 function switchTab(tab) {

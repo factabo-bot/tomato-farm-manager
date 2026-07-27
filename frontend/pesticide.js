@@ -16,18 +16,27 @@ async function init() {
   $("user-info").textContent = state.profile.displayName + (isMock ? "（お試しモード）" : "");
   $("use-date").value = formatToday();
 
-  state.masters = await apiGet("masters");
+  // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
+  $("pesticide-name").addEventListener("input", updatePpeHint);
+  $("add-item").addEventListener("click", addItem);
+  $("submit").addEventListener("click", submit);
+  renderItems();
+
+  // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
+  state.masters = await loadMasters(function (fresh) {
+    state.masters = fresh;
+    renderBases();
+    renderCrops();
+    renderRecipes();
+    renderPesticideOptions();
+  });
 
   renderBases();
   renderCrops();
   renderRecipes();
   renderPesticideOptions();
-  renderItems();
-  await loadMyRecords();
 
-  $("pesticide-name").addEventListener("input", updatePpeHint);
-  $("add-item").addEventListener("click", addItem);
-  $("submit").addEventListener("click", submit);
+  loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
 }
 
 function renderBases() {
