@@ -250,6 +250,7 @@ function doPost(e) {
     if (data.type === "updateRecord") return updateRecord_(data);
     if (data.type === "cancelRecord") return cancelRecord_(data);
     if (data.type === "cancelPesticide") return cancelPesticide_(data);
+    if (data.type === "upsertMaster") return upsertMaster_(data);
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -350,6 +351,67 @@ function savePesticide_(data) {
   });
 
   return json_({ ok: true, id: id });
+}
+
+// マスタへの行の追加・更新。
+// 農薬やレシピを手入力せずに登録できるようにするための窓口で、記録系シートは対象外。
+// data = { sheet: "マスタ_農薬", key: "薬剤ID"（複数列で照合するなら配列）, rows: [{列名: 値, ...}, ...] }
+// key が一致する行があれば渡された列だけ上書きし、なければ新しい行として追加する。
+function upsertMaster_(data) {
+  var allowed = [
+    SHEET_MASTER_BASE, SHEET_MASTER_WORKTYPE, SHEET_MASTER_PESTICIDE,
+    SHEET_MASTER_CROP, SHEET_RECIPE, SHEET_RECIPE_ITEMS,
+  ];
+  if (allowed.indexOf(data.sheet) < 0) {
+    return json_({ ok: false, error: "このシートは書き換えられません: " + data.sheet });
+  }
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(data.sheet);
+  if (!sheet) return json_({ ok: false, error: "シートが見つかりません: " + data.sheet });
+
+  var rows = data.rows || [];
+  if (rows.length === 0) return json_({ ok: false, error: "rows が空です" });
+
+  var keys = [].concat(data.key || []);
+  if (keys.length === 0) return json_({ ok: false, error: "key（照合に使う列名）を指定してください" });
+
+  var hm = headerMap_(sheet);
+  for (var k = 0; k < keys.length; k++) {
+    if (hm[keys[k]] === undefined) {
+      return json_({ ok: false, error: "指定された列がシートにありません: " + keys[k] });
+    }
+  }
+
+  var values = sheet.getDataRange().getValues();
+  var added = 0;
+  var updated = 0;
+
+  rows.forEach(function (obj) {
+    var found = -1;
+    for (var i = 1; i < values.length; i++) {
+      var matched = true;
+      for (var j = 0; j < keys.length; j++) {
+        if (String(values[i][hm[keys[j]]]) !== String(obj[keys[j]])) { matched = false; break; }
+      }
+      if (matched) { found = i; break; }
+    }
+    if (found >= 0) {
+      // 渡された列だけ上書きする（既存の他の列を空にしないため）
+      var merged = values[found].slice();
+      Object.keys(obj).forEach(function (h) {
+        if (hm[h] !== undefined) merged[hm[h]] = obj[h];
+      });
+      sheet.getRange(found + 1, 1, 1, merged.length).setValues([merged]);
+      values[found] = merged;
+      updated++;
+    } else {
+      var newRow = objectToRowBySheet_(sheet, obj);
+      sheet.appendRow(newRow);
+      values.push(newRow);
+      added++;
+    }
+  });
+
+  return json_({ ok: true, sheet: data.sheet, added: added, updated: updated });
 }
 
 // 作業記録の編集。当日分・本人の記録のみ許可
