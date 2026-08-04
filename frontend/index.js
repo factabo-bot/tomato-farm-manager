@@ -19,24 +19,32 @@ async function init() {
 
   const res = await apiGet("mytoday", { userId: profile.userId });
   const work = res.work || [];
-  const pesticide = res.pesticide || [];
+  const spray = res.spray || res.pesticide || [];
   $("work-count").textContent = work.length;
-  $("pesticide-count").textContent = pesticide.length;
-  renderTodayList(work, pesticide);
+  $("spray-count").textContent = spray.length;
+  renderTodayList(work, spray);
 }
 
-function renderTodayList(work, pesticide) {
+function renderTodayList(work, spray) {
   const box = $("today-list");
   box.innerHTML = "";
   const items = [];
+
   work.forEach((r) => items.push({
     time: (r.記録日時 || "").slice(11, 16),
     label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
   }));
-  pesticide.forEach((r) => items.push({
-    time: (r.記録日時 || r.更新日時 || "").slice(11, 16),
-    label: `🧪 ${r["棟・区画"]} / ${r["農薬の種類・名称"]}`,
-  }));
+
+  // 散布記録は資材名を並べて表示する（散布区分＝防除／葉面散布も添える）
+  spray.forEach((r) => {
+    const names = (r.items || []).map((it) => it.資材名).filter(Boolean).join("・");
+    const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
+    items.push({
+      time: (r.開始時刻 || (r.更新日時 || "").slice(11, 16)),
+      label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
+    });
+  });
+
   if (items.length === 0) {
     box.appendChild(el("div", "hint", "今日はまだ記録がありません"));
     return;

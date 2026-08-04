@@ -56,6 +56,44 @@ label {
   font-size: 0.8rem;
 }
 
+/* 目的の複数選択チップ。通常のボタンより小さめ・詰めて並べる */
+.chip-row {
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.btn.chip {
+  flex: 0 1 auto;
+  min-height: 38px;
+  padding: 6px 12px;
+  font-size: 0.88rem;
+  border-radius: 18px;
+}
+
+/* 資材が農薬か肥料かを一目で分かるようにするバッジ */
+.mat-badge {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-radius: 10px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.mat-badge.is-pest {
+  background: #fde0dc;
+  color: #b71c1c;
+}
+.mat-badge.is-other {
+  background: #e3efe3;
+  color: #2e7d32;
+}
+
+/* 行の中で伸びる要素（バッジや削除ボタンと並べたときに文字側を広げる） */
+.item .grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .ppe-hint {
   background: #fde0dc;
   color: #b71c1c;

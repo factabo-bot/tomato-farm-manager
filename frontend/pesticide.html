@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>防除記録 - トマト栽培管理</title>
+<title>散布記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260722b">
+<link rel="stylesheet" href="styles.css?v=20260804a">
 </head>
 <body>
 <header>
@@ -18,7 +18,7 @@
   <nav class="mode-nav">
     <a href="index.html">🏠 ホーム</a>
     <a href="work.html">📝 作業記録</a>
-    <a href="pesticide.html" class="current">🧪 防除記録</a>
+    <a href="pesticide.html" class="current">🧪 散布記録</a>
     <a href="history.html">📋 履歴</a>
   </nav>
 </header>
@@ -26,7 +26,7 @@
 <main>
   <div id="queue-badge" class="queue-badge" hidden></div>
 
-  <p class="hint law-hint">日々の記録用の簡易帳簿です。複数の農薬を混用した場合はまとめて1回の記録として、農薬ごとにリストへ追加してください。正式な法定帳簿として提出する場合は内容を確認のうえ転記してください。</p>
+  <p class="hint law-hint">1回の散布ごとに記録します。農薬・展着剤・葉面散布肥料をまとめて混ぜた場合も、この1件に資材を並べて登録してください。正式な法定帳簿として提出する場合は内容を確認のうえ転記してください。</p>
 
   <section>
     <h2>使用年月日 <span class="req">★必須</span></h2>
@@ -49,19 +49,23 @@
   </section>
 
   <section>
-    <h2>対象病害虫</h2>
-    <input type="text" id="target-pest" placeholder="例: コナジラミ類">
+    <h2>散布の目的（複数選べます）</h2>
+    <p class="hint">病害虫</p>
+    <div id="purpose-pest" class="btn-row chip-row"></div>
+    <p class="hint">生育・生理</p>
+    <div id="purpose-growth" class="btn-row chip-row"></div>
+    <input type="text" id="purpose-free" placeholder="上にないものは自由に記入（任意）">
   </section>
 
   <section>
-    <h2>防除レシピ（選ぶと下の農薬リストに自動入力されます）</h2>
+    <h2>散布レシピ（選ぶと下の資材リストに自動入力されます）</h2>
     <div id="recipe-buttons" class="btn-row"></div>
   </section>
 
   <section>
-    <h2>使用する農薬 <span class="req">★1件以上必須</span></h2>
-    <input type="text" id="pesticide-name" list="pesticide-list" placeholder="薬剤名を選択または入力">
-    <datalist id="pesticide-list"></datalist>
+    <h2>使用する資材（農薬・肥料など） <span class="req">★1件以上必須</span></h2>
+    <input type="text" id="material-name" list="material-list" placeholder="資材名を選択または入力">
+    <datalist id="material-list"></datalist>
     <p class="hint ppe-hint" id="ppe-hint" hidden></p>
     <div class="grid-2 inner">
       <input type="text" id="dilution" placeholder="希釈倍数 例: 1000倍">
@@ -69,8 +73,19 @@
     </div>
     <input type="text" id="amount-unit" placeholder="使用量の単位 例: L/10a">
     <input type="number" id="total-volume" placeholder="散布液量合計(L)（任意）" inputmode="decimal">
-    <button id="add-item" class="btn-secondary" type="button">＋ この農薬をリストに追加</button>
+    <button id="add-item" class="btn-secondary" type="button">＋ この資材をリストに追加</button>
     <div id="item-list"></div>
+  </section>
+
+  <section class="grid-2">
+    <div>
+      <label>開始時刻</label>
+      <input type="time" id="start-time">
+    </div>
+    <div>
+      <label>終了時刻</label>
+      <input type="time" id="end-time">
+    </div>
   </section>
 
   <section>
@@ -79,17 +94,17 @@
   </section>
 
   <section>
-    <h2>今日の防除記録</h2>
+    <h2>今日の散布記録</h2>
     <div id="my-records"></div>
   </section>
 </main>
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260722b"></script>
-<script src="masters-default.js?v=20260722b"></script>
-<script src="common.js?v=20260722b"></script>
-<script src="pesticide.js?v=20260722b"></script>
+<script src="config.js?v=20260804a"></script>
+<script src="masters-default.js?v=20260804a"></script>
+<script src="common.js?v=20260804a"></script>
+<script src="pesticide.js?v=20260804a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

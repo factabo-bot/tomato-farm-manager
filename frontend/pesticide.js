@@ -5,6 +5,7 @@ const state = {
   base: null,
   building: null,
   items: [],
+  purposes: new Set(), // 選択中の目的タグ
   recipeName: "",
   profile: getProfile(),
 };
@@ -17,7 +18,7 @@ async function init() {
   $("use-date").value = formatToday();
 
   // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
-  $("pesticide-name").addEventListener("input", updatePpeHint);
+  $("material-name").addEventListener("input", updatePpeHint);
   $("add-item").addEventListener("click", addItem);
   $("submit").addEventListener("click", submit);
   renderItems();
@@ -25,18 +26,24 @@ async function init() {
   // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
   state.masters = await loadMasters(function (fresh) {
     state.masters = fresh;
-    renderBases();
-    renderCrops();
-    renderRecipes();
-    renderPesticideOptions();
+    renderAll();
   });
-
-  renderBases();
-  renderCrops();
-  renderRecipes();
-  renderPesticideOptions();
+  renderAll();
 
   loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
+}
+
+function renderAll() {
+  renderBases();
+  renderCrops();
+  renderPurposes();
+  renderRecipes();
+  renderMaterialOptions();
+}
+
+// マスタ_資材（旧マスタ_農薬）。古いGASからのレスポンスにも耐えるようフォールバックする
+function materialList() {
+  return state.masters.materials || state.masters.pesticides || [];
 }
 
 function renderBases() {
@@ -75,6 +82,7 @@ function renderBuildings() {
 
 function renderCrops() {
   const sel = $("crop-select");
+  const current = sel.value;
   sel.innerHTML = "";
   (state.masters.crops || []).forEach((c) => {
     const opt = document.createElement("option");
@@ -82,29 +90,63 @@ function renderCrops() {
     opt.textContent = c.品目名;
     sel.appendChild(opt);
   });
+  if (current) sel.value = current;
 }
 
-function renderPesticideOptions() {
-  const list = $("pesticide-list");
-  list.innerHTML = "";
-  (state.masters.pesticides || [])
+// 目的は「マスタから複数選択」＋「自由入力」の併用。
+// マスタから選んだぶんは表記が揃うので、あとで履歴を検索したときに取りこぼさない
+function renderPurposes() {
+  const all = (state.masters.purposes || [])
     .filter((p) => String(p.有効フラグ).toUpperCase() === "TRUE")
-    .forEach((p) => {
+    .sort((a, b) => Number(a.表示順) - Number(b.表示順));
+
+  renderPurposeGroup($("purpose-pest"), all.filter((p) => p.分類 === "防除"));
+  renderPurposeGroup($("purpose-growth"), all.filter((p) => p.分類 !== "防除"));
+}
+
+function renderPurposeGroup(box, list) {
+  box.innerHTML = "";
+  if (list.length === 0) {
+    box.appendChild(el("span", "hint", "（未登録）"));
+    return;
+  }
+  list.forEach((p) => {
+    const name = p.目的名;
+    const btn = el("button", "btn chip" + (state.purposes.has(name) ? " active" : ""), name);
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      state.purposes.has(name) ? state.purposes.delete(name) : state.purposes.add(name);
+      renderPurposes();
+    });
+    box.appendChild(btn);
+  });
+}
+
+function renderMaterialOptions() {
+  const list = $("material-list");
+  list.innerHTML = "";
+  materialList()
+    .filter((m) => String(m.有効フラグ).toUpperCase() === "TRUE")
+    .forEach((m) => {
       const opt = document.createElement("option");
-      opt.value = p.薬剤名;
+      opt.value = m.薬剤名;
       list.appendChild(opt);
     });
 }
 
-function findPesticideMaster(name) {
-  return (state.masters.pesticides || []).find((p) => p.薬剤名 === name);
+function findMaterial(name) {
+  return materialList().find((m) => m.薬剤名 === name);
 }
 
+function isPesticide(material) {
+  return material && String(material.農薬登録の有無).toUpperCase() === "TRUE";
+}
+
+// 保護具の注意は農薬登録のある資材のときだけ出す（肥料単独では出さない）
 function updatePpeHint() {
-  const name = $("pesticide-name").value.trim();
-  const m = findPesticideMaster(name);
+  const m = findMaterial($("material-name").value.trim());
   const hint = $("ppe-hint");
-  if (m && m["必要な保護具"]) {
+  if (isPesticide(m) && m["必要な保護具"]) {
     hint.hidden = false;
     hint.textContent = "⚠ 必要な保護具（目安。使用前にラベルで要確認）: " + m["必要な保護具"];
   } else {
@@ -127,7 +169,7 @@ function renderRecipes() {
   box.innerHTML = "";
   const recipes = activeRecipes();
   if (recipes.length === 0) {
-    box.appendChild(el("div", "hint", "登録済みのレシピはありません（スプレッドシートのマスタ_防除レシピで登録できます）"));
+    box.appendChild(el("div", "hint", "登録済みのレシピはありません（スプレッドシートのマスタ_散布レシピで登録できます）"));
     return;
   }
   recipes.forEach((r) => {
@@ -141,38 +183,44 @@ function renderRecipes() {
 function applyRecipe(recipe) {
   const items = recipeItemsOf(recipe["レシピID"]);
   if (items.length === 0) {
-    toast("このレシピには農薬が登録されていません");
+    toast("このレシピには資材が登録されていません");
     return;
   }
   state.items = items.map((it) => ({
-    pesticideName: it.薬剤名,
+    materialName: it.薬剤名,
     dilution: it.希釈倍数 || "",
     amount: it.使用量 || "",
     amountUnit: it.使用量単位 || "",
     totalVolumeL: "",
   }));
-  if (!$("target-pest").value.trim() && recipe.対象病害虫) {
-    $("target-pest").value = recipe.対象病害虫;
+  // レシピの対象病害虫は、マスタの目的名と一致するものはチップとして選択状態にする
+  if (recipe.対象病害虫) {
+    const names = (state.masters.purposes || []).map((p) => p.目的名);
+    String(recipe.対象病害虫).split(/[・、,]/).forEach((t) => {
+      const trimmed = t.trim();
+      if (names.includes(trimmed)) state.purposes.add(trimmed);
+    });
+    renderPurposes();
   }
   state.recipeName = recipe.レシピ名;
   renderItems();
-  toast(`「${recipe.レシピ名}」の農薬を入力しました（内容は編集できます）`);
+  toast(`「${recipe.レシピ名}」の資材を入力しました（内容は編集できます）`);
 }
 
 function addItem() {
-  const name = $("pesticide-name").value.trim();
+  const name = $("material-name").value.trim();
   const dilution = $("dilution").value.trim();
   const amount = $("amount").value;
   const amountUnit = $("amount-unit").value.trim();
   const totalVolumeL = $("total-volume").value;
 
-  if (!name) return toast("農薬を選択または入力してください");
+  if (!name) return toast("資材を選択または入力してください");
   if (!dilution && !(amount && amountUnit)) {
     return toast("希釈倍数、または使用量と単位のどちらかを入力してください");
   }
 
-  state.items.push({ pesticideName: name, dilution, amount, amountUnit, totalVolumeL });
-  $("pesticide-name").value = "";
+  state.items.push({ materialName: name, dilution, amount, amountUnit, totalVolumeL });
+  $("material-name").value = "";
   $("dilution").value = "";
   $("amount").value = "";
   $("amount-unit").value = "";
@@ -186,10 +234,15 @@ function renderItems() {
   box.innerHTML = "";
   state.items.forEach((it, i) => {
     const row = el("div", "item");
+    const m = findMaterial(it.materialName);
     const dose = it.dilution || (it.amount ? it.amount + it.amountUnit : "");
-    const m = findPesticideMaster(it.pesticideName);
-    const ppe = m && m["必要な保護具"] ? "　⚠" + m["必要な保護具"] : "";
-    row.appendChild(el("span", "", `${it.pesticideName}（${dose}）${ppe}`));
+
+    // 混ぜたときにどれが農薬でどれが肥料か一目で分かるようにする
+    const badge = el("span", "mat-badge " + (isPesticide(m) ? "is-pest" : "is-other"),
+      isPesticide(m) ? "農薬" : (m ? (m.区分 || "その他") : "未登録"));
+    row.appendChild(badge);
+    row.appendChild(el("span", "grow", `${it.materialName}（${dose}）`));
+
     const del = el("button", "del", "削除");
     del.type = "button";
     del.addEventListener("click", () => {
@@ -201,19 +254,33 @@ function renderItems() {
   });
 }
 
+function computeDuration() {
+  const s = $("start-time").value;
+  const e = $("end-time").value;
+  if (!s || !e) return "";
+  const [sh, sm] = s.split(":").map(Number);
+  const [eh, em] = e.split(":").map(Number);
+  const diff = eh * 60 + em - (sh * 60 + sm);
+  return diff > 0 ? diff : "";
+}
+
 async function submit() {
   if (!state.base) return toast("拠点を選択してください");
   if (!$("crop-select").value) return toast("農作物の種類を選択してください");
-  if (state.items.length === 0) return toast("農薬を1件以上リストに追加してください");
+  if (state.items.length === 0) return toast("資材を1件以上リストに追加してください");
 
   const payload = {
-    type: "pesticide",
+    type: "spray",
     useDate: $("use-date").value,
     base: state.base,
     building: state.building,
     crop: $("crop-select").value,
-    targetPest: $("target-pest").value.trim(),
+    purposeTags: [...state.purposes],
+    purposeFree: $("purpose-free").value.trim(),
     recipeName: state.recipeName || "",
+    startTime: $("start-time").value,
+    endTime: $("end-time").value,
+    durationMin: computeDuration(),
     recorder: state.profile.displayName,
     userId: state.profile.userId,
     note: $("note").value.trim(),
@@ -240,31 +307,38 @@ async function submit() {
 
 function resetForm() {
   state.items = [];
+  state.purposes.clear();
   state.recipeName = "";
-  $("target-pest").value = "";
+  $("purpose-free").value = "";
+  $("start-time").value = "";
+  $("end-time").value = "";
   $("note").value = "";
   renderItems();
+  renderPurposes();
 }
 
 async function loadMyRecords() {
   const res = await apiGet("mytoday", { userId: state.profile.userId });
-  renderMyRecords(res.pesticide || []);
+  renderMyRecords(res.spray || res.pesticide || []);
+}
+
+function itemsLabel(r) {
+  return (r.items || [])
+    .map((it) => `${it.資材名}（${it.希釈倍数 || ((it.使用量 || "") + (it.使用量単位 || ""))}）`)
+    .join("・");
 }
 
 function renderMyRecords(records) {
   const box = $("my-records");
   box.innerHTML = "";
   if (records.length === 0) {
-    box.appendChild(el("div", "hint", "今日の防除記録はまだありません"));
+    box.appendChild(el("div", "hint", "今日の散布記録はまだありません"));
     return;
   }
   records.slice().reverse().forEach((r) => {
     const row = el("div", "item");
-    const names = (r.items || [])
-      .map((it) => `${it.薬剤名}（${it.希釈倍数 || (it.使用量 + it.使用量単位)}）`)
-      .join("・");
-    const label = `${r["棟・区画"]} / ${names}`;
-    row.appendChild(el("span", "", label));
+    const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
+    row.appendChild(el("span", "grow", `${kubun}${r["棟・区画"]} / ${itemsLabel(r)}`));
     const del = el("button", "del", "取消");
     del.type = "button";
     del.addEventListener("click", () => cancelRecord(r.記録ID));
@@ -274,7 +348,7 @@ function renderMyRecords(records) {
 }
 
 async function cancelRecord(id) {
-  const res = await apiPost({ type: "cancelPesticide", id, userId: state.profile.userId });
+  const res = await apiPost({ type: "cancelSpray", id, userId: state.profile.userId });
   if (!res.ok) {
     toast("⚠ " + (res.error || "取消に失敗しました"));
     return;

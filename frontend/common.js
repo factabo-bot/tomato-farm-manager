@@ -198,12 +198,19 @@ window.addEventListener("DOMContentLoaded", () => {
 // ---------- お試しモード（GAS未接続。localStorageのみで動く） ----------
 
 const MOCK_WORK_KEY = "tfm_mock_work";
-const MOCK_PESTICIDE_KEY = "tfm_mock_pesticide";
+const MOCK_SPRAY_KEY = "tfm_mock_spray";
+
+// 目的タグを1列にまとめるときの区切り文字（GAS側 PURPOSE_SEPARATOR と合わせる）
+const PURPOSE_SEPARATOR = "、";
+
+// 散布区分の判定に使う区分の分類（GAS側 KUBUN_PEST_CONTROL / KUBUN_FOLIAR と合わせる）
+const KUBUN_PEST_CONTROL = ["殺虫剤", "殺菌剤", "殺虫殺菌剤", "除草剤", "殺ダニ剤", "生物殺虫剤（微生物）", "殺虫剤（気門封鎖剤）"];
+const KUBUN_FOLIAR = ["葉面散布肥料", "液体肥料", "葉面散布剤"];
 
 function mockPost(payload) {
-  if (payload.type === "pesticide") return mockSavePesticide(payload);
+  if (payload.type === "spray" || payload.type === "pesticide") return mockSaveSpray(payload);
   if (payload.type === "cancelRecord") return mockCancelWork(payload);
-  if (payload.type === "cancelPesticide") return mockCancelPesticide(payload);
+  if (payload.type === "cancelSpray" || payload.type === "cancelPesticide") return mockCancelSpray(payload);
   if (payload.type === "updateRecord") return mockUpdateWork(payload);
   return mockSaveWork(payload);
 }
@@ -255,20 +262,20 @@ function mockUpdateWork(payload) {
   return { ok: true };
 }
 
-// 防除記録は「気軽に残す簡易帳簿」という位置づけ。法定5項目のうち
-// 農薬名・使用量/希釈倍数は明細（items）側でチェックする（GAS側 validatePesticide_ と同じロジック）
-function validatePesticidePayload(payload) {
+// 散布記録は「気軽に残す簡易帳簿」という位置づけ。農薬に限らず葉面散布肥料だけでも記録できる
+// （GAS側 validateSpray_ と同じロジック）
+function validateSprayPayload(payload) {
   const missing = [];
   if (!payload.useDate) missing.push("使用年月日");
   if (!payload.base) missing.push("使用場所（拠点）");
   if (!payload.crop) missing.push("農作物の種類");
   const items = payload.items || [];
   if (items.length === 0) {
-    missing.push("農薬（少なくとも1件）");
+    missing.push("散布する資材（少なくとも1件）");
   } else {
     items.forEach((it, idx) => {
       const n = idx + 1;
-      if (!it.pesticideName) missing.push(n + "件目の農薬名");
+      if (!it.materialName && !it.pesticideName) missing.push(n + "件目の資材名");
       const hasDilution = !!it.dilution;
       const hasAmount = !!(it.amount && it.amountUnit);
       if (!hasDilution && !hasAmount) missing.push(n + "件目の希釈倍数または使用量");
@@ -277,34 +284,73 @@ function validatePesticidePayload(payload) {
   return missing;
 }
 
-function mockSavePesticide(payload) {
-  const missing = validatePesticidePayload(payload);
+// 資材名から区分と農薬登録の有無を引く（GAS側 lookupMaterial_ と同じ）
+function lookupMaterialMock(name) {
+  const list = (getCachedMasters() || MASTERS_DEFAULT).materials || [];
+  const m = list.find((x) => x.薬剤名 === name);
+  return m
+    ? { 区分: m.区分 || "", 農薬登録の有無: m.農薬登録の有無 || "" }
+    : { 区分: "", 農薬登録の有無: "" };
+}
+
+// 明細の区分から散布区分を決める。展着剤は農薬登録があっても判定に影響させない
+// （GAS側 decideSprayType_ と同じ）
+function decideSprayTypeMock(itemRows) {
+  let hasPest = false;
+  let hasFoliar = false;
+  itemRows.forEach((it) => {
+    const kubun = String(it.区分 || "");
+    if (KUBUN_PEST_CONTROL.includes(kubun)) hasPest = true;
+    if (KUBUN_FOLIAR.includes(kubun)) hasFoliar = true;
+  });
+  if (hasPest && hasFoliar) return "防除・葉面散布";
+  if (hasPest) return "防除";
+  if (hasFoliar) return "葉面散布";
+  return "その他";
+}
+
+function mockSaveSpray(payload) {
+  const missing = validateSprayPayload(payload);
   if (missing.length > 0) return { ok: false, error: "必須項目が未入力です: " + missing.join("、") };
-  const all = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]");
+  const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
   const id = "mock-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
   const nowStr = nowTimestamp();
+
+  const items = payload.items.map((it) => {
+    const name = it.materialName || it.pesticideName;
+    const master = lookupMaterialMock(name);
+    return {
+      資材名: name,
+      区分: master.区分,
+      農薬登録の有無: master.農薬登録の有無,
+      希釈倍数: it.dilution || "",
+      使用量: it.amount || "",
+      使用量単位: it.amountUnit || "",
+      散布液量L: it.totalVolumeL || "",
+    };
+  });
+
   all.push({
     記録ID: id,
     使用年月日: payload.useDate,
     拠点: payload.base,
     "棟・区画": payload.building || "",
     農作物の種類: payload.crop,
-    対象病害虫: payload.targetPest || "",
+    散布区分: decideSprayTypeMock(items),
+    目的タグ: (payload.purposeTags || []).join(PURPOSE_SEPARATOR),
+    目的自由入力: payload.purposeFree || "",
     レシピ名: payload.recipeName || "",
+    開始時刻: payload.startTime || "",
+    終了時刻: payload.endTime || "",
+    所要時間分: payload.durationMin || "",
     記録者: payload.recorder || "",
     userId: payload.userId || "",
     備考: payload.note || "",
     状態: "完了",
     更新日時: nowStr,
-    items: payload.items.map((it) => ({
-      薬剤名: it.pesticideName,
-      希釈倍数: it.dilution || "",
-      使用量: it.amount || "",
-      使用量単位: it.amountUnit || "",
-      散布液量L: it.totalVolumeL || "",
-    })),
+    items,
   });
-  localStorage.setItem(MOCK_PESTICIDE_KEY, JSON.stringify(all));
+  localStorage.setItem(MOCK_SPRAY_KEY, JSON.stringify(all));
   return { ok: true, id };
 }
 
@@ -321,15 +367,15 @@ function mockCancelWork(payload) {
   return { ok: true };
 }
 
-// 防除記録の取消。簡易帳簿として運用するため理由は求めない（本人チェックのみ）
-function mockCancelPesticide(payload) {
-  const all = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]");
+// 散布記録の取消。簡易帳簿として運用するため理由は求めない（本人チェックのみ）
+function mockCancelSpray(payload) {
+  const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
   const target = all.find((r) => r.記録ID === payload.id);
   if (!target) return { ok: false, error: "対象の記録が見つかりません" };
   if (target.userId !== (payload.userId || "")) return { ok: false, error: "本人の記録のみ取消できます" };
   target.状態 = "取消";
   target.更新日時 = nowTimestamp();
-  localStorage.setItem(MOCK_PESTICIDE_KEY, JSON.stringify(all));
+  localStorage.setItem(MOCK_SPRAY_KEY, JSON.stringify(all));
   return { ok: true };
 }
 
@@ -374,8 +420,8 @@ function mockGet(action, params) {
     return { ok: true, records: records.slice().reverse() };
   }
 
-  if (action === "pesticides") {
-    const all = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]");
+  if (action === "sprays" || action === "pesticides") {
+    const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
     let records = all.filter((r) => r.状態 !== "取消" && inRange(r.使用年月日, params));
     if (params.base) records = records.filter((r) => r.拠点 === params.base);
     return { ok: true, records: records.slice().reverse() };
@@ -385,9 +431,9 @@ function mockGet(action, params) {
     const uid = params.userId;
     const work = JSON.parse(localStorage.getItem(MOCK_WORK_KEY) || "[]")
       .filter((r) => r.作業日 === today && r.userId === uid && r.状態 !== "取消");
-    const pesticide = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]")
+    const spray = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]")
       .filter((r) => r.使用年月日 === today && r.userId === uid && r.状態 !== "取消");
-    return { ok: true, work, pesticide };
+    return { ok: true, work, spray, pesticide: spray };
   }
 
   if (action === "history") {
@@ -398,15 +444,40 @@ function mockGet(action, params) {
     const work = JSON.parse(localStorage.getItem(MOCK_WORK_KEY) || "[]")
       .filter((r) => r.状態 !== "取消" && r.作業日 >= sinceKey)
       .map((r) => Object.assign({ _type: "work" }, r));
-    const pesticide = JSON.parse(localStorage.getItem(MOCK_PESTICIDE_KEY) || "[]")
+    const spray = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]")
       .filter((r) => r.状態 !== "取消" && r.使用年月日 >= sinceKey)
-      .map((r) => Object.assign({ _type: "pesticide" }, r));
-    const items = work.concat(pesticide).sort((a, b) => {
+      .map((r) => Object.assign({ _type: "spray" }, r));
+    const items = work.concat(spray).sort((a, b) => {
       const da = a._type === "work" ? a.作業日 : a.使用年月日;
       const db = b._type === "work" ? b.作業日 : b.使用年月日;
       return da < db ? 1 : da > db ? -1 : 0;
     });
     return { ok: true, items };
+  }
+
+  // 法定帳簿。農薬登録のある資材の行だけを抜き出す（GAS側 getLegalLedger_ と同じ）
+  if (action === "legalLedger") {
+    const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
+    const rows = [];
+    all.filter((r) => r.状態 !== "取消" && inRange(r.使用年月日, params)).forEach((parent) => {
+      (parent.items || []).forEach((it) => {
+        if (String(it.農薬登録の有無).toUpperCase() !== "TRUE") return;
+        rows.push({
+          使用年月日: parent.使用年月日,
+          使用場所: parent.拠点 + (parent["棟・区画"] ? " / " + parent["棟・区画"] : ""),
+          農作物の種類: parent.農作物の種類,
+          農薬の名称: it.資材名,
+          希釈倍数: it.希釈倍数,
+          使用量: it.使用量,
+          使用量単位: it.使用量単位,
+          散布液量L: it.散布液量L,
+          "対象病害虫・目的": [parent.目的タグ, parent.目的自由入力].filter(String).join(PURPOSE_SEPARATOR),
+          作業者: parent.記録者,
+          記録ID: parent.記録ID,
+        });
+      });
+    });
+    return { ok: true, rows };
   }
 
   if (action === "weather") return { ok: true, weather: null };

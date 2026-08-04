@@ -15,6 +15,9 @@
  * バージョン「新バージョン」を選んで再デプロイしないと、公開URL（/exec）は
  * 古いコードのまま動き続ける（エディタでの実行と公開URLは別物）。
  *
+ * 旧「防除記録」構成から移行する場合は、setup より先に migrateToSpray を
+ * 1回だけ実行する（シート名を散布記録系へ改名する）。
+ *
  * スタッフ運用に切り替える際は、プロジェクトの設定 > スクリプトプロパティに
  * APP_TOKEN を設定し、frontend/config.js の APP_TOKEN に同じ値を入れると
  * 簡易トークン認証が有効になる（未設定の間は誰でも書き込める）。
@@ -22,9 +25,10 @@
  * 気象データの自動更新を使うには、setup実行後に setupWeatherTrigger を
  * 1回だけエディタから実行する（毎日の自動取得トリガーを登録する）。
  *
- * このアプリの防除記録は「日々の記録を気軽に残す簡易帳簿」として設計している。
+ * このアプリの散布記録は「日々の記録を気軽に残す簡易帳簿」として設計している。
  * 正式な法定帳簿（農薬取締法省令9条）としてそのまま提出する場合は、
- * 別途、内容を確認のうえ正式な様式へ転記することを想定している。
+ * action=legalLedger で農薬登録のある資材だけを抽出し、内容を確認のうえ
+ * 正式な様式へ転記することを想定している。
  *
  * データの読み書きはすべて「シートの実際のヘッダー行を都度読んで列名で対応させる」
  * 方式にしている（ensureSheet_が既存シートに新しい列を追加するとき「末尾」に
@@ -39,15 +43,19 @@ var WEATHER_LAT = 35.5605;
 var WEATHER_LON = 140.1762;
 
 var SHEET_WORK = "作業記録";
-var SHEET_PESTICIDE = "防除記録";
-var SHEET_PESTICIDE_ITEMS = "防除記録明細";
+var SHEET_SPRAY = "散布記録";
+var SHEET_SPRAY_ITEMS = "散布記録明細";
 var SHEET_MASTER_BASE = "マスタ_拠点棟";
 var SHEET_MASTER_WORKTYPE = "マスタ_作業分類";
-var SHEET_MASTER_PESTICIDE = "マスタ_農薬";
+var SHEET_MASTER_MATERIAL = "マスタ_資材";
 var SHEET_MASTER_CROP = "マスタ_品目";
-var SHEET_RECIPE = "マスタ_防除レシピ";
-var SHEET_RECIPE_ITEMS = "マスタ_防除レシピ明細";
+var SHEET_MASTER_PURPOSE = "マスタ_散布目的";
+var SHEET_RECIPE = "マスタ_散布レシピ";
+var SHEET_RECIPE_ITEMS = "マスタ_散布レシピ明細";
 var SHEET_WEATHER = "気象データ";
+
+// 目的タグを1つの列にまとめるときの区切り文字。マスタの目的名にこの文字は使わない
+var PURPOSE_SEPARATOR = "、";
 
 var WORK_HEADERS = [
   "記録ID", "作業日", "記録日時", "拠点", "棟・区画", "作業分類", "作業詳細",
@@ -55,31 +63,42 @@ var WORK_HEADERS = [
   "記録者", "userId", "備考", "状態", "更新日時",
 ];
 
-// 防除記録（親）: 1回の散布イベント。法定5項目のうち日付・場所・作物はここに1つ持つ
-var PESTICIDE_HEADERS = [
-  "記録ID", "使用年月日", "拠点", "棟・区画", "農作物の種類", "対象病害虫",
-  "レシピ名", "記録者", "userId", "備考", "状態", "更新日時",
+// 散布記録（親）: 1回の散布イベント。農薬・葉面散布肥料・展着剤をまとめて1回として扱う
+var SPRAY_HEADERS = [
+  "記録ID", "使用年月日", "拠点", "棟・区画", "農作物の種類", "散布区分",
+  "目的タグ", "目的自由入力", "レシピ名",
+  "開始時刻", "終了時刻", "所要時間分",
+  "記録者", "userId", "備考", "状態", "更新日時",
 ];
 
-// 防除記録明細（子）: 親1件に対して薬剤ごとに複数行。法定5項目のうち農薬名・使用量/希釈倍数はここ
-var PESTICIDE_ITEM_HEADERS = [
-  "記録ID", "薬剤名", "希釈倍数", "使用量", "使用量単位", "散布液量L",
+// 散布記録明細（子）: 親1件に対して資材ごとに複数行。
+// 区分・農薬登録の有無は保存時点のマスタ値をコピーして固定する
+// （後からマスタを直しても、過去の帳簿の抽出結果が遡って変わらないようにするため）
+var SPRAY_ITEM_HEADERS = [
+  "記録ID", "資材名", "区分", "農薬登録の有無", "希釈倍数", "使用量", "使用量単位", "散布液量L",
 ];
 
 var MASTER_BASE_HEADERS = ["拠点ID", "拠点名", "棟区画名", "面積a", "デフォルト品目", "有効フラグ", "表示順"];
 var MASTER_WORKTYPE_HEADERS = ["作業ID", "作業名", "農薬関連フラグ", "表示順", "有効フラグ"];
-var MASTER_PESTICIDE_HEADERS = [
+var MASTER_MATERIAL_HEADERS = [
   "薬剤ID", "薬剤名", "区分", "有効成分", "系統・IRAC/FRACコード", "登録番号",
-  "主な対象病害虫", "希釈倍率目安", "PHI目安", "有機JAS適合", "必要な保護具", "備考・出典", "有効フラグ",
+  "主な対象病害虫", "希釈倍率目安", "PHI目安", "有機JAS適合", "必要な保護具",
+  "農薬登録の有無", "備考・出典", "有効フラグ",
 ];
 var MASTER_CROP_HEADERS = ["品目ID", "品目名", "品種", "備考"];
+var MASTER_PURPOSE_HEADERS = ["目的ID", "目的名", "分類", "表示順", "有効フラグ"];
 
-// 防除レシピ（親）: 事前に決めた処方。散布時はレシピを選ぶだけで明細が自動入力される
+// 散布レシピ（親）: 事前に決めた処方。散布時はレシピを選ぶだけで明細が自動入力される
 var RECIPE_HEADERS = ["レシピID", "レシピ名", "対象病害虫", "使用時期の目安", "備考", "有効フラグ"];
-// 防除レシピ明細（子）: レシピに紐づく薬剤の組み合わせ
+// 散布レシピ明細（子）: レシピに紐づく資材の組み合わせ
 var RECIPE_ITEM_HEADERS = ["レシピID", "表示順", "薬剤名", "希釈倍数", "使用量", "使用量単位"];
 
 var WEATHER_HEADERS = ["日付", "取得区分", "最高気温", "最低気温", "天気概況", "天気コード", "降水確率", "取得日時", "更新日時"];
+
+// 散布区分の判定に使う区分の分類。
+// 展着剤は農薬登録があっても「防除をした」根拠にはしない（他の資材の効きを助けるだけのため）
+var KUBUN_PEST_CONTROL = ["殺虫剤", "殺菌剤", "殺虫殺菌剤", "除草剤", "殺ダニ剤", "生物殺虫剤（微生物）", "殺虫剤（気門封鎖剤）"];
+var KUBUN_FOLIAR = ["葉面散布肥料", "液体肥料", "葉面散布剤"];
 
 // WMO Weather interpretation codes → 日本語ラベル（Open-Meteo公式の分類に準拠）
 var WEATHER_CODE_LABELS = {
@@ -100,17 +119,63 @@ function weatherCodeToLabel_(code) {
 }
 
 // ===================================================================
+// 旧「防除記録」構成からの移行。setup より先に1回だけ実行する
+// ===================================================================
+function migrateToSpray() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var renames = [
+    ["防除記録", SHEET_SPRAY],
+    ["防除記録明細", SHEET_SPRAY_ITEMS],
+    ["マスタ_農薬", SHEET_MASTER_MATERIAL],
+    ["マスタ_防除レシピ", SHEET_RECIPE],
+    ["マスタ_防除レシピ明細", SHEET_RECIPE_ITEMS],
+  ];
+  var done = [];
+  renames.forEach(function (pair) {
+    var oldName = pair[0];
+    var newName = pair[1];
+    if (ss.getSheetByName(newName)) return;      // 既に新しい名前になっている
+    var sheet = ss.getSheetByName(oldName);
+    if (!sheet) return;                           // 旧シートがない（新規構築時）
+    sheet.setName(newName);
+    done.push(oldName + " → " + newName);
+  });
+
+  // 散布記録・明細は0件運用からの移行を前提に、ヘッダー行を新定義で置き直す。
+  // データが入っている場合は列名の対応が崩れるため、ヘッダーの置き換えは行わない
+  resetHeadersIfEmpty_(ss, SHEET_SPRAY, SPRAY_HEADERS, done);
+  resetHeadersIfEmpty_(ss, SHEET_SPRAY_ITEMS, SPRAY_ITEM_HEADERS, done);
+
+  Logger.log(done.length > 0 ? done.join("\n") : "移行対象はありませんでした");
+  return done;
+}
+
+function resetHeadersIfEmpty_(ss, name, headers, done) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) return;
+  if (sheet.getLastRow() >= 2) {
+    done.push("⚠ " + name + " にデータがあるためヘッダーは置き換えませんでした（不足列は末尾に追加されます）");
+    return;
+  }
+  sheet.clear();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.setFrozenRows(1);
+  done.push(name + " のヘッダーを新構成に置き換えました");
+}
+
+// ===================================================================
 // 初期セットアップ。最初に1回だけエディタから実行する
 // ===================================================================
 function setup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SHEET_WORK, WORK_HEADERS);
-  ensureSheet_(ss, SHEET_PESTICIDE, PESTICIDE_HEADERS);
-  ensureSheet_(ss, SHEET_PESTICIDE_ITEMS, PESTICIDE_ITEM_HEADERS);
+  ensureSheet_(ss, SHEET_SPRAY, SPRAY_HEADERS);
+  ensureSheet_(ss, SHEET_SPRAY_ITEMS, SPRAY_ITEM_HEADERS);
   ensureSheet_(ss, SHEET_MASTER_BASE, MASTER_BASE_HEADERS);
   ensureSheet_(ss, SHEET_MASTER_WORKTYPE, MASTER_WORKTYPE_HEADERS);
-  ensureSheet_(ss, SHEET_MASTER_PESTICIDE, MASTER_PESTICIDE_HEADERS);
+  ensureSheet_(ss, SHEET_MASTER_MATERIAL, MASTER_MATERIAL_HEADERS);
   ensureSheet_(ss, SHEET_MASTER_CROP, MASTER_CROP_HEADERS);
+  ensureSheet_(ss, SHEET_MASTER_PURPOSE, MASTER_PURPOSE_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE, RECIPE_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE_ITEMS, RECIPE_ITEM_HEADERS);
   ensureSheet_(ss, SHEET_WEATHER, WEATHER_HEADERS);
@@ -178,11 +243,12 @@ function seedMastersIfEmpty_(ss) {
     ]);
   }
 
+  // 散布に関わる作業は散布記録側で扱うため、作業分類には「防除」を置かない
   var workSheet = ss.getSheetByName(SHEET_MASTER_WORKTYPE);
   if (workSheet.getLastRow() < 2) {
     var works = [
       ["定植", "FALSE"], ["誘引", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
-      ["摘果", "FALSE"], ["収穫", "FALSE"], ["防除", "TRUE"], ["灌水", "FALSE"],
+      ["摘果", "FALSE"], ["収穫", "FALSE"], ["灌水", "FALSE"],
       ["清掃", "FALSE"], ["観察", "FALSE"], ["その他", "FALSE"],
     ];
     var rows = works.map(function (w, i) {
@@ -191,19 +257,22 @@ function seedMastersIfEmpty_(ss) {
     workSheet.getRange(2, 1, rows.length, MASTER_WORKTYPE_HEADERS.length).setValues(rows);
   }
 
-  // 保護具は薬剤ラベルの記載が正であり、ここは一般的な目安。使用前に必ずラベル・登録情報を確認する
-  var pestSheet = ss.getSheetByName(SHEET_MASTER_PESTICIDE);
-  if (pestSheet.getLastRow() < 2) {
-    pestSheet.getRange(2, 1, 3, MASTER_PESTICIDE_HEADERS.length).setValues([
+  // 保護具は資材ラベルの記載が正であり、ここは一般的な目安。使用前に必ずラベル・登録情報を確認する
+  var matSheet = ss.getSheetByName(SHEET_MASTER_MATERIAL);
+  if (matSheet.getLastRow() < 2) {
+    matSheet.getRange(2, 1, 3, MASTER_MATERIAL_HEADERS.length).setValues([
       ["P01", "スミチオン乳剤", "殺虫剤", "MEP（フェニトロチオン）50%", "有機リン系・IRAC 1B", "",
         "チョウ目・カメムシ・アブラムシ等", "作物ごとにラベル確認", "作物ごとにラベル確認", "FALSE",
-        "保護メガネ・防除用マスク・不浸透性手袋・長袖長ズボン（目安。ラベル要確認）", "農薬・防除メモ.mdより転記", "TRUE"],
+        "保護メガネ・防除用マスク・不浸透性手袋・長袖長ズボン（目安。ラベル要確認）", "TRUE",
+        "農薬・防除メモ.mdより転記", "TRUE"],
       ["P02", "BTゼンターリ顆粒水和剤", "生物殺虫剤（微生物）", "BT（アイザワイ系統）生芽胞＋結晶毒素10%", "BT剤・IRAC 11A", "",
         "鱗翅目（チョウ目）幼虫", "作物ごとにラベル確認", "作物ごとにラベル確認", "TRUE",
-        "マスク・手袋（目安。ラベル要確認）", "農薬・防除メモ.mdより転記", "TRUE"],
+        "マスク・手袋（目安。ラベル要確認）", "TRUE",
+        "農薬・防除メモ.mdより転記", "TRUE"],
       ["P03", "フーモン", "殺虫剤（気門封鎖剤）", "ポリグリセリン脂肪酸エステル82.5%", "気門封鎖剤（IRAC対象外）", "23741号",
         "ハダニ類・アブラムシ類・コナジラミ類、うどんこ病", "1000倍", "収穫前日まで", "FALSE",
-        "マスク・手袋（目安。ラベル要確認）", "農薬・防除メモ.mdより転記", "TRUE"],
+        "マスク・手袋（目安。ラベル要確認）", "TRUE",
+        "農薬・防除メモ.mdより転記", "TRUE"],
     ]);
   }
 
@@ -214,7 +283,26 @@ function seedMastersIfEmpty_(ss) {
     ]);
   }
 
-  // サンプルレシピ（使い方の見本。実際の薬剤選定は防除基準・登録情報の確認が前提）
+  // 散布の目的。防除は病害虫名、葉面散布は生理症状・生育目的の言葉になる
+  var purposeSheet = ss.getSheetByName(SHEET_MASTER_PURPOSE);
+  if (purposeSheet.getLastRow() < 2) {
+    var purposes = [
+      ["コナジラミ類", "防除"], ["アザミウマ類", "防除"], ["ハモグリバエ類", "防除"],
+      ["オオタバコガ", "防除"], ["ハスモンヨトウ", "防除"], ["トマトサビダニ", "防除"],
+      ["葉かび病", "防除"], ["疫病", "防除"], ["うどんこ病", "防除"], ["灰色かび病", "防除"],
+      ["尻腐れ予防", "生育・生理"], ["葉の黄化・微量要素補給", "生育・生理"],
+      ["樹勢回復", "生育・生理"], ["新葉の伸長促進", "生育・生理"],
+      ["徒長対策", "生育・生理"], ["軟果対策", "生育・生理"],
+      ["着色改善", "生育・生理"], ["高温ストレス対策", "生育・生理"],
+      ["根の酸欠対策", "生育・生理"],
+    ];
+    var prows = purposes.map(function (p, i) {
+      return ["U" + (i + 1), p[0], p[1], i + 1, "TRUE"];
+    });
+    purposeSheet.getRange(2, 1, prows.length, MASTER_PURPOSE_HEADERS.length).setValues(prows);
+  }
+
+  // サンプルレシピ（使い方の見本。実際の資材選定は防除基準・登録情報の確認が前提）
   var recipeSheet = ss.getSheetByName(SHEET_RECIPE);
   if (recipeSheet.getLastRow() < 2) {
     recipeSheet.getRange(2, 1, 1, RECIPE_HEADERS.length).setValues([
@@ -246,10 +334,11 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     if (!checkToken_(data)) return json_({ ok: false, error: "unauthorized" });
 
-    if (data.type === "pesticide") return savePesticide_(data);
+    // "pesticide"/"cancelPesticide" は旧フロント互換のため残す
+    if (data.type === "spray" || data.type === "pesticide") return saveSpray_(data);
     if (data.type === "updateRecord") return updateRecord_(data);
     if (data.type === "cancelRecord") return cancelRecord_(data);
-    if (data.type === "cancelPesticide") return cancelPesticide_(data);
+    if (data.type === "cancelSpray" || data.type === "cancelPesticide") return cancelSpray_(data);
     if (data.type === "upsertMaster") return upsertMaster_(data);
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
@@ -288,20 +377,20 @@ function saveWork_(data) {
   return json_({ ok: true, id: id });
 }
 
-// 防除記録は「気軽に残す簡易帳簿」という位置づけ。法定5項目のうち
-// 農薬名・使用量/希釈倍数は明細（items）側でチェックする
-function validatePesticide_(data) {
+// 散布記録は「気軽に残す簡易帳簿」という位置づけ。
+// 農薬に限らず葉面散布肥料だけの散布も記録できるようにしている
+function validateSpray_(data) {
   var missing = [];
   if (!data.useDate) missing.push("使用年月日");
   if (!data.base) missing.push("使用場所（拠点）");
   if (!data.crop) missing.push("農作物の種類");
   var items = data.items || [];
   if (items.length === 0) {
-    missing.push("農薬（少なくとも1件）");
+    missing.push("散布する資材（少なくとも1件）");
   } else {
     items.forEach(function (it, idx) {
       var n = idx + 1;
-      if (!it.pesticideName) missing.push(n + "件目の農薬名");
+      if (!it.materialName && !it.pesticideName) missing.push(n + "件目の資材名");
       var hasDilution = !!it.dilution;
       var hasAmount = !!(it.amount && it.amountUnit);
       if (!hasDilution && !hasAmount) missing.push(n + "件目の希釈倍数または使用量");
@@ -310,8 +399,42 @@ function validatePesticide_(data) {
   return missing;
 }
 
-function savePesticide_(data) {
-  var missing = validatePesticide_(data);
+// 資材名から、マスタの区分と農薬登録の有無を引く（見つからなければ空で返す）
+function lookupMaterial_(name) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MASTER_MATERIAL);
+  if (!sheet || sheet.getLastRow() < 2) return { 区分: "", 農薬登録の有無: "" };
+  var hm = headerMap_(sheet);
+  var nameCol = hm["薬剤名"];
+  if (nameCol === undefined) return { 区分: "", 農薬登録の有無: "" };
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][nameCol]) !== String(name)) continue;
+    return {
+      区分: hm["区分"] !== undefined ? values[i][hm["区分"]] : "",
+      農薬登録の有無: hm["農薬登録の有無"] !== undefined ? values[i][hm["農薬登録の有無"]] : "",
+    };
+  }
+  return { 区分: "", 農薬登録の有無: "" };
+}
+
+// 明細の区分から散布区分（防除／葉面散布／防除・葉面散布）を決める。
+// 展着剤は農薬登録があっても判定に影響させない（他の資材の効きを助けるだけのため）
+function decideSprayType_(itemRows) {
+  var hasPest = false;
+  var hasFoliar = false;
+  itemRows.forEach(function (it) {
+    var kubun = String(it["区分"] || "");
+    if (KUBUN_PEST_CONTROL.indexOf(kubun) >= 0) hasPest = true;
+    if (KUBUN_FOLIAR.indexOf(kubun) >= 0) hasFoliar = true;
+  });
+  if (hasPest && hasFoliar) return "防除・葉面散布";
+  if (hasPest) return "防除";
+  if (hasFoliar) return "葉面散布";
+  return "その他";
+}
+
+function saveSpray_(data) {
+  var missing = validateSpray_(data);
   if (missing.length > 0) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
@@ -320,15 +443,38 @@ function savePesticide_(data) {
   var nowStr = Utilities.formatDate(now, TZ, "yyyy-MM-dd HH:mm:ss");
   var id = Utilities.getUuid();
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
+  // 先に明細を組み立てて、マスタから区分・農薬登録をスナップショットする
+  var itemRows = data.items.map(function (it) {
+    var name = it.materialName || it.pesticideName;
+    var master = lookupMaterial_(name);
+    return {
+      "記録ID": id,
+      "資材名": name,
+      "区分": master.区分,
+      "農薬登録の有無": master.農薬登録の有無,
+      "希釈倍数": it.dilution || "",
+      "使用量": it.amount || "",
+      "使用量単位": it.amountUnit || "",
+      "散布液量L": it.totalVolumeL || "",
+    };
+  });
+
+  var purposeTags = (data.purposeTags || []).join(PURPOSE_SEPARATOR);
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY);
   var obj = {
     "記録ID": id,
     "使用年月日": data.useDate,
     "拠点": data.base,
     "棟・区画": data.building || "",
     "農作物の種類": data.crop,
-    "対象病害虫": data.targetPest || "",
+    "散布区分": decideSprayType_(itemRows),
+    "目的タグ": purposeTags,
+    "目的自由入力": data.purposeFree || data.targetPest || "",
     "レシピ名": data.recipeName || "",
+    "開始時刻": data.startTime || "",
+    "終了時刻": data.endTime || "",
+    "所要時間分": data.durationMin || "",
     "記録者": data.recorder || "",
     "userId": data.userId || "",
     "備考": data.note || "",
@@ -337,30 +483,22 @@ function savePesticide_(data) {
   };
   sheet.appendRow(objectToRowBySheet_(sheet, obj));
 
-  var itemSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE_ITEMS);
-  data.items.forEach(function (it) {
-    var itemObj = {
-      "記録ID": id,
-      "薬剤名": it.pesticideName,
-      "希釈倍数": it.dilution || "",
-      "使用量": it.amount || "",
-      "使用量単位": it.amountUnit || "",
-      "散布液量L": it.totalVolumeL || "",
-    };
-    itemSheet.appendRow(objectToRowBySheet_(itemSheet, itemObj));
+  var itemSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY_ITEMS);
+  itemRows.forEach(function (row) {
+    itemSheet.appendRow(objectToRowBySheet_(itemSheet, row));
   });
 
   return json_({ ok: true, id: id });
 }
 
 // マスタへの行の追加・更新。
-// 農薬やレシピを手入力せずに登録できるようにするための窓口で、記録系シートは対象外。
-// data = { sheet: "マスタ_農薬", key: "薬剤ID"（複数列で照合するなら配列）, rows: [{列名: 値, ...}, ...] }
+// 資材やレシピを手入力せずに登録できるようにするための窓口で、記録系シートは対象外。
+// data = { sheet: "マスタ_資材", key: "薬剤ID"（複数列で照合するなら配列）, rows: [{列名: 値, ...}, ...] }
 // key が一致する行があれば渡された列だけ上書きし、なければ新しい行として追加する。
 function upsertMaster_(data) {
   var allowed = [
-    SHEET_MASTER_BASE, SHEET_MASTER_WORKTYPE, SHEET_MASTER_PESTICIDE,
-    SHEET_MASTER_CROP, SHEET_RECIPE, SHEET_RECIPE_ITEMS,
+    SHEET_MASTER_BASE, SHEET_MASTER_WORKTYPE, SHEET_MASTER_MATERIAL,
+    SHEET_MASTER_CROP, SHEET_MASTER_PURPOSE, SHEET_RECIPE, SHEET_RECIPE_ITEMS,
   ];
   if (allowed.indexOf(data.sheet) < 0) {
     return json_({ ok: false, error: "このシートは書き換えられません: " + data.sheet });
@@ -378,6 +516,16 @@ function upsertMaster_(data) {
   for (var k = 0; k < keys.length; k++) {
     if (hm[keys[k]] === undefined) {
       return json_({ ok: false, error: "指定された列がシートにありません: " + keys[k] });
+    }
+  }
+
+  // 目的名に区切り文字が入ると、目的タグを分解できなくなるので弾く
+  if (data.sheet === SHEET_MASTER_PURPOSE) {
+    for (var r = 0; r < rows.length; r++) {
+      var nm = String(rows[r]["目的名"] || "");
+      if (nm.indexOf(PURPOSE_SEPARATOR) >= 0) {
+        return json_({ ok: false, error: "目的名に「" + PURPOSE_SEPARATOR + "」は使えません: " + nm });
+      }
     }
   }
 
@@ -485,9 +633,9 @@ function cancelRecord_(data) {
   return json_({ ok: false, error: "対象の記録が見つかりません" });
 }
 
-// 防除記録の取消（簡易帳簿として運用するため理由入力は求めない。論理削除で明細は残す）
-function cancelPesticide_(data) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
+// 散布記録の取消（簡易帳簿として運用するため理由入力は求めない。論理削除で明細は残す）
+function cancelSpray_(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY);
   var values = sheet.getDataRange().getValues();
   var hm = headerMap_(sheet);
   var idCol = hm["記録ID"];
@@ -517,9 +665,10 @@ function doGet(e) {
 
   if (action === "masters") return getMasters_();
   if (action === "records") return getRecords_(params);
-  if (action === "pesticides") return getPesticides_(params);
+  if (action === "sprays" || action === "pesticides") return getSprays_(params);
   if (action === "mytoday") return getMyToday_(params);
   if (action === "history") return getHistory_(params);
+  if (action === "legalLedger") return getLegalLedger_(params);
   if (action === "weather") return getWeather_(params);
   if (action === "weatherRange") return getWeatherRange_(params);
   if (action === "debug") return getDebug_();
@@ -529,12 +678,15 @@ function doGet(e) {
 
 function getMasters_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var materials = sheetToObjects_(ss, SHEET_MASTER_MATERIAL);
   return json_({
     ok: true,
     bases: sheetToObjects_(ss, SHEET_MASTER_BASE),
     workTypes: sheetToObjects_(ss, SHEET_MASTER_WORKTYPE),
-    pesticides: sheetToObjects_(ss, SHEET_MASTER_PESTICIDE),
+    materials: materials,
+    pesticides: materials, // 旧フロント互換
     crops: sheetToObjects_(ss, SHEET_MASTER_CROP),
+    purposes: sheetToObjects_(ss, SHEET_MASTER_PURPOSE),
     recipes: sheetToObjects_(ss, SHEET_RECIPE),
     recipeItems: sheetToObjects_(ss, SHEET_RECIPE_ITEMS),
   });
@@ -569,9 +721,9 @@ function getRecords_(params) {
   return json_({ ok: true, records: records });
 }
 
-// 記録IDに紐づく防除記録明細（薬剤ごとの実績）を取得する
-function getPesticideItems_(recordId) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE_ITEMS);
+// 記録IDに紐づく散布記録明細（資材ごとの実績）を取得する
+function getSprayItems_(recordId) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY_ITEMS);
   var values = sheet.getDataRange().getValues();
   var hm = headerMap_(sheet);
   var idCol = hm["記録ID"];
@@ -582,8 +734,8 @@ function getPesticideItems_(recordId) {
   return items;
 }
 
-function getPesticides_(params) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PESTICIDE);
+function getSprays_(params) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY);
   var values = sheet.getDataRange().getValues();
   var hm = headerMap_(sheet);
   var from = params.from || "0000-00-00";
@@ -597,7 +749,7 @@ function getPesticides_(params) {
     if (d < from || d > to) continue;
     if (base && values[i][baseCol] !== base) continue;
     var rec = rowToObjectBySheet_(hm, values[i]);
-    rec.items = getPesticideItems_(rec["記録ID"]);
+    rec.items = getSprayItems_(rec["記録ID"]);
     records.push(rec);
   }
   records.reverse();
@@ -612,36 +764,33 @@ function getMyToday_(params) {
   var workSheet = ss.getSheetByName(SHEET_WORK);
   var workValues = workSheet.getDataRange().getValues();
   var whm = headerMap_(workSheet);
-  var wDateCol = whm["作業日"];
-  var wUidCol = whm["userId"];
-  var wStateCol = whm["状態"];
   var work = [];
   for (var i = 1; i < workValues.length; i++) {
-    if (dateKey_(workValues[i][wDateCol]) !== today) continue;
-    if (workValues[i][wUidCol] !== uid) continue;
-    if (workValues[i][wStateCol] === "取消") continue;
+    if (dateKey_(workValues[i][whm["作業日"]]) !== today) continue;
+    if (workValues[i][whm["userId"]] !== uid) continue;
+    if (workValues[i][whm["状態"]] === "取消") continue;
     work.push(rowToObjectBySheet_(whm, workValues[i]));
   }
 
-  var pestSheet = ss.getSheetByName(SHEET_PESTICIDE);
-  var pestValues = pestSheet.getDataRange().getValues();
-  var phm = headerMap_(pestSheet);
-  var pDateCol = phm["使用年月日"];
-  var pUidCol = phm["userId"];
-  var pStateCol = phm["状態"];
-  var pesticide = [];
-  for (var j = 1; j < pestValues.length; j++) {
-    if (dateKey_(pestValues[j][pDateCol]) !== today) continue;
-    if (pestValues[j][pUidCol] !== uid) continue;
-    if (pestValues[j][pStateCol] === "取消") continue;
-    var rec = rowToObjectBySheet_(phm, pestValues[j]);
-    rec.items = getPesticideItems_(rec["記録ID"]);
-    pesticide.push(rec);
+  var spraySheet = ss.getSheetByName(SHEET_SPRAY);
+  var sprayValues = spraySheet.getDataRange().getValues();
+  var shm = headerMap_(spraySheet);
+  var spray = [];
+  for (var j = 1; j < sprayValues.length; j++) {
+    if (dateKey_(sprayValues[j][shm["使用年月日"]]) !== today) continue;
+    if (sprayValues[j][shm["userId"]] !== uid) continue;
+    if (sprayValues[j][shm["状態"]] === "取消") continue;
+    var rec = rowToObjectBySheet_(shm, sprayValues[j]);
+    rec.items = getSprayItems_(rec["記録ID"]);
+    spray.push(rec);
   }
 
-  return json_({ ok: true, work: work, pesticide: pesticide });
+  return json_({ ok: true, work: work, spray: spray, pesticide: spray });
 }
 
+// 作業記録と散布記録をまとめて日付の新しい順に返す。
+// 散布記録は _type:"spray" と散布区分（防除／葉面散布）を持たせ、
+// その日の作業一覧・作業時間の中に散布も現れるようにしている
 function getHistory_(params) {
   var days = Math.max(1, Math.min(90, Number(params.days) || 14));
   var since = new Date();
@@ -653,29 +802,25 @@ function getHistory_(params) {
   var workSheet = ss.getSheetByName(SHEET_WORK);
   var workValues = workSheet.getDataRange().getValues();
   var whm = headerMap_(workSheet);
-  var wDateCol = whm["作業日"];
-  var wStateCol = whm["状態"];
   for (var i = 1; i < workValues.length; i++) {
-    var d = dateKey_(workValues[i][wDateCol]);
+    var d = dateKey_(workValues[i][whm["作業日"]]);
     if (d < sinceKey) continue;
-    if (workValues[i][wStateCol] === "取消") continue;
+    if (workValues[i][whm["状態"]] === "取消") continue;
     var o = rowToObjectBySheet_(whm, workValues[i]);
     o._type = "work";
     items.push(o);
   }
 
-  var pestSheet = ss.getSheetByName(SHEET_PESTICIDE);
-  var pestValues = pestSheet.getDataRange().getValues();
-  var phm = headerMap_(pestSheet);
-  var pDateCol = phm["使用年月日"];
-  var pStateCol = phm["状態"];
-  for (var j = 1; j < pestValues.length; j++) {
-    var d2 = dateKey_(pestValues[j][pDateCol]);
+  var spraySheet = ss.getSheetByName(SHEET_SPRAY);
+  var sprayValues = spraySheet.getDataRange().getValues();
+  var shm = headerMap_(spraySheet);
+  for (var j = 1; j < sprayValues.length; j++) {
+    var d2 = dateKey_(sprayValues[j][shm["使用年月日"]]);
     if (d2 < sinceKey) continue;
-    if (pestValues[j][pStateCol] === "取消") continue;
-    var o2 = rowToObjectBySheet_(phm, pestValues[j]);
-    o2._type = "pesticide";
-    o2.items = getPesticideItems_(o2["記録ID"]);
+    if (sprayValues[j][shm["状態"]] === "取消") continue;
+    var o2 = rowToObjectBySheet_(shm, sprayValues[j]);
+    o2._type = "spray";
+    o2.items = getSprayItems_(o2["記録ID"]);
     items.push(o2);
   }
 
@@ -688,6 +833,43 @@ function getHistory_(params) {
   });
 
   return json_({ ok: true, items: items });
+}
+
+// 法定帳簿用の抽出。農薬登録のある資材の行だけを、親の情報と結合して平らに返す。
+// 展着剤も農薬登録があれば対象に含まれ、肥料（クロロゲン等）は除外される
+function getLegalLedger_(params) {
+  var from = params.from || "0000-00-00";
+  var to = params.to || "9999-99-99";
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var spraySheet = ss.getSheetByName(SHEET_SPRAY);
+  var sprayValues = spraySheet.getDataRange().getValues();
+  var shm = headerMap_(spraySheet);
+
+  var rows = [];
+  for (var i = 1; i < sprayValues.length; i++) {
+    var d = dateKey_(sprayValues[i][shm["使用年月日"]]);
+    if (d < from || d > to) continue;
+    if (sprayValues[i][shm["状態"]] === "取消") continue;
+    var parent = rowToObjectBySheet_(shm, sprayValues[i]);
+    getSprayItems_(parent["記録ID"]).forEach(function (it) {
+      if (String(it["農薬登録の有無"]).toUpperCase() !== "TRUE") return;
+      rows.push({
+        "使用年月日": parent["使用年月日"],
+        "使用場所": parent["拠点"] + (parent["棟・区画"] ? " / " + parent["棟・区画"] : ""),
+        "農作物の種類": parent["農作物の種類"],
+        "農薬の名称": it["資材名"],
+        "希釈倍数": it["希釈倍数"],
+        "使用量": it["使用量"],
+        "使用量単位": it["使用量単位"],
+        "散布液量L": it["散布液量L"],
+        "対象病害虫・目的": [parent["目的タグ"], parent["目的自由入力"]].filter(String).join(PURPOSE_SEPARATOR),
+        "作業者": parent["記録者"],
+        "記録ID": parent["記録ID"],
+      });
+    });
+  }
+  return json_({ ok: true, rows: rows });
 }
 
 // 動作診断用。問題が解決したら消してよい
