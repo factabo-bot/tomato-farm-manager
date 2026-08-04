@@ -3,7 +3,7 @@
 const state = {
   masters: null,
   base: null,
-  building: null,
+  buildings: new Set(), // 収穫などで複数の棟をまとめて回ることがあるので複数選択
   workType: null,
   profile: getProfile(),
 };
@@ -41,7 +41,7 @@ function renderBases() {
     btn.type = "button";
     btn.addEventListener("click", () => {
       state.base = name;
-      state.building = null;
+      state.buildings.clear(); // 拠点が変われば棟の選択も外す
       renderBases();
     });
     box.appendChild(btn);
@@ -53,16 +53,43 @@ function renderBuildings() {
   const box = $("building-buttons");
   box.innerHTML = "";
   const buildings = buildingsOfBase(state.masters, state.base);
-  if (!state.building && buildings.length > 0) state.building = buildings[0].棟区画名;
+
+  // 未選択のときは先頭の棟を既定にしておく（1棟だけの拠点でいちいち選ばなくて済むように）
+  if (state.buildings.size === 0 && buildings.length > 0) {
+    state.buildings.add(buildings[0].棟区画名);
+  }
+
   buildings.forEach((b) => {
-    const btn = el("button", "btn" + (b.棟区画名 === state.building ? " active" : ""), b.棟区画名);
+    const name = b.棟区画名;
+    const btn = el("button", "btn" + (state.buildings.has(name) ? " active" : ""), name);
     btn.type = "button";
     btn.addEventListener("click", () => {
-      state.building = b.棟区画名;
+      state.buildings.has(name) ? state.buildings.delete(name) : state.buildings.add(name);
       renderBuildings();
     });
     box.appendChild(btn);
   });
+
+  // 棟が複数ある拠点だけ一括選択を出す（1棟しかない拠点では邪魔になるため）
+  const bulk = $("building-bulk");
+  bulk.innerHTML = "";
+  if (buildings.length > 1) {
+    const all = el("button", "btn chip", "すべて選択");
+    all.type = "button";
+    all.addEventListener("click", () => {
+      buildings.forEach((b) => state.buildings.add(b.棟区画名));
+      renderBuildings();
+    });
+    bulk.appendChild(all);
+
+    const clear = el("button", "btn chip", "選択を解除");
+    clear.type = "button";
+    clear.addEventListener("click", () => {
+      state.buildings.clear();
+      renderBuildings();
+    });
+    bulk.appendChild(clear);
+  }
 }
 
 function activeWorkTypes() {
@@ -88,7 +115,7 @@ function renderWorkTypes() {
 
 async function submit() {
   if (!state.base) return toast("拠点を選択してください");
-  if (!state.building) return toast("棟・区画を選択してください");
+  if (state.buildings.size === 0) return toast("棟・区画を選択してください");
   if (!state.workType) return toast("作業を選択してください");
   if (state.workType === "その他" && !$("work-detail").value.trim()) {
     return toast("作業内容を記入してください");
@@ -97,7 +124,8 @@ async function submit() {
   const payload = {
     workDate: $("work-date").value || formatToday(),
     base: state.base,
-    building: state.building,
+    // 複数の棟をまとめて回った場合は「1号棟、2号棟」のように1つの記録にまとめる
+    building: [...state.buildings].join(PURPOSE_SEPARATOR),
     workType: state.workType,
     workDetail: $("work-detail").value.trim(),
     startTime: $("start-time").value,
