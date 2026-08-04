@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>作業記録 - トマト栽培管理</title>
+<title>生育調査 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
 <link rel="stylesheet" href="styles.css?v=20260804d">
@@ -17,9 +17,9 @@
   </div>
   <nav class="mode-nav">
     <a href="index.html">🏠 ホーム</a>
-    <a href="work.html" class="current">📝 作業</a>
+    <a href="work.html">📝 作業</a>
     <a href="pesticide.html">🧪 散布</a>
-    <a href="growth.html">📏 生育</a>
+    <a href="growth.html" class="current">📏 生育</a>
     <a href="history.html">📋 履歴</a>
   </nav>
 </header>
@@ -27,59 +27,45 @@
 <main>
   <div id="queue-badge" class="queue-badge" hidden></div>
 
+  <p class="hint law-hint">週1回、同じ株を測ると推移が読めます。茎径は<strong>生長点から15cm下</strong>で測ると値がぶれません。器具がない日は目視だけでも記録できます。</p>
+
   <section>
-    <h2>作業日</h2>
-    <input type="date" id="work-date" class="date-input">
+    <h2>調査日</h2>
+    <input type="date" id="survey-date" class="date-input">
   </section>
 
   <section>
-    <h2>① 拠点</h2>
+    <h2>拠点</h2>
     <div id="base-buttons" class="btn-row"><span class="hint">読み込み中…</span></div>
   </section>
 
   <section>
-    <h2>② 棟・区画（複数選べます）</h2>
+    <h2>棟・区画</h2>
     <div id="building-buttons" class="btn-row"></div>
-    <div id="building-bulk" class="btn-row"></div>
   </section>
 
   <section>
-    <h2>③ 作業</h2>
-    <div id="work-buttons" class="btn-row"></div>
-    <textarea id="work-detail" placeholder="作業内容を記入" hidden></textarea>
-  </section>
-
-  <section class="grid-2">
-    <div>
-      <label>開始時刻</label>
-      <input type="time" id="start-time">
-    </div>
-    <div>
-      <label>終了時刻</label>
-      <input type="time" id="end-time">
-    </div>
-  </section>
-
-  <section class="grid-2">
-    <div>
-      <label>数量</label>
-      <input type="number" id="quantity" placeholder="例: 120" inputmode="decimal">
-    </div>
-    <div>
-      <label>単位</label>
-      <input type="text" id="quantity-unit" placeholder="例: 株、kg">
-    </div>
+    <h2>農作物の種類</h2>
+    <select id="crop-select"></select>
   </section>
 
   <section>
-    <textarea id="note" placeholder="備考（任意）：気づいたこと、課題など"></textarea>
+    <div class="section-head">
+      <h2>調査株</h2>
+      <span class="hint" id="last-info"></span>
+    </div>
+    <div id="plant-list"></div>
+    <button id="add-plant" class="btn-secondary" type="button">＋ 株を追加</button>
+  </section>
+
+  <section>
+    <textarea id="note" placeholder="所感（任意）：全体の印象、気になったことなど"></textarea>
     <button id="submit" class="btn-primary" type="button">記録する</button>
   </section>
 
   <section>
-    <h2>今日の記録</h2>
+    <h2>今日の調査</h2>
     <div id="my-records"></div>
-    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（当日分のみ）</p>
   </section>
 </main>
 
@@ -88,7 +74,7 @@
 <script src="config.js?v=20260804d"></script>
 <script src="masters-default.js?v=20260804d"></script>
 <script src="common.js?v=20260804d"></script>
-<script src="work.js?v=20260804d"></script>
+<script src="growth.js?v=20260804d"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

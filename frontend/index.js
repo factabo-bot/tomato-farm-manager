@@ -20,12 +20,14 @@ async function init() {
   const res = await apiGet("mytoday", { userId: profile.userId });
   const work = res.work || [];
   const spray = res.spray || res.pesticide || [];
+  const growth = res.growth || [];
   $("work-count").textContent = work.length;
   $("spray-count").textContent = spray.length;
-  renderTodayList(work, spray);
+  $("growth-count").textContent = growth.length;
+  renderTodayList(work, spray, growth);
 }
 
-function renderTodayList(work, spray) {
+function renderTodayList(work, spray, growth) {
   const box = $("today-list");
   box.innerHTML = "";
   const items = [];
@@ -42,6 +44,14 @@ function renderTodayList(work, spray) {
     items.push({
       time: (r.開始時刻 || (r.更新日時 || "").slice(11, 16)),
       label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
+    });
+  });
+
+  (growth || []).forEach((r) => {
+    const n = (r.items || []).length;
+    items.push({
+      time: (r.更新日時 || "").slice(11, 16),
+      label: `📏 ${r["棟・区画"]} / 生育調査 ${n}株`,
     });
   });
 

@@ -199,6 +199,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
 const MOCK_WORK_KEY = "tfm_mock_work";
 const MOCK_SPRAY_KEY = "tfm_mock_spray";
+const MOCK_GROWTH_KEY = "tfm_mock_growth";
 
 // 目的タグを1列にまとめるときの区切り文字（GAS側 PURPOSE_SEPARATOR と合わせる）
 const PURPOSE_SEPARATOR = "、";
@@ -211,8 +212,62 @@ function mockPost(payload) {
   if (payload.type === "spray" || payload.type === "pesticide") return mockSaveSpray(payload);
   if (payload.type === "cancelRecord") return mockCancelWork(payload);
   if (payload.type === "cancelSpray" || payload.type === "cancelPesticide") return mockCancelSpray(payload);
+  if (payload.type === "growth") return mockSaveGrowth(payload);
+  if (payload.type === "cancelGrowth") return mockCancelGrowth(payload);
   if (payload.type === "updateRecord") return mockUpdateWork(payload);
   return mockSaveWork(payload);
+}
+
+// 生育調査（GAS側 validateGrowth_ / saveGrowth_ と同じロジック）
+function mockSaveGrowth(payload) {
+  const missing = [];
+  if (!payload.surveyDate) missing.push("調査日");
+  if (!payload.base) missing.push("拠点");
+  const items = payload.items || [];
+  if (items.length === 0) missing.push("調査した株（少なくとも1株）");
+  else items.forEach((it, i) => { if (!it.label) missing.push((i + 1) + "件目の株ラベル"); });
+  if (missing.length > 0) return { ok: false, error: "必須項目が未入力です: " + missing.join("、") };
+
+  const all = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]");
+  const id = "mock-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+  const nowStr = nowTimestamp();
+  all.push({
+    記録ID: id,
+    調査日: payload.surveyDate,
+    拠点: payload.base,
+    "棟・区画": payload.building || "",
+    農作物の種類: payload.crop || "",
+    記録者: payload.recorder || "",
+    userId: payload.userId || "",
+    所感: payload.note || "",
+    状態: "完了",
+    更新日時: nowStr,
+    items: items.map((it) => ({
+      株ラベル: it.label,
+      茎径mm: it.stemDiameter || "",
+      生長点花房距離cm: it.trussDistance || "",
+      開花段位: it.floweringTruss || "",
+      草丈cm: it.plantHeight || "",
+      成長点の形: it.growingPoint || "",
+      葉の角度: it.leafAngle || "",
+      葉の色: it.leafColor || "",
+      花房: it.truss || "",
+      メモ: it.memo || "",
+    })),
+  });
+  localStorage.setItem(MOCK_GROWTH_KEY, JSON.stringify(all));
+  return { ok: true, id };
+}
+
+function mockCancelGrowth(payload) {
+  const all = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]");
+  const target = all.find((r) => r.記録ID === payload.id);
+  if (!target) return { ok: false, error: "対象の記録が見つかりません" };
+  if (target.userId !== (payload.userId || "")) return { ok: false, error: "本人の記録のみ取消できます" };
+  target.状態 = "取消";
+  target.更新日時 = nowTimestamp();
+  localStorage.setItem(MOCK_GROWTH_KEY, JSON.stringify(all));
+  return { ok: true };
 }
 
 function mockSaveWork(payload) {
@@ -433,7 +488,29 @@ function mockGet(action, params) {
       .filter((r) => r.作業日 === today && r.userId === uid && r.状態 !== "取消");
     const spray = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]")
       .filter((r) => r.使用年月日 === today && r.userId === uid && r.状態 !== "取消");
-    return { ok: true, work, spray, pesticide: spray };
+    const growth = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]")
+      .filter((r) => r.調査日 === today && r.userId === uid && r.状態 !== "取消");
+    return { ok: true, work, spray, pesticide: spray, growth };
+  }
+
+  if (action === "growths") {
+    const all = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]");
+    let records = all.filter((r) => r.状態 !== "取消" && inRange(r.調査日, params));
+    if (params.base) records = records.filter((r) => r.拠点 === params.base);
+    return { ok: true, records: records.slice().reverse() };
+  }
+
+  // 同じ場所の直近の調査を1件返す（前回値と伸長量の表示に使う）
+  if (action === "lastGrowth") {
+    const all = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]");
+    const before = params.before || "9999-99-99";
+    const cands = all.filter((r) =>
+      r.状態 !== "取消" &&
+      (!params.base || r.拠点 === params.base) &&
+      (!params.building || r["棟・区画"] === params.building) &&
+      r.調査日 < before);
+    cands.sort((a, b) => (a.調査日 < b.調査日 ? 1 : -1));
+    return { ok: true, growth: cands[0] || null };
   }
 
   if (action === "history") {
@@ -447,9 +524,13 @@ function mockGet(action, params) {
     const spray = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]")
       .filter((r) => r.状態 !== "取消" && r.使用年月日 >= sinceKey)
       .map((r) => Object.assign({ _type: "spray" }, r));
-    const items = work.concat(spray).sort((a, b) => {
-      const da = a._type === "work" ? a.作業日 : a.使用年月日;
-      const db = b._type === "work" ? b.作業日 : b.使用年月日;
+    const growth = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]")
+      .filter((r) => r.状態 !== "取消" && r.調査日 >= sinceKey)
+      .map((r) => Object.assign({ _type: "growth" }, r));
+    const dateOf = (o) => (o._type === "work" ? o.作業日 : o._type === "growth" ? o.調査日 : o.使用年月日);
+    const items = work.concat(spray, growth).sort((a, b) => {
+      const da = dateOf(a);
+      const db = dateOf(b);
       return da < db ? 1 : da > db ? -1 : 0;
     });
     return { ok: true, items };

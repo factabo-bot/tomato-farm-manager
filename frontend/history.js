@@ -20,6 +20,7 @@ async function init() {
   // 通信を待つ前にイベントを登録する（待っている間の操作を取りこぼさないため）
   $("tab-work").addEventListener("click", () => switchTab("work"));
   $("tab-spray").addEventListener("click", () => switchTab("spray"));
+  $("tab-growth").addEventListener("click", () => switchTab("growth"));
   $("from-date").addEventListener("change", load);
   $("to-date").addEventListener("change", load);
   $("base-filter").addEventListener("change", load);
@@ -56,6 +57,7 @@ function switchTab(tab) {
   state.tab = tab;
   $("tab-work").classList.toggle("active", tab === "work");
   $("tab-spray").classList.toggle("active", tab === "spray");
+  $("tab-growth").classList.toggle("active", tab === "growth");
   $("purpose-filter-box").hidden = tab !== "spray";
   load();
 }
@@ -69,7 +71,7 @@ async function load() {
     to: $("to-date").value,
     base: $("base-filter").value,
   };
-  const action = state.tab === "work" ? "records" : "sprays";
+  const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
   const [recordsRes, weatherRes] = await Promise.all([
     apiGet(action, params),
     apiGet("weatherRange", { from: params.from, to: params.to }),
@@ -114,7 +116,7 @@ function render() {
   $("empty-hint").hidden = records.length > 0;
   let lastDate = null;
   records.forEach((r) => {
-    const date = state.tab === "work" ? r.作業日 : r.使用年月日;
+    const date = state.tab === "work" ? r.作業日 : state.tab === "growth" ? r.調査日 : r.使用年月日;
     if (date !== lastDate) {
       lastDate = date;
       const wRow = el("div", "weather-row");
@@ -128,6 +130,16 @@ function render() {
       const label = `${r.拠点}/${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`;
       row.appendChild(el("span", "grow", label));
       if (r.数量) row.appendChild(el("span", "sub", `${r.数量}${r.数量単位 || ""}`));
+    } else if (state.tab === "growth") {
+      const items = r.items || [];
+      const stems = items.map((it) => parseFloat(it.茎径mm)).filter((v) => !isNaN(v));
+      const dists = items.map((it) => parseFloat(it.生長点花房距離cm)).filter((v) => !isNaN(v));
+      const avg = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null);
+      const parts = [];
+      if (avg(stems) !== null) parts.push("茎径 平均" + avg(stems) + "mm");
+      if (avg(dists) !== null) parts.push("花房距離 平均" + avg(dists) + "cm");
+      row.appendChild(el("span", "grow", `${r.拠点}/${r["棟・区画"]} / ${items.length}株`));
+      if (parts.length) row.appendChild(el("span", "sub", parts.join("・")));
     } else {
       const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
       row.appendChild(el("span", "grow", `${kubun}${r.拠点}/${r["棟・区画"]} / ${itemsLabel(r)}`));

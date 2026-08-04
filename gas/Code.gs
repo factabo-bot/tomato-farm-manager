@@ -52,6 +52,8 @@ var SHEET_MASTER_CROP = "マスタ_品目";
 var SHEET_MASTER_PURPOSE = "マスタ_散布目的";
 var SHEET_RECIPE = "マスタ_散布レシピ";
 var SHEET_RECIPE_ITEMS = "マスタ_散布レシピ明細";
+var SHEET_GROWTH = "生育調査";
+var SHEET_GROWTH_ITEMS = "生育調査明細";
 var SHEET_WEATHER = "気象データ";
 
 // 目的タグを1つの列にまとめるときの区切り文字。マスタの目的名にこの文字は使わない
@@ -92,6 +94,20 @@ var MASTER_PURPOSE_HEADERS = ["目的ID", "目的名", "分類", "表示順", "�
 var RECIPE_HEADERS = ["レシピID", "レシピ名", "対象病害虫", "使用時期の目安", "備考", "有効フラグ"];
 // 散布レシピ明細（子）: レシピに紐づく資材の組み合わせ
 var RECIPE_ITEM_HEADERS = ["レシピID", "表示順", "薬剤名", "希釈倍数", "使用量", "使用量単位"];
+
+// 生育調査（親）: 1回の調査。週1回・中庸な株を4〜8株みるのが公的資料の標準
+var GROWTH_HEADERS = [
+  "記録ID", "調査日", "拠点", "棟・区画", "農作物の種類",
+  "記録者", "userId", "所感", "状態", "更新日時",
+];
+
+// 生育調査明細（子）: 株ごとの測定値。株ラベルを毎回そろえると同じ株の推移を追える。
+// 茎径は測る位置で値が変わるので「生長点から15cm下」に固定する（熊本県の検証で
+// 12〜18cmの範囲なら位置を統一すればばらつきが小さいと報告されている）
+var GROWTH_ITEM_HEADERS = [
+  "記録ID", "株ラベル", "茎径mm", "生長点花房距離cm", "開花段位", "草丈cm",
+  "成長点の形", "葉の角度", "葉の色", "花房", "メモ",
+];
 
 var WEATHER_HEADERS = ["日付", "取得区分", "最高気温", "最低気温", "天気概況", "天気コード", "降水確率", "取得日時", "更新日時"];
 
@@ -178,6 +194,8 @@ function setup() {
   ensureSheet_(ss, SHEET_MASTER_PURPOSE, MASTER_PURPOSE_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE, RECIPE_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE_ITEMS, RECIPE_ITEM_HEADERS);
+  ensureSheet_(ss, SHEET_GROWTH, GROWTH_HEADERS);
+  ensureSheet_(ss, SHEET_GROWTH_ITEMS, GROWTH_ITEM_HEADERS);
   ensureSheet_(ss, SHEET_WEATHER, WEATHER_HEADERS);
   seedMastersIfEmpty_(ss);
 }
@@ -339,6 +357,8 @@ function doPost(e) {
     if (data.type === "updateRecord") return updateRecord_(data);
     if (data.type === "cancelRecord") return cancelRecord_(data);
     if (data.type === "cancelSpray" || data.type === "cancelPesticide") return cancelSpray_(data);
+    if (data.type === "growth") return saveGrowth_(data);
+    if (data.type === "cancelGrowth") return cancelGrowth_(data);
     if (data.type === "upsertMaster") return upsertMaster_(data);
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
@@ -489,6 +509,83 @@ function saveSpray_(data) {
   });
 
   return json_({ ok: true, id: id });
+}
+
+// 生育調査の保存。株ごとの測定値を明細として持つ。
+// 数値は入っているものだけ記録する（器具がない日は目視だけでも残せるようにするため）
+function validateGrowth_(data) {
+  var missing = [];
+  if (!data.surveyDate) missing.push("調査日");
+  if (!data.base) missing.push("拠点");
+  var items = data.items || [];
+  if (items.length === 0) {
+    missing.push("調査した株（少なくとも1株）");
+  } else {
+    items.forEach(function (it, idx) {
+      if (!it.label) missing.push((idx + 1) + "件目の株ラベル");
+    });
+  }
+  return missing;
+}
+
+function saveGrowth_(data) {
+  var missing = validateGrowth_(data);
+  if (missing.length > 0) {
+    return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
+  }
+
+  var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
+  var id = Utilities.getUuid();
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH);
+  sheet.appendRow(objectToRowBySheet_(sheet, {
+    "記録ID": id,
+    "調査日": data.surveyDate,
+    "拠点": data.base,
+    "棟・区画": data.building || "",
+    "農作物の種類": data.crop || "",
+    "記録者": data.recorder || "",
+    "userId": data.userId || "",
+    "所感": data.note || "",
+    "状態": "完了",
+    "更新日時": nowStr,
+  }));
+
+  var itemSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH_ITEMS);
+  data.items.forEach(function (it) {
+    itemSheet.appendRow(objectToRowBySheet_(itemSheet, {
+      "記録ID": id,
+      "株ラベル": it.label,
+      "茎径mm": it.stemDiameter || "",
+      "生長点花房距離cm": it.trussDistance || "",
+      "開花段位": it.floweringTruss || "",
+      "草丈cm": it.plantHeight || "",
+      "成長点の形": it.growingPoint || "",
+      "葉の角度": it.leafAngle || "",
+      "葉の色": it.leafColor || "",
+      "花房": it.truss || "",
+      "メモ": it.memo || "",
+    }));
+  });
+
+  return json_({ ok: true, id: id });
+}
+
+function cancelGrowth_(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH);
+  var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][hm["記録ID"]] !== data.id) continue;
+    if (values[i][hm["userId"]] !== (data.userId || "")) {
+      return json_({ ok: false, error: "本人の記録のみ取消できます" });
+    }
+    var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
+    sheet.getRange(i + 1, hm["状態"] + 1).setValue("取消");
+    sheet.getRange(i + 1, hm["更新日時"] + 1).setValue(nowStr);
+    return json_({ ok: true });
+  }
+  return json_({ ok: false, error: "対象の記録が見つかりません" });
 }
 
 // マスタへの行の追加・更新。
@@ -668,6 +765,8 @@ function doGet(e) {
   if (action === "sprays" || action === "pesticides") return getSprays_(params);
   if (action === "mytoday") return getMyToday_(params);
   if (action === "history") return getHistory_(params);
+  if (action === "growths") return getGrowths_(params);
+  if (action === "lastGrowth") return getLastGrowth_(params);
   if (action === "legalLedger") return getLegalLedger_(params);
   if (action === "weather") return getWeather_(params);
   if (action === "weatherRange") return getWeatherRange_(params);
@@ -785,7 +884,22 @@ function getMyToday_(params) {
     spray.push(rec);
   }
 
-  return json_({ ok: true, work: work, spray: spray, pesticide: spray });
+  var growthSheet = ss.getSheetByName(SHEET_GROWTH);
+  var growth = [];
+  if (growthSheet) {
+    var growthValues = growthSheet.getDataRange().getValues();
+    var ghm = headerMap_(growthSheet);
+    for (var k = 1; k < growthValues.length; k++) {
+      if (dateKey_(growthValues[k][ghm["調査日"]]) !== today) continue;
+      if (growthValues[k][ghm["userId"]] !== uid) continue;
+      if (growthValues[k][ghm["状態"]] === "取消") continue;
+      var g = rowToObjectBySheet_(ghm, growthValues[k]);
+      g.items = getGrowthItems_(g["記録ID"]);
+      growth.push(g);
+    }
+  }
+
+  return json_({ ok: true, work: work, spray: spray, pesticide: spray, growth: growth });
 }
 
 // 作業記録と散布記録をまとめて日付の新しい順に返す。
@@ -824,15 +938,96 @@ function getHistory_(params) {
     items.push(o2);
   }
 
+  var growthSheet = ss.getSheetByName(SHEET_GROWTH);
+  if (growthSheet) {
+    var growthValues = growthSheet.getDataRange().getValues();
+    var ghm = headerMap_(growthSheet);
+    for (var k = 1; k < growthValues.length; k++) {
+      var d3 = dateKey_(growthValues[k][ghm["調査日"]]);
+      if (d3 < sinceKey) continue;
+      if (growthValues[k][ghm["状態"]] === "取消") continue;
+      var o3 = rowToObjectBySheet_(ghm, growthValues[k]);
+      o3._type = "growth";
+      o3.items = getGrowthItems_(o3["記録ID"]);
+      items.push(o3);
+    }
+  }
+
   items.sort(function (a, b) {
-    var da = a._type === "work" ? a["作業日"] : a["使用年月日"];
-    var db = b._type === "work" ? b["作業日"] : b["使用年月日"];
+    var da = historyDate_(a);
+    var db = historyDate_(b);
     if (da < db) return 1;
     if (da > db) return -1;
     return 0;
   });
 
   return json_({ ok: true, items: items });
+}
+
+// 履歴で並べ替えるときの日付。記録の種類ごとに日付の列名が違う
+function historyDate_(o) {
+  if (o._type === "work") return o["作業日"];
+  if (o._type === "growth") return o["調査日"];
+  return o["使用年月日"];
+}
+
+// 記録IDに紐づく生育調査明細（株ごとの測定値）を取得する
+function getGrowthItems_(recordId) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH_ITEMS);
+  var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+  var idCol = hm["記録ID"];
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][idCol] === recordId) items.push(rowToObjectBySheet_(hm, values[i]));
+  }
+  return items;
+}
+
+function getGrowths_(params) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH);
+  var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+  var from = params.from || "0000-00-00";
+  var to = params.to || "9999-99-99";
+  var base = params.base || "";
+  var records = [];
+  for (var i = 1; i < values.length; i++) {
+    var d = dateKey_(values[i][hm["調査日"]]);
+    if (d < from || d > to) continue;
+    if (base && values[i][hm["拠点"]] !== base) continue;
+    var rec = rowToObjectBySheet_(hm, values[i]);
+    rec.items = getGrowthItems_(rec["記録ID"]);
+    records.push(rec);
+  }
+  records.reverse();
+  return json_({ ok: true, records: records });
+}
+
+// 同じ場所の直近の調査を1件返す。入力画面で前回値を並べて見せ、伸長量を出すために使う
+function getLastGrowth_(params) {
+  var base = params.base || "";
+  var building = params.building || "";
+  var before = params.before || "9999-99-99"; // この日より前の調査を探す
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH);
+  var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+
+  var best = null;
+  var bestDate = "";
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][hm["状態"]] === "取消") continue;
+    if (base && values[i][hm["拠点"]] !== base) continue;
+    if (building && values[i][hm["棟・区画"]] !== building) continue;
+    var d = dateKey_(values[i][hm["調査日"]]);
+    if (d >= before) continue;
+    if (d > bestDate) {
+      bestDate = d;
+      best = rowToObjectBySheet_(hm, values[i]);
+    }
+  }
+  if (best) best.items = getGrowthItems_(best["記録ID"]);
+  return json_({ ok: true, growth: best });
 }
 
 // 法定帳簿用の抽出。農薬登録のある資材の行だけを、親の情報と結合して平らに返す。

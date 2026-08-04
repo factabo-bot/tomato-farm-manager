@@ -94,6 +94,75 @@ label {
   min-width: 0;
 }
 
+/* 生育調査：株ごとの入力カード */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.plant-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.plant-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.plant-label {
+  flex: 0 0 70px;
+  min-height: 40px;
+  font-weight: bold;
+  text-align: center;
+}
+.prev-note {
+  flex: 1 1 auto;
+  font-size: 0.75rem;
+  color: #2e7d32;
+}
+.num-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.num-label {
+  flex: 0 0 150px;
+  font-size: 0.85rem;
+  color: #555;
+  margin: 0;
+}
+.num-input {
+  flex: 0 0 90px;
+  min-height: 42px;
+  text-align: right;
+}
+.num-diff {
+  font-size: 0.78rem;
+  color: #2e7d32;
+}
+.num-hint {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+  color: #999;
+  padding-left: 150px;
+}
+.visual-row {
+  margin-top: 10px;
+}
+.visual-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 4px;
+}
+
 .ppe-hint {
   background: #fde0dc;
   color: #b71c1c;
