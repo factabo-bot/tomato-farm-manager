@@ -1,5 +1,33 @@
 "use strict";
 
+// 数値で測る項目。prevKey は前回値を引くときのシート列名。
+// group で画面上のまとまりを分ける（毎回測る基本／数えるだけ／実測に手間がかかる）
+const NUM_FIELDS = [
+  // 草勢と生育バランスの基本。公的資料が共通して挙げる指標
+  { key: "stemDiameter", prevKey: "茎径mm", label: "茎径(mm)", unit: "mm", group: "basic", hint: "生長点15cm下・目安10前後" },
+  { key: "trussDistance", prevKey: "生長点花房距離cm", label: "生長点〜開花花房(cm)", unit: "cm", group: "basic", hint: "目安15前後" },
+  { key: "plantHeight", prevKey: "草丈cm", label: "草丈(cm)", unit: "cm", group: "basic", hint: "前回差が伸長量" },
+
+  // 数えるだけで測定コストがほぼゼロ。摘葉と草勢の持続性の判断に効く
+  { key: "floweringTruss", prevKey: "開花段位", label: "開花段位", unit: "段", group: "count", hint: "7〜10日で1段" },
+  { key: "harvestTruss", prevKey: "収穫段位", label: "収穫段位", unit: "段", group: "count", hint: "開花との差6段が目安" },
+  { key: "leavesBelowTruss", prevKey: "花房下葉数", label: "花房下の葉数", unit: "枚", group: "count", hint: "適正12枚（摘葉の判断）" },
+  { key: "fruitSet", prevKey: "着果数", label: "着果数", unit: "個", group: "count", hint: "" },
+  { key: "leafCount", prevKey: "葉数", label: "葉数", unit: "枚", group: "count", hint: "" },
+
+  // ノギス・メジャーが要る項目。時間がある日だけでよい
+  { key: "internodeLength", prevKey: "節間長cm", label: "節間長(cm)", unit: "cm", group: "detail", hint: "徒長の判定" },
+  { key: "leafLength", prevKey: "葉長cm", label: "葉長(cm)", unit: "cm", group: "detail", hint: "第1花房直下葉" },
+  { key: "fruitDiameter", prevKey: "果径mm", label: "果径(mm)", unit: "mm", group: "detail", hint: "果実肥大" },
+];
+
+// 障害果。現場で実際に問題になっている（尻腐れ・裂果）ので株ごとに数を残す
+const DISORDER_FIELDS = [
+  { key: "blossomEndRot", prevKey: "尻腐れ果数", label: "尻腐れ", unit: "個" },
+  { key: "cracking", prevKey: "裂果数", label: "裂果", unit: "個" },
+  { key: "otherDisorder", prevKey: "その他障害果数", label: "その他", unit: "個" },
+];
+
 // 目視での草勢確認。手順書「4A 整枝・誘引_巡回作業」の観察表をそのまま選択肢にしている
 const VISUAL_CHECKS = [
   { key: "growingPoint", label: "成長点の形", options: ["やや尖り（正常）", "丸く膨らむ（栄養過多）", "細く弱々しい（弱り）"] },
@@ -8,15 +36,21 @@ const VISUAL_CHECKS = [
   { key: "truss", label: "花房", options: ["軸が適度・花が均一（正常）", "軸が太く花多い（栄養過多）", "小さく花少ない（弱り）"] },
 ];
 
+const GROUP_LABELS = {
+  basic: "基本（毎回）",
+  count: "数える項目",
+  detail: "実測（時間があるとき）",
+};
+
 const DEFAULT_LABELS = ["A", "B", "C", "D"];
 
 const state = {
   masters: null,
   base: null,
   building: null,
-  crop: "",
-  plants: [],   // [{label, stemDiameter, trussDistance, floweringTruss, plantHeight, 目視..., memo}]
-  lastGrowth: null, // 同じ場所の前回調査（前回値と伸長量の表示に使う）
+  plants: [],
+  lastGrowth: null,   // 同じ場所の前回調査（前回値と増減の表示に使う）
+  openDetail: {},     // 株ごとに「実測」「障害果」を開いているか
   profile: getProfile(),
 };
 
@@ -56,7 +90,7 @@ function addPlant(label) {
   if (!next) {
     next = DEFAULT_LABELS.find((l) => !used.includes(l)) || String(state.plants.length + 1);
   }
-  state.plants.push({ label: next, stemDiameter: "", trussDistance: "", floweringTruss: "", plantHeight: "", memo: "" });
+  state.plants.push({ label: next });
 }
 
 function renderBases() {
@@ -109,7 +143,6 @@ function renderCrops() {
   if (current) sel.value = current;
 }
 
-// 同じ場所の前回調査を読み、株ごとの前回値・伸長量を出せるようにする
 async function loadLastGrowth() {
   if (!state.base || !state.building) return;
   const res = await apiGet("lastGrowth", {
@@ -118,10 +151,7 @@ async function loadLastGrowth() {
     before: $("survey-date").value || formatToday(),
   });
   state.lastGrowth = res.growth || null;
-  const info = $("last-info");
-  info.textContent = state.lastGrowth
-    ? "前回: " + state.lastGrowth.調査日
-    : "前回の調査なし";
+  $("last-info").textContent = state.lastGrowth ? "前回: " + state.lastGrowth.調査日 : "前回の調査なし";
   renderPlants();
 }
 
@@ -130,13 +160,61 @@ function lastItemOf(label) {
   return (state.lastGrowth.items || []).find((it) => String(it.株ラベル) === String(label)) || null;
 }
 
-// 前回からの差を出す（草丈は伸長量、茎径は増減）
 function diffText(current, previous, unit) {
   const c = parseFloat(current);
   const p = parseFloat(previous);
   if (isNaN(c) || isNaN(p)) return "";
   const d = Math.round((c - p) * 10) / 10;
   return (d >= 0 ? "+" : "") + d + unit;
+}
+
+// 数値の入力行。前回値と増減を横に出す
+function numRow(p, prev, f) {
+  const row = el("div", "num-row");
+  row.appendChild(el("label", "num-label", f.label));
+
+  const input = el("input", "num-input");
+  input.type = "number";
+  input.inputMode = "decimal";
+  input.value = p[f.key] || "";
+
+  const diffSpan = el("span", "num-diff");
+  const showDiff = () => {
+    if (!prev || prev[f.prevKey] === "" || prev[f.prevKey] === undefined) {
+      diffSpan.textContent = "";
+      return;
+    }
+    const d = diffText(p[f.key], prev[f.prevKey], f.unit);
+    diffSpan.textContent = d ? "（前回 " + prev[f.prevKey] + " → " + d + "）" : "前回 " + prev[f.prevKey];
+  };
+  showDiff();
+
+  input.addEventListener("input", () => {
+    p[f.key] = input.value;
+    showDiff();
+    if (f.key === "floweringTruss" || f.key === "harvestTruss") updateTrussGap(p);
+  });
+
+  row.appendChild(input);
+  row.appendChild(diffSpan);
+  if (f.hint) row.appendChild(el("span", "num-hint", f.hint));
+  return row;
+}
+
+// 開花段位と収穫段位の差。岩手県の資料では6段が目安で、草勢が続くかの判断に使う
+function updateTrussGap(p) {
+  const box = document.getElementById("gap-" + p.label);
+  if (!box) return;
+  const f = parseFloat(p.floweringTruss);
+  const h = parseFloat(p.harvestTruss);
+  if (isNaN(f) || isNaN(h)) {
+    box.textContent = "";
+    box.className = "truss-gap";
+    return;
+  }
+  const gap = f - h;
+  box.textContent = "開花と収穫の差 " + gap + "段（目安6段）";
+  box.className = "truss-gap" + (gap >= 4 && gap <= 8 ? " ok" : " warn");
 }
 
 function renderPlants() {
@@ -151,9 +229,7 @@ function renderPlants() {
     const labelInput = el("input", "plant-label");
     labelInput.value = p.label;
     labelInput.placeholder = "株";
-    labelInput.addEventListener("input", () => {
-      p.label = labelInput.value.trim();
-    });
+    labelInput.addEventListener("input", () => { p.label = labelInput.value.trim(); });
     labelInput.addEventListener("change", renderPlants); // 前回値を引き直す
     head.appendChild(labelInput);
     if (prev) head.appendChild(el("span", "prev-note", "前回あり"));
@@ -166,37 +242,42 @@ function renderPlants() {
     head.appendChild(del);
     card.appendChild(head);
 
-    // 数値の入力欄。前回値と差を横に出す
-    const nums = [
-      { key: "stemDiameter", label: "茎径(mm)", prevKey: "茎径mm", unit: "mm", hint: "生長点15cm下・目安10前後" },
-      { key: "trussDistance", label: "生長点〜開花花房(cm)", prevKey: "生長点花房距離cm", unit: "cm", hint: "目安15前後" },
-      { key: "floweringTruss", label: "開花段位", prevKey: "開花段位", unit: "段", hint: "7〜10日で1段" },
-      { key: "plantHeight", label: "草丈(cm)", prevKey: "草丈cm", unit: "cm", hint: "" },
-    ];
-    nums.forEach((n) => {
-      const row = el("div", "num-row");
-      row.appendChild(el("label", "num-label", n.label));
-      const input = el("input", "num-input");
-      input.type = "number";
-      input.inputMode = "decimal";
-      input.value = p[n.key] || "";
-      input.addEventListener("input", () => {
-        p[n.key] = input.value;
-        const d = prev ? diffText(input.value, prev[n.prevKey], n.unit) : "";
-        diffSpan.textContent = d ? "（前回 " + prev[n.prevKey] + " → " + d + "）" : "";
-      });
-      row.appendChild(input);
-      const diffSpan = el("span", "num-diff");
-      if (prev && prev[n.prevKey] !== "" && prev[n.prevKey] !== undefined) {
-        const d = diffText(p[n.key], prev[n.prevKey], n.unit);
-        diffSpan.textContent = d ? "（前回 " + prev[n.prevKey] + " → " + d + "）" : "前回 " + prev[n.prevKey];
+    // 基本と「数える項目」は常に出す
+    ["basic", "count"].forEach((g) => {
+      card.appendChild(el("div", "group-label", GROUP_LABELS[g]));
+      NUM_FIELDS.filter((f) => f.group === g).forEach((f) => card.appendChild(numRow(p, prev, f)));
+      if (g === "count") {
+        const gap = el("div", "truss-gap");
+        gap.id = "gap-" + p.label;
+        card.appendChild(gap);
       }
-      row.appendChild(diffSpan);
-      if (n.hint) row.appendChild(el("span", "num-hint", n.hint));
-      card.appendChild(row);
     });
 
+    // 実測と障害果は畳んでおく（毎回は測らないため）
+    const open = !!state.openDetail[p.label];
+    const toggle = el("button", "btn-toggle", open ? "▲ 実測・障害果をとじる" : "▼ 実測・障害果を入力する");
+    toggle.type = "button";
+    toggle.addEventListener("click", () => {
+      state.openDetail[p.label] = !open;
+      renderPlants();
+    });
+    card.appendChild(toggle);
+
+    if (open) {
+      card.appendChild(el("div", "group-label", GROUP_LABELS.detail));
+      NUM_FIELDS.filter((f) => f.group === "detail").forEach((f) => card.appendChild(numRow(p, prev, f)));
+
+      card.appendChild(el("div", "group-label", "障害果"));
+      DISORDER_FIELDS.forEach((f) => card.appendChild(numRow(p, prev, f)));
+      const dm = el("input", "text-input");
+      dm.placeholder = "障害果のメモ（症状の出方など）";
+      dm.value = p.disorderMemo || "";
+      dm.addEventListener("input", () => { p.disorderMemo = dm.value; });
+      card.appendChild(dm);
+    }
+
     // 目視での草勢確認（器具がない日でもここだけ埋められる）
+    card.appendChild(el("div", "group-label", "目視での草勢確認"));
     VISUAL_CHECKS.forEach((v) => {
       const wrap = el("div", "visual-row");
       wrap.appendChild(el("span", "visual-label", v.label));
@@ -224,6 +305,18 @@ function renderPlants() {
 
     box.appendChild(card);
   });
+
+  state.plants.forEach(updateTrussGap);
+}
+
+// 何か1つでも入っているか（4株ぶんの枠を出しているので空のまま残ることがある）。
+// 「0」は入力された値として扱う（障害果0個の記録に意味があるため）
+function hasAnyValue(p) {
+  const keys = NUM_FIELDS.map((f) => f.key)
+    .concat(DISORDER_FIELDS.map((f) => f.key))
+    .concat(VISUAL_CHECKS.map((v) => v.key))
+    .concat(["memo", "disorderMemo"]);
+  return keys.some((k) => p[k] !== undefined && p[k] !== null && p[k] !== "");
 }
 
 async function submit() {
@@ -231,11 +324,7 @@ async function submit() {
   const plants = state.plants.filter((p) => p.label);
   if (plants.length === 0) return toast("株ラベルを入力してください");
 
-  // 何も測っていない株は送らない（4株ぶんの枠を出しているので空のまま残ることがある）
-  const filled = plants.filter((p) =>
-    p.stemDiameter || p.trussDistance || p.floweringTruss || p.plantHeight ||
-    p.growingPoint || p.leafAngle || p.leafColor || p.truss || p.memo
-  );
+  const filled = plants.filter(hasAnyValue);
   if (filled.length === 0) return toast("測定値か目視の項目を1つ以上入力してください");
 
   const payload = {
@@ -271,6 +360,7 @@ async function submit() {
 
 function resetForm() {
   state.plants = [];
+  state.openDetail = {};
   DEFAULT_LABELS.forEach((l) => addPlant(l));
   $("note").value = "";
   renderPlants();
@@ -290,9 +380,9 @@ function renderMyRecords(records) {
   }
   records.slice().reverse().forEach((r) => {
     const row = el("div", "item");
-    const n = (r.items || []).length;
-    const avg = averageStem(r.items || []);
-    const label = `${r["棟・区画"]} / ${n}株` + (avg ? `（茎径 平均${avg}mm）` : "");
+    const items = r.items || [];
+    const avg = averageOf(items, "茎径mm");
+    const label = `${r["棟・区画"]} / ${items.length}株` + (avg ? `（茎径 平均${avg}mm）` : "");
     row.appendChild(el("span", "grow", label));
     const del = el("button", "del", "取消");
     del.type = "button";
@@ -302,8 +392,8 @@ function renderMyRecords(records) {
   });
 }
 
-function averageStem(items) {
-  const vals = items.map((it) => parseFloat(it.茎径mm)).filter((v) => !isNaN(v));
+function averageOf(items, key) {
+  const vals = items.map((it) => parseFloat(it[key])).filter((v) => !isNaN(v));
   if (vals.length === 0) return "";
   return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
 }

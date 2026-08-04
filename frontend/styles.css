@@ -153,6 +153,35 @@ label {
   color: #999;
   padding-left: 150px;
 }
+/* 株カード内の項目グループの見出し */
+.group-label {
+  font-size: 0.78rem;
+  font-weight: bold;
+  color: #2e7d32;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 3px;
+  margin: 14px 0 8px;
+}
+/* 実測・障害果の開閉ボタン */
+.btn-toggle {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 10px;
+  background: #f0f4f0;
+  border: 1px dashed #9bb89b;
+  border-radius: 8px;
+  color: #2e7d32;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+/* 開花段位と収穫段位の差（目安6段から外れたら色を変える） */
+.truss-gap {
+  font-size: 0.8rem;
+  padding: 4px 0 0 150px;
+}
+.truss-gap.ok { color: #2e7d32; }
+.truss-gap.warn { color: #b26a00; }
+
 .visual-row {
   margin-top: 10px;
 }

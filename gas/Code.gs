@@ -103,9 +103,15 @@ var GROWTH_HEADERS = [
 
 // 生育調査明細（子）: 株ごとの測定値。株ラベルを毎回そろえると同じ株の推移を追える。
 // 茎径は測る位置で値が変わるので「生長点から15cm下」に固定する（熊本県の検証で
-// 12〜18cmの範囲なら位置を統一すればばらつきが小さいと報告されている）
+// 12〜18cmの範囲なら位置を統一すればばらつきが小さいと報告されている）。
+// 花房下葉数は摘葉の判断（適正12枚）、開花段位と収穫段位の差（6段目安）は
+// 草勢が続くかの判断に使う（いずれも岩手県の資料）
 var GROWTH_ITEM_HEADERS = [
-  "記録ID", "株ラベル", "茎径mm", "生長点花房距離cm", "開花段位", "草丈cm",
+  "記録ID", "株ラベル",
+  "茎径mm", "生長点花房距離cm", "草丈cm", "節間長cm",
+  "開花段位", "収穫段位", "花房下葉数", "着果数", "葉数",
+  "葉長cm", "果径mm",
+  "尻腐れ果数", "裂果数", "その他障害果数", "障害果メモ",
   "成長点の形", "葉の角度", "葉の色", "花房", "メモ",
 ];
 
@@ -551,20 +557,37 @@ function saveGrowth_(data) {
     "更新日時": nowStr,
   }));
 
+  // 「0個だった」という記録にも意味があるので、0を空欄に潰さないようにする
+  // （障害果が0だった週と、そもそも数えなかった週は区別したい）
+  function keep_(v) {
+    return (v === undefined || v === null || v === "") ? "" : v;
+  }
+
   var itemSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH_ITEMS);
   data.items.forEach(function (it) {
     itemSheet.appendRow(objectToRowBySheet_(itemSheet, {
       "記録ID": id,
       "株ラベル": it.label,
-      "茎径mm": it.stemDiameter || "",
-      "生長点花房距離cm": it.trussDistance || "",
-      "開花段位": it.floweringTruss || "",
-      "草丈cm": it.plantHeight || "",
-      "成長点の形": it.growingPoint || "",
-      "葉の角度": it.leafAngle || "",
-      "葉の色": it.leafColor || "",
-      "花房": it.truss || "",
-      "メモ": it.memo || "",
+      "茎径mm": keep_(it.stemDiameter),
+      "生長点花房距離cm": keep_(it.trussDistance),
+      "草丈cm": keep_(it.plantHeight),
+      "節間長cm": keep_(it.internodeLength),
+      "開花段位": keep_(it.floweringTruss),
+      "収穫段位": keep_(it.harvestTruss),
+      "花房下葉数": keep_(it.leavesBelowTruss),
+      "着果数": keep_(it.fruitSet),
+      "葉数": keep_(it.leafCount),
+      "葉長cm": keep_(it.leafLength),
+      "果径mm": keep_(it.fruitDiameter),
+      "尻腐れ果数": keep_(it.blossomEndRot),
+      "裂果数": keep_(it.cracking),
+      "その他障害果数": keep_(it.otherDisorder),
+      "障害果メモ": keep_(it.disorderMemo),
+      "成長点の形": keep_(it.growingPoint),
+      "葉の角度": keep_(it.leafAngle),
+      "葉の色": keep_(it.leafColor),
+      "花房": keep_(it.truss),
+      "メモ": keep_(it.memo),
     }));
   });
 

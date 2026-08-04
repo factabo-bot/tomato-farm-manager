@@ -218,6 +218,12 @@ function mockPost(payload) {
   return mockSaveWork(payload);
 }
 
+// 「0個だった」という記録にも意味があるので、0を空欄に潰さない
+// （障害果が0だった週と、そもそも数えなかった週は区別したい。GAS側 keep_ と同じ）
+function keepValue(v) {
+  return (v === undefined || v === null || v === "") ? "" : v;
+}
+
 // 生育調査（GAS側 validateGrowth_ / saveGrowth_ と同じロジック）
 function mockSaveGrowth(payload) {
   const missing = [];
@@ -244,15 +250,26 @@ function mockSaveGrowth(payload) {
     更新日時: nowStr,
     items: items.map((it) => ({
       株ラベル: it.label,
-      茎径mm: it.stemDiameter || "",
-      生長点花房距離cm: it.trussDistance || "",
-      開花段位: it.floweringTruss || "",
-      草丈cm: it.plantHeight || "",
-      成長点の形: it.growingPoint || "",
-      葉の角度: it.leafAngle || "",
-      葉の色: it.leafColor || "",
-      花房: it.truss || "",
-      メモ: it.memo || "",
+      茎径mm: keepValue(it.stemDiameter),
+      生長点花房距離cm: keepValue(it.trussDistance),
+      草丈cm: keepValue(it.plantHeight),
+      節間長cm: keepValue(it.internodeLength),
+      開花段位: keepValue(it.floweringTruss),
+      収穫段位: keepValue(it.harvestTruss),
+      花房下葉数: keepValue(it.leavesBelowTruss),
+      着果数: keepValue(it.fruitSet),
+      葉数: keepValue(it.leafCount),
+      葉長cm: keepValue(it.leafLength),
+      果径mm: keepValue(it.fruitDiameter),
+      尻腐れ果数: keepValue(it.blossomEndRot),
+      裂果数: keepValue(it.cracking),
+      その他障害果数: keepValue(it.otherDisorder),
+      障害果メモ: keepValue(it.disorderMemo),
+      成長点の形: keepValue(it.growingPoint),
+      葉の角度: keepValue(it.leafAngle),
+      葉の色: keepValue(it.leafColor),
+      花房: keepValue(it.truss),
+      メモ: keepValue(it.memo),
     })),
   });
   localStorage.setItem(MOCK_GROWTH_KEY, JSON.stringify(all));
