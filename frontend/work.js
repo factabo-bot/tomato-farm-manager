@@ -6,6 +6,9 @@ const state = {
   buildings: new Set(), // 収穫などで複数の棟をまとめて回ることがあるので複数選択
   workType: null,
   profile: getProfile(),
+  sprayByDate: {},  // 日付 → その日の散布記録。同じ日を何度も問い合わせないためのキャッシュ
+  sprayLoading: {}, // 日付 → 取得中の約束。押し直しで問い合わせが二重に走らないようにする
+  checking: null,   // 確認中の散布区分（"防除" / "葉面散布"）。未確認のときは null
 };
 
 init();
@@ -17,6 +20,9 @@ async function init() {
 
   // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
   $("submit").addEventListener("click", submit);
+  $("check-pest").addEventListener("click", () => checkSpray("防除"));
+  $("check-foliar").addEventListener("click", () => checkSpray("葉面散布"));
+  $("work-date").addEventListener("change", clearSprayStatus);
 
   // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
   state.masters = await loadMasters(function (fresh) {
@@ -90,6 +96,9 @@ function renderBuildings() {
     });
     bulk.appendChild(clear);
   }
+
+  // 場所を選び直したら、表示中の散布記録の確認結果も新しい場所で出し直す
+  refreshSprayStatus();
 }
 
 function activeWorkTypes() {
@@ -111,6 +120,123 @@ function renderWorkTypes() {
     });
     box.appendChild(btn);
   });
+}
+
+// ---------- 防除・葉面散布の確認（散布記録は散布画面が持つので、ここでは有無だけ見る） ----------
+
+function clearSprayStatus() {
+  state.checking = null;
+  const box = $("spray-status");
+  box.hidden = true;
+  box.innerHTML = "";
+}
+
+async function checkSpray(kubun) {
+  if (!state.base) return toast("拠点を選択してください");
+  state.checking = kubun;
+  const date = $("work-date").value || formatToday();
+
+  const box = $("spray-status");
+  box.hidden = false;
+  box.className = "spray-status checking";
+  box.textContent = "確認中…";
+
+  let list;
+  try {
+    list = await loadSprays(date);
+  } catch (err) {
+    console.error(err);
+    if (state.checking !== kubun) return;
+    box.className = "spray-status missing";
+    box.textContent = "⚠ 散布記録を確認できませんでした（電波が届いていないかもしれません）";
+    return;
+  }
+  if (state.checking !== kubun) return; // 待っている間に別のボタンが押された
+  renderSprayStatus(list, kubun, date);
+}
+
+// GASの応答は5秒前後かかるので、一度読んだ日はキャッシュから返す。
+// 読んでいる途中に押し直されても問い合わせが二重に走らないよう、実行中の約束も持っておく
+async function loadSprays(date) {
+  if (state.sprayByDate[date]) return state.sprayByDate[date];
+  if (!state.sprayLoading[date]) {
+    state.sprayLoading[date] = apiGet("sprays", { from: date, to: date })
+      .then((res) => {
+        const list = (res.records || []).filter((r) => r.状態 !== "取消");
+        state.sprayByDate[date] = list;
+        return list;
+      })
+      .finally(() => { delete state.sprayLoading[date]; });
+  }
+  return state.sprayLoading[date];
+}
+
+// 散布区分は「防除・葉面散布」のように2つ入ることがあるので部分一致で見る
+function matchesKubun(r, kubun) {
+  return String(r.散布区分 || "").indexOf(kubun) >= 0;
+}
+
+// 散布記録の棟は「1号棟、2号棟」とまとめて入るので、選択中の棟と1つでも重なれば同じ場所とみなす
+function matchesPlace(r) {
+  if (r.拠点 !== state.base) return false;
+  if (state.buildings.size === 0) return true;
+  const recorded = String(r["棟・区画"] || "")
+    .split(PURPOSE_SEPARATOR)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (recorded.length === 0) return true;
+  return recorded.some((b) => state.buildings.has(b));
+}
+
+function placeLabel() {
+  const rooms = [...state.buildings].join(PURPOSE_SEPARATOR);
+  return state.base + (rooms ? "／" + rooms : "");
+}
+
+// 日付・拠点・棟を引き継いで散布画面へ渡す（向こうで選び直さなくて済むように）
+function sprayLink(label, date, kubun) {
+  const qs = new URLSearchParams({
+    date: date,
+    base: state.base || "",
+    buildings: [...state.buildings].join(PURPOSE_SEPARATOR),
+    kubun: kubun,
+  });
+  const a = el("a", "btn-secondary", label);
+  a.href = "pesticide.html?" + qs.toString();
+  return a;
+}
+
+// 確認済みの表示を、いまの日付・場所で出し直す（通信はせずキャッシュだけ見る）
+function refreshSprayStatus() {
+  if (!state.checking) return;
+  const date = $("work-date").value || formatToday();
+  const list = state.sprayByDate[date];
+  if (!list) return;
+  renderSprayStatus(list, state.checking, date);
+}
+
+function renderSprayStatus(list, kubun, date) {
+  const box = $("spray-status");
+  const hits = list.filter((r) => matchesKubun(r, kubun) && matchesPlace(r));
+  const when = date === formatToday() ? "今日" : date;
+  box.innerHTML = "";
+  box.hidden = false;
+
+  if (hits.length === 0) {
+    box.className = "spray-status missing";
+    box.appendChild(el("div", "spray-status-head", `⚠ ${when}の${placeLabel()}に${kubun}の散布記録はまだありません`));
+    box.appendChild(sprayLink("🧪 散布画面で入力する", date, kubun));
+    return;
+  }
+
+  box.className = "spray-status found";
+  box.appendChild(el("div", "spray-status-head", `✅ ${when}の${kubun}は散布記録に登録済みです`));
+  hits.forEach((r) => {
+    const names = (r.items || []).map((it) => it.資材名).filter(Boolean).join("・");
+    const time = timeLabel(r.開始時刻);
+    box.appendChild(el("div", "spray-status-row", `${time ? time + " " : ""}${r["棟・区画"]} / ${names || "（資材未登録）"}`));
+  });
+  box.appendChild(sprayLink("🧪 散布画面で追加・修正する", date, kubun));
 }
 
 async function submit() {
@@ -180,21 +306,44 @@ function resetForm() {
 
 async function loadMyRecords() {
   const res = await apiGet("mytoday", { userId: state.profile.userId });
-  renderMyRecords(res.work || []);
+  renderMyRecords(res.work || [], res.spray || res.pesticide || []);
 }
 
-function renderMyRecords(records) {
+// 作業画面だけ見てもその日にやったことが揃うよう、散布記録も一緒に並べる。
+// 散布の取消は散布画面で行うので、こちらには取消ボタンを出さない
+function renderMyRecords(work, sprays) {
   const box = $("my-records");
   box.innerHTML = "";
-  if (records.length === 0) {
+  if (work.length === 0 && sprays.length === 0) {
     box.appendChild(el("div", "hint", "今日の記録はまだありません"));
     return;
   }
-  records.slice().reverse().forEach((r) => {
+
+  const rows = work.map((r) => ({
+    time: timeLabel(r.記録日時),
+    label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
+    id: r.記録ID,
+  }));
+
+  sprays.forEach((r) => {
+    const names = (r.items || []).map((it) => it.資材名).filter(Boolean).join("・");
+    const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
+    rows.push({
+      time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
+      label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
+      id: null,
+    });
+  });
+
+  rows.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
+
+  rows.forEach((r) => {
     const row = el("div", "item");
-    const time = (r.記録日時 || "").slice(11, 16);
-    const label = `${time} ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`;
-    row.appendChild(el("span", "", label));
+    row.appendChild(el("span", "grow", `${r.time} ${r.label}`));
+    if (!r.id) {
+      box.appendChild(row);
+      return;
+    }
     const del = el("button", "del", "取消");
     del.type = "button";
     del.addEventListener("click", () => {
@@ -207,7 +356,7 @@ function renderMyRecords(records) {
         }, 3000);
         return;
       }
-      cancelRecord(r.記録ID);
+      cancelRecord(r.id);
     });
     row.appendChild(del);
     box.appendChild(row);

@@ -33,7 +33,7 @@ function renderTodayList(work, spray, growth) {
   const items = [];
 
   work.forEach((r) => items.push({
-    time: (r.記録日時 || "").slice(11, 16),
+    time: timeLabel(r.記録日時),
     label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
   }));
 
@@ -42,7 +42,7 @@ function renderTodayList(work, spray, growth) {
     const names = (r.items || []).map((it) => it.資材名).filter(Boolean).join("・");
     const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
     items.push({
-      time: (r.開始時刻 || (r.更新日時 || "").slice(11, 16)),
+      time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
       label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
     });
   });
@@ -50,7 +50,7 @@ function renderTodayList(work, spray, growth) {
   (growth || []).forEach((r) => {
     const n = (r.items || []).length;
     items.push({
-      time: (r.更新日時 || "").slice(11, 16),
+      time: timeLabel(r.更新日時),
       label: `📏 ${r["棟・区画"]} / 生育調査 ${n}株`,
     });
   });

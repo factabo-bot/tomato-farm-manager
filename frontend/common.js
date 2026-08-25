@@ -24,6 +24,14 @@ function nowTimestamp() {
   return formatDate(d) + " " + d.toTimeString().slice(0, 8);
 }
 
+// 記録の時刻をHH:mmで取り出す。
+// シートの時刻セルはDate型になることがあり、GASを通ると "1899-12-30 09:20:00" や
+// "2026-08-25 08:10:00" のような文字列で返ってくるため、時刻の部分だけを拾う
+function timeLabel(v) {
+  const m = String(v || "").match(/(\d{1,2}):(\d{2})/);
+  return m ? m[1].padStart(2, "0") + ":" + m[2] : "";
+}
+
 let toastTimer = null;
 function toast(msg) {
   const t = $("toast");

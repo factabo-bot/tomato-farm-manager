@@ -192,6 +192,32 @@ label {
   margin-bottom: 4px;
 }
 
+/* 作業画面から防除・葉面散布の散布記録の有無を確認するブロック */
+.spray-link {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #cfcfcf;
+}
+.spray-status {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.spray-status.checking { background: #eee; color: #666; }
+.spray-status.found { background: #e3efe3; color: #1b5e20; }
+.spray-status.missing { background: #fff3cd; color: #8a6d00; }
+.spray-status-head { font-weight: bold; }
+.spray-status-row { margin-top: 4px; }
+.spray-status .btn-secondary {
+  min-height: 48px;
+  line-height: 44px;
+  font-size: 1rem;
+  margin-top: 10px;
+  background: #fff;
+}
+
 .ppe-hint {
   background: #fde0dc;
   color: #b71c1c;

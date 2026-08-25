@@ -6,7 +6,7 @@
 <title>作業記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260804e">
+<link rel="stylesheet" href="styles.css?v=20260825a">
 </head>
 <body>
 <header>
@@ -47,6 +47,18 @@
     <h2>③ 作業</h2>
     <div id="work-buttons" class="btn-row"></div>
     <textarea id="work-detail" placeholder="作業内容を記入" hidden></textarea>
+
+    <!-- 農薬・葉面散布肥料の散布は散布記録側だけで扱う（作業記録にも書くと1回の防除が
+         2件になり、あとで作業時間を合計したときに二重に数えてしまうため）。
+         ここは記録するボタンではなく、記録済みかどうかの確認と散布画面への入口 -->
+    <div class="spray-link">
+      <p class="hint">農薬・葉面散布肥料をまいた日は「散布」画面に記録します。押すと記録済みか確認できます</p>
+      <div class="btn-row">
+        <button id="check-pest" class="btn chip" type="button">🧪 防除</button>
+        <button id="check-foliar" class="btn chip" type="button">🧪 葉面散布</button>
+      </div>
+      <div id="spray-status" hidden></div>
+    </div>
   </section>
 
   <section class="grid-2">
@@ -79,16 +91,16 @@
   <section>
     <h2>今日の記録</h2>
     <div id="my-records"></div>
-    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（当日分のみ）</p>
+    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（当日分のみ）。🧪の散布記録は散布画面で取り消してください</p>
   </section>
 </main>
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260804e"></script>
-<script src="masters-default.js?v=20260804e"></script>
-<script src="common.js?v=20260804e"></script>
-<script src="work.js?v=20260804e"></script>
+<script src="config.js?v=20260825a"></script>
+<script src="masters-default.js?v=20260825a"></script>
+<script src="common.js?v=20260825a"></script>
+<script src="work.js?v=20260825a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

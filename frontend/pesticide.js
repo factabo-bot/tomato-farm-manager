@@ -15,7 +15,7 @@ init();
 async function init() {
   $("date-display").textContent = formatToday();
   $("user-info").textContent = state.profile.displayName + (isMock ? "（お試しモード）" : "");
-  $("use-date").value = formatToday();
+  applyHandover(); // 作業画面から日付・場所を引き継いで来た場合はそれを初期値にする
 
   // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
   $("material-name").addEventListener("input", updatePpeHint);
@@ -31,6 +31,25 @@ async function init() {
   renderAll();
 
   loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
+}
+
+// 作業画面の「🧪 防除」「🧪 葉面散布」からURLパラメータで渡された日付・拠点・棟を反映する。
+// マスタにない拠点・棟が来ても、renderBases/renderBuildings 側で選び直される
+function applyHandover() {
+  const params = new URLSearchParams(location.search);
+  $("use-date").value = params.get("date") || formatToday();
+
+  const base = params.get("base");
+  if (!base) return;
+  state.base = base;
+  (params.get("buildings") || "")
+    .split(PURPOSE_SEPARATOR)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .forEach((b) => state.buildings.add(b));
+
+  const kubun = params.get("kubun");
+  toast(kubun ? `${kubun}の入力です。作業画面の日付・場所を引き継ぎました` : "作業画面の日付・場所を引き継ぎました");
 }
 
 function renderAll() {
@@ -50,6 +69,11 @@ function renderBases() {
   const box = $("base-buttons");
   box.innerHTML = "";
   const bases = activeBases(state.masters);
+  // 引き継いだ拠点がマスタにないときは先頭に戻す（棟の選択も一緒に外す）
+  if (state.base && bases.indexOf(state.base) < 0) {
+    state.base = null;
+    state.buildings.clear();
+  }
   if (!state.base) state.base = bases[0];
   bases.forEach((name) => {
     const btn = el("button", "btn" + (name === state.base ? " active" : ""), name);
@@ -68,6 +92,12 @@ function renderBuildings() {
   const box = $("building-buttons");
   box.innerHTML = "";
   const buildings = buildingsOfBase(state.masters, state.base);
+  const names = buildings.map((b) => b.棟区画名);
+
+  // 引き継いだ棟のうち、この拠点にないものは外す（選べない棟が記録に残らないように）
+  [...state.buildings].forEach((n) => {
+    if (names.indexOf(n) < 0) state.buildings.delete(n);
+  });
 
   // 未選択のときは先頭の棟を既定にしておく（1棟だけの拠点でいちいち選ばなくて済むように）
   if (state.buildings.size === 0 && buildings.length > 0) {
