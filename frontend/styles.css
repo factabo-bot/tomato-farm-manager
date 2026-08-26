@@ -434,10 +434,36 @@ textarea {
   background: #fff3cd;
   color: #8a6d00;
   border-radius: 16px;
-  padding: 6px 14px;
+  padding: 10px 14px;
   font-size: 0.85rem;
   font-weight: bold;
   margin-bottom: 12px;
+  cursor: pointer;
+}
+
+/* 未送信の中身。溜まったまま消えないときに、何が残っているか確かめて捨てるための欄 */
+.queue-panel {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+.queue-panel .item {
+  align-items: flex-start;
+  font-size: 0.85rem;
+}
+.queue-panel .sub {
+  display: block;
+  margin-left: 0;
+  margin-top: 2px;
+  color: #8a6d00;
+}
+.queue-panel .btn-secondary {
+  min-height: 48px;
+  line-height: 44px;
+  font-size: 0.95rem;
+  margin-top: 4px;
 }
 
 .hint {

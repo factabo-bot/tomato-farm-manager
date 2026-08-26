@@ -310,7 +310,7 @@ async function loadMyRecords() {
 }
 
 // 作業画面だけ見てもその日にやったことが揃うよう、散布記録も一緒に並べる。
-// 散布の取消は散布画面で行うので、こちらには取消ボタンを出さない
+// 並んでいる以上ここで取り消せないと不便なので、散布記録も取消できるようにしている
 function renderMyRecords(work, sprays) {
   const box = $("my-records");
   box.innerHTML = "";
@@ -323,6 +323,7 @@ function renderMyRecords(work, sprays) {
     time: timeLabel(r.記録日時),
     label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
     id: r.記録ID,
+    kind: "work",
   }));
 
   sprays.forEach((r) => {
@@ -331,7 +332,8 @@ function renderMyRecords(work, sprays) {
     rows.push({
       time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
       label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
-      id: null,
+      id: r.記録ID,
+      kind: "spray",
     });
   });
 
@@ -356,7 +358,7 @@ function renderMyRecords(work, sprays) {
         }, 3000);
         return;
       }
-      cancelRecord(r.id);
+      r.kind === "spray" ? cancelSprayRecord(r.id) : cancelRecord(r.id);
     });
     row.appendChild(del);
     box.appendChild(row);
@@ -371,4 +373,18 @@ async function cancelRecord(id) {
   }
   toast("取り消しました");
   await loadMyRecords();
+}
+
+// 散布記録の取消。確認欄に出している内容も古くなるので、キャッシュを捨てて取り直す
+async function cancelSprayRecord(id) {
+  const res = await apiPost({ type: "cancelSpray", id, userId: state.profile.userId });
+  if (!res.ok) {
+    toast("⚠ " + (res.error || "取消に失敗しました"));
+    return;
+  }
+  toast("散布記録を取り消しました");
+  state.sprayByDate = {};
+  state.sprayLoading = {};
+  await loadMyRecords();
+  if (state.checking) checkSpray(state.checking);
 }

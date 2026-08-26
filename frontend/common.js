@@ -178,9 +178,16 @@ async function flushQueue() {
         body: JSON.stringify(item.payload),
       });
       const data = await res.json();
-      if (data.ok) sentCount++;
-      else remain.push(item);
+      if (data.ok) {
+        sentCount++;
+      } else {
+        // サーバーに届いたが受け付けられなかった。原因を残さないと
+        // 「未送信◯件」が消えない理由が分からなくなる
+        item.lastError = data.error || "サーバーが受け付けませんでした";
+        remain.push(item);
+      }
     } catch (err) {
+      item.lastError = "通信できませんでした";
       remain.push(item); // まだオフライン。残す
     }
   }
@@ -194,7 +201,119 @@ function updateQueueBadge() {
   if (!badge) return;
   const n = queueLength();
   badge.hidden = n === 0;
-  badge.textContent = `📤 未送信 ${n}件`;
+  badge.textContent = `📤 未送信 ${n}件（タップで中身を見る）`;
+  if (!badge.dataset.bound) {
+    badge.dataset.bound = "1";
+    badge.addEventListener("click", toggleQueuePanel);
+  }
+  if (n === 0) {
+    const panel = document.getElementById("queue-panel");
+    if (panel) panel.hidden = true;
+  } else if (document.getElementById("queue-panel") && !document.getElementById("queue-panel").hidden) {
+    renderQueuePanel();
+  }
+}
+
+// ---------- 未送信の中身を見る・捨てる ----------
+// サーバーに拒否され続ける記録が1件でも残ると「未送信◯件」が消えなくなるので、
+// 中身を確かめて捨てられるようにしておく
+
+function readQueue() {
+  return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+}
+
+function writeQueue(q) {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  updateQueueBadge();
+}
+
+function queueKey(item) {
+  return (item.savedAt || 0) + "|" + JSON.stringify(item.payload || {});
+}
+
+function queueItemLabel(payload) {
+  if (payload.type === "spray" || payload.type === "pesticide") {
+    const names = (payload.items || [])
+      .map((it) => it.materialName || it.pesticideName)
+      .filter(Boolean)
+      .join("・");
+    return `🧪 ${payload.useDate || ""} ${payload.base || ""} / ${names || "散布"}`;
+  }
+  if (payload.type === "growth") {
+    return `📏 ${payload.surveyDate || ""} ${payload.base || ""} / 生育調査 ${(payload.items || []).length}株`;
+  }
+  return `📝 ${payload.workDate || ""} ${payload.base || ""} / ${payload.workType || "作業"}`;
+}
+
+function ensureQueuePanel() {
+  let panel = document.getElementById("queue-panel");
+  if (panel) return panel;
+  const badge = $("queue-badge");
+  if (!badge) return null;
+  panel = el("div", "queue-panel");
+  panel.id = "queue-panel";
+  panel.hidden = true;
+  badge.insertAdjacentElement("afterend", panel);
+  return panel;
+}
+
+function toggleQueuePanel() {
+  const panel = ensureQueuePanel();
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) renderQueuePanel();
+}
+
+function renderQueuePanel() {
+  const panel = ensureQueuePanel();
+  if (!panel) return;
+  const q = readQueue();
+  panel.innerHTML = "";
+  if (q.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+
+  q.forEach((item) => {
+    const row = el("div", "item");
+    const box = el("div", "grow");
+    box.appendChild(el("div", "", queueItemLabel(item.payload || {})));
+    const when = new Date(item.savedAt || Date.now());
+    const stamp = formatDate(when) + " " + when.toTimeString().slice(0, 5);
+    box.appendChild(el("div", "sub", item.lastError ? `${stamp} 保留・${item.lastError}` : `${stamp} 保留`));
+    row.appendChild(box);
+
+    const del = el("button", "del", "捨てる");
+    del.type = "button";
+    del.addEventListener("click", () => {
+      if (del.dataset.arm !== "1") {
+        del.dataset.arm = "1";
+        del.textContent = "本当に捨てる？";
+        setTimeout(() => {
+          del.dataset.arm = "";
+          del.textContent = "捨てる";
+        }, 3000);
+        return;
+      }
+      // 並び順ではなく中身で照合する（再描画との行ズレで別の記録を捨てないため）
+      const key = queueKey(item);
+      writeQueue(readQueue().filter((x) => queueKey(x) !== key));
+      renderQueuePanel();
+      toast("未送信の記録を捨てました");
+    });
+    row.appendChild(del);
+    panel.appendChild(row);
+  });
+
+  const retry = el("button", "btn-secondary", "📤 いま送信を試す");
+  retry.type = "button";
+  retry.addEventListener("click", async () => {
+    retry.disabled = true;
+    await flushQueue();
+    renderQueuePanel();
+    retry.disabled = false;
+  });
+  panel.appendChild(retry);
 }
 
 window.addEventListener("online", flushQueue);

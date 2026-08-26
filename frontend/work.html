@@ -6,7 +6,7 @@
 <title>作業記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260825a">
+<link rel="stylesheet" href="styles.css?v=20260826a">
 </head>
 <body>
 <header>
@@ -91,16 +91,16 @@
   <section>
     <h2>今日の記録</h2>
     <div id="my-records"></div>
-    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（当日分のみ）。🧪の散布記録は散布画面で取り消してください</p>
+    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（作業記録は当日分のみ）</p>
   </section>
 </main>
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260825a"></script>
-<script src="masters-default.js?v=20260825a"></script>
-<script src="common.js?v=20260825a"></script>
-<script src="work.js?v=20260825a"></script>
+<script src="config.js?v=20260826a"></script>
+<script src="masters-default.js?v=20260826a"></script>
+<script src="common.js?v=20260826a"></script>
+<script src="work.js?v=20260826a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
