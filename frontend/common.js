@@ -69,16 +69,75 @@ async function apiGet(action, params) {
   return res.json();
 }
 
+// GASのウェブアプリはPOSTを受けると script.googleusercontent.com へリダイレクトする。
+// この往復はときどき失敗する（Google側の一時的な不調で、実測でも数分だけ集中して起きた）。
+// 壊れ方は2つあり、扱いを変える必要がある。
+//   1. doGet の返事が返ってくる → POSTの本文がGASまで届かず、GETとして処理された。
+//      何も書き込まれていないのに {ok:true} なので、放っておくと黙って成功扱いになり
+//      記録が消える。書き込みは起きていないので、そのまま送り直してよい。
+//   2. JSONでない応答（404のHTML等）→ 結果を読めなかっただけで、リダイレクト後なら
+//      GAS側では処理済みかもしれない。送り直すと同じ記録が2件できるので繰り返さない。
+const GET_GREETING = "tomato-farm-manager API"; // Code.gs の doGet が返す既定メッセージ
+const POST_TRIES = 3;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function postError(message, safeToRetry) {
+  const err = new Error(message);
+  err.safeToRetry = safeToRetry;
+  return err;
+}
+
 // Content-Type: text/plain にするとCORSのプリフライトが発生しない（GASの定石）
-async function apiPost(payload) {
-  if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;
-  if (isMock) return mockPost(payload);
+async function postOnce(payload) {
   const res = await fetch(CONFIG.GAS_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
     body: JSON.stringify(payload),
   });
-  return res.json();
+  const text = await res.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    data = null;
+  }
+
+  if (data && data.message === GET_GREETING) {
+    throw postError("送信内容がサーバーまで届きませんでした", true);
+  }
+  if (data) return data;
+
+  throw res.redirected
+    ? postError("送信できたか確認できませんでした（HTTP " + res.status + "）。履歴を確認してください", false)
+    : postError("サーバーに届きませんでした（HTTP " + res.status + "）", true);
+}
+
+async function postWithRetry(payload) {
+  let lastErr = null;
+  for (let i = 0; i < POST_TRIES; i++) {
+    if (i > 0) await sleep(500 * i);
+    try {
+      return await postOnce(payload);
+    } catch (err) {
+      lastErr = err;
+      if (err.safeToRetry === false) break; // 処理済みかもしれないので送り直さない
+    }
+  }
+  throw lastErr || new Error("送信できませんでした");
+}
+
+// 失敗しても投げずに {ok:false} で返す（呼び出し側はこの形を前提にしている）
+async function apiPost(payload) {
+  if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;
+  if (isMock) return mockPost(payload);
+  try {
+    return await postWithRetry(payload);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // ---------- マスタのキャッシュ ----------
@@ -136,12 +195,7 @@ async function apiPostWithQueue(payload) {
   if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;
   if (isMock) return mockPost(payload);
   try {
-    const res = await fetch(CONFIG.GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(payload),
-    });
-    return await res.json();
+    return await postWithRetry(payload);
   } catch (err) {
     enqueue(payload);
     return { ok: true, queued: true };
@@ -172,12 +226,7 @@ async function flushQueue() {
   let sentCount = 0;
   for (const item of q) {
     try {
-      const res = await fetch(CONFIG.GAS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(item.payload),
-      });
-      const data = await res.json();
+      const data = await postWithRetry(item.payload);
       if (data.ok) {
         sentCount++;
       } else {
@@ -187,8 +236,8 @@ async function flushQueue() {
         remain.push(item);
       }
     } catch (err) {
-      item.lastError = "通信できませんでした";
-      remain.push(item); // まだオフライン。残す
+      item.lastError = err.message || "通信できませんでした";
+      remain.push(item); // まだオフライン、または送信が届かなかった。残す
     }
   }
   localStorage.setItem(QUEUE_KEY, JSON.stringify(remain));
