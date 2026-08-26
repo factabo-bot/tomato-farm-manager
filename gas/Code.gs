@@ -267,12 +267,14 @@ function seedMastersIfEmpty_(ss) {
     ]);
   }
 
-  // 散布に関わる作業は散布記録側で扱うため、作業分類には「防除」を置かない
+  // 防除・葉面散布は散布記録側で扱うため、作業分類には置かない。
+  // トーン処理（トマトトーン＝植物成長調整剤）は着果の作業として作業分類に置いている。
+  // 薬剤名・希釈倍数は残らないので、農薬の使用記録として必要なら散布記録側にも入れる
   var workSheet = ss.getSheetByName(SHEET_MASTER_WORKTYPE);
   if (workSheet.getLastRow() < 2) {
     var works = [
       ["定植", "FALSE"], ["誘引", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
-      ["摘果", "FALSE"], ["収穫", "FALSE"], ["灌水", "FALSE"],
+      ["トーン処理", "TRUE"], ["摘果", "FALSE"], ["収穫", "FALSE"], ["灌水", "FALSE"],
       ["清掃", "FALSE"], ["観察", "FALSE"], ["その他", "FALSE"],
     ];
     var rows = works.map(function (w, i) {
