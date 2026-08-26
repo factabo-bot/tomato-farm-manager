@@ -62,11 +62,30 @@ const isMock = !CONFIG.GAS_URL;
 
 // ---------- API通信 ----------
 
+// 読み取りもPOSTと同じくときどき404のHTMLが返る（実測で6回中2回）。
+// 以前はここで例外になり、呼び出し側の描画が途中で止まって画面が空のままになっていた
+// ＝「記録が無い」のか「読めなかった」のか区別が付かなかった。
+// 読み取りは何度実行しても副作用がないので、無条件に数回試す。
+// それでも駄目なら {ok:false} を返したうえでその場に知らせる（黙って空にしない）
+const GET_TRIES = 3;
+
 async function apiGet(action, params) {
   if (isMock) return mockGet(action, params || {});
-  const qs = new URLSearchParams(Object.assign({ action }, params || {}, { _: Date.now() }));
-  const res = await fetch(CONFIG.GAS_URL + "?" + qs.toString());
-  return res.json();
+  let lastErr = null;
+  for (let i = 0; i < GET_TRIES; i++) {
+    if (i > 0) await sleep(400 * i);
+    try {
+      const qs = new URLSearchParams(Object.assign({ action }, params || {}, { _: Date.now() }));
+      const res = await fetch(CONFIG.GAS_URL + "?" + qs.toString());
+      const text = await res.text();
+      return JSON.parse(text);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  console.warn("読み込みに失敗", action, lastErr);
+  toast("⚠ 読み込めませんでした（" + action + "）。通信を確かめて開き直してください");
+  return { ok: false, error: "読み込めませんでした" };
 }
 
 // GASのウェブアプリはPOSTを受けると script.googleusercontent.com へリダイレクトする。
