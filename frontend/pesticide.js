@@ -314,10 +314,12 @@ function pickMaterial(m) {
   $("dose-unit").value = m.調製単位 === "g" ? "g" : "mL";
   $("dilution-note").textContent = m.希釈倍率目安 ? "ラベルの目安: " + m.希釈倍率目安 : "";
 
-  // 倍率候補（"800,1000" のように幅があるものは複数）をボタンで出す
+  // 倍率候補（"800/1000" のように幅があるものは複数）をボタンで出す。
+  // カンマ区切りにするとスプレッドシートが桁区切りの数値と解釈して
+  // 800,1000 が 8001000 になってしまうため「/」で区切る（読み込みは両対応）
   const box = $("dilution-choices");
   box.innerHTML = "";
-  const choices = String(m.倍率候補 || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const choices = String(m.倍率候補 || "").split(/[/,、／]/).map((s) => s.trim()).filter(Boolean);
   choices.forEach((c) => {
     const btn = el("button", "btn chip", c + "倍");
     btn.type = "button";
