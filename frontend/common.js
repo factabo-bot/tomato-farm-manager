@@ -235,7 +235,7 @@ const STORE_DAYS = 90;
 const KINDS = ["work", "spray", "growth"];
 
 function emptyStore() {
-  return { userId: "", work: [], spray: [], growth: [], syncedAt: 0 };
+  return { userId: "", work: [], spray: [], growth: [], weather: [], syncedAt: 0 };
 }
 
 function readStore() {
@@ -306,7 +306,15 @@ function storePrune(store) {
   KINDS.forEach((kind) => {
     store[kind] = (store[kind] || []).filter((r) => recordDate(kind, r) >= limitKey);
   });
+  store.weather = (store.weather || []).filter((w) => String(w.日付 || "").slice(0, 10) >= limitKey);
   return store;
+}
+
+// 履歴の日付見出しに出す天気。日付で引けるようにしておく
+function weatherMap() {
+  const map = {};
+  (readStore().weather || []).forEach((w) => { map[String(w.日付 || "").slice(0, 10)] = w; });
+  return map;
 }
 
 function newClientId() {
@@ -387,9 +395,15 @@ async function sync(onChange) {
 
 // 90日分をまるごと取り直して置き換える。
 // 差分ではなく総取りにしているのは、シート側での手直しや行削除も拾う必要があるため。
-// 裏で走るので遅くても画面は止まらない
+// 裏で走るので遅くても画面は止まらない。
+// 気象も一緒に持ってきて、履歴を開くたびに取りに行かなくて済むようにする
 async function pullRecords() {
-  const res = await apiGet("history", { days: STORE_DAYS });
+  const since = new Date();
+  since.setDate(since.getDate() - STORE_DAYS);
+  const [res, weatherRes] = await Promise.all([
+    apiGet("history", { days: STORE_DAYS }),
+    apiGet("weatherRange", { from: formatDate(since), to: formatToday() }),
+  ]);
   if (!res || !res.ok) return false;
 
   const fetched = { work: [], spray: [], growth: [] };
@@ -399,7 +413,8 @@ async function pullRecords() {
   });
 
   const store = readStore();
-  const before = JSON.stringify(KINDS.map((k) => store[k] || []));
+  const before = JSON.stringify([KINDS.map((k) => store[k] || []), store.weather || []]);
+  if (weatherRes && weatherRes.ok) store.weather = weatherRes.items || [];
 
   KINDS.forEach((kind) => {
     // まだ送れていない記録はサーバーに無いので、取り込んだ内容に足し戻す。
@@ -411,7 +426,7 @@ async function pullRecords() {
   store.syncedAt = Date.now();
   writeStore(store);
 
-  return JSON.stringify(KINDS.map((k) => store[k] || [])) !== before;
+  return JSON.stringify([KINDS.map((k) => store[k] || []), store.weather || []]) !== before;
 }
 
 // オフライン等でsubmitが失敗したときに使う。送信キューに積んで later flush する

@@ -106,31 +106,26 @@ async function load() {
   };
   const kind = state.tab === "work" ? "work" : state.tab === "growth" ? "growth" : "spray";
 
-  // まず手元のぶんで描く（待たせない）
-  loaded = { records: fromStore(kind, params), weatherMap: loaded.weatherMap };
+  // 記録も気象も手元にあるので、まずそれで描き切る（90日以内ならここで終わり）
+  loaded = { records: fromStore(kind, params), weatherMap: weatherMap() };
   render();
 
   // 90日より前まで遡るときだけサーバーに取りに行く
-  const needServer = !storeCovers(params.from);
-  setStatus(needServer ? countLabel(loaded.records.length) + "（古い記録を取得中…）" : countLabel(loaded.records.length) + "（気象を取得中…）");
+  if (storeCovers(params.from)) return;
 
-  const jobs = [apiGet("weatherRange", { from: params.from, to: params.to })];
-  if (needServer) {
-    const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
-    jobs.push(apiGet(action, params));
-  }
-  const [weatherRes, recordsRes] = await Promise.all(jobs);
+  setStatus(countLabel(loaded.records.length) + "（古い記録を取得中…）");
+  const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
+  const [recordsRes, weatherRes] = await Promise.all([
+    apiGet(action, params),
+    apiGet("weatherRange", { from: params.from, to: params.to }),
+  ]);
   if (seq !== loadSeq) return; // 待っている間に条件が変わった
 
-  const weatherMap = {};
-  ((weatherRes && weatherRes.items) || []).forEach((w) => { weatherMap[w.日付] = w; });
-
-  let failed = false;
-  if (needServer) {
-    if (recordsRes && recordsRes.ok) loaded.records = recordsRes.records || [];
-    else failed = true;
+  if (weatherRes && weatherRes.ok) {
+    (weatherRes.items || []).forEach((w) => { loaded.weatherMap[String(w.日付 || "").slice(0, 10)] = w; });
   }
-  loaded.weatherMap = weatherMap;
+  const failed = !(recordsRes && recordsRes.ok);
+  if (!failed) loaded.records = recordsRes.records || [];
   render();
   setStatus(countLabel(loaded.records.length) + (failed ? "（古い記録は読み込めませんでした）" : ""));
 }
