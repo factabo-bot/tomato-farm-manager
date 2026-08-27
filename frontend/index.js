@@ -17,7 +17,11 @@ async function init() {
     $("user-info").textContent = name + (isMock ? "（お試しモード）" : "");
   });
 
-  const res = await apiGet("mytoday", { userId: profile.userId });
+  // キャッシュがあれば即座に描画し、最新が届いて中身が変わっていたら描き直す
+  render(await loadToday(profile.userId, render));
+}
+
+function render(res) {
   const work = res.work || [];
   const spray = res.spray || res.pesticide || [];
   const growth = res.growth || [];

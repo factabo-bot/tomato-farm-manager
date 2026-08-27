@@ -165,20 +165,30 @@ async function apiPost(payload) {
 // 画面は即座にそれで描画してから、裏で最新版を取りに行く。
 
 const MASTERS_CACHE_KEY = "tfm_masters_cache";
+// マスタの取得は実測で8〜11秒かかる。GASは同じ利用者の処理を順番にしか実行しないので、
+// 画面を開くたびに走らせると他の読み込みまで待たされる。しばらくは取りに行かない
+const MASTERS_TTL_MS = 60 * 60 * 1000;
 
-function getCachedMasters() {
+// 保存形式は { savedAt, data }。以前のキャッシュは中身が直に入っているので両方読めるようにする
+function readMastersCache() {
   try {
-    const raw = localStorage.getItem(MASTERS_CACHE_KEY);
-    if (raw) return JSON.parse(raw);
+    const raw = JSON.parse(localStorage.getItem(MASTERS_CACHE_KEY) || "null");
+    if (!raw) return { data: null, savedAt: 0 };
+    if (raw.data) return { data: raw.data, savedAt: raw.savedAt || 0 };
+    return { data: raw, savedAt: 0 }; // 旧形式。取得時刻が分からないので古い扱い
   } catch (err) {
     console.warn("マスタキャッシュの読み込みに失敗", err);
+    return { data: null, savedAt: 0 };
   }
-  return null;
+}
+
+function getCachedMasters() {
+  return readMastersCache().data;
 }
 
 function saveMastersCache(masters) {
   try {
-    localStorage.setItem(MASTERS_CACHE_KEY, JSON.stringify(masters));
+    localStorage.setItem(MASTERS_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: masters }));
   } catch (err) {
     console.warn("マスタキャッシュの保存に失敗", err);
   }
@@ -189,7 +199,10 @@ function saveMastersCache(masters) {
 // （利用者が入力中に画面が作り替わるのを避けるため、変化がなければ何もしない）。
 // キャッシュがない初回だけは取得を待つ。
 async function loadMasters(onFresh) {
-  const cached = getCachedMasters();
+  const { data: cached, savedAt } = readMastersCache();
+
+  // 取ったばかりのキャッシュがあるなら通信しない（マスタは滅多に変わらない）
+  if (cached && Date.now() - savedAt < MASTERS_TTL_MS) return cached;
 
   const fetching = apiGet("masters")
     .then((fresh) => {
@@ -207,6 +220,59 @@ async function loadMasters(onFresh) {
   if (cached) return cached;
   const fresh = await fetching;
   return fresh || Object.assign({ ok: true }, MASTERS_DEFAULT);
+}
+
+// ---------- 今日の記録のキャッシュ ----------
+// mytoday は実測で3.5〜5秒かかる。開いてから数秒間なにも出ないと「記録が無い」ように
+// 見えてしまうので、前回の内容をすぐ描いてから裏で最新に差し替える（マスタと同じ考え方）
+
+const TODAY_CACHE_KEY = "tfm_today_cache";
+
+function readTodayCache(userId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TODAY_CACHE_KEY) || "null");
+    if (raw && raw.date === formatToday() && raw.userId === userId) return raw.data;
+  } catch (err) {
+    console.warn("今日の記録のキャッシュ読み込みに失敗", err);
+  }
+  return null; // 日付や利用者が変わったキャッシュは使わない
+}
+
+function saveTodayCache(userId, data) {
+  try {
+    localStorage.setItem(TODAY_CACHE_KEY, JSON.stringify({ date: formatToday(), userId, data }));
+  } catch (err) {
+    console.warn("今日の記録のキャッシュ保存に失敗", err);
+  }
+}
+
+// キャッシュがあれば待たずに返し、裏で最新を取りに行く。
+// 中身が変わっていたときだけ onFresh(最新) を呼ぶ
+async function loadToday(userId, onFresh) {
+  const cached = readTodayCache(userId);
+
+  const fetching = apiGet("mytoday", { userId })
+    .then((fresh) => {
+      if (!fresh || !fresh.ok) return null;
+      const changed = JSON.stringify(fresh) !== JSON.stringify(cached);
+      saveTodayCache(userId, fresh);
+      if (changed && cached && onFresh) onFresh(fresh);
+      return fresh;
+    })
+    .catch((err) => {
+      console.warn("今日の記録の取得に失敗", err);
+      return null;
+    });
+
+  if (cached) return cached;
+  return (await fetching) || { ok: true, work: [], spray: [], growth: [] };
+}
+
+// 記録した直後や取り消した直後は、キャッシュを使わず取り直す
+async function reloadToday(userId) {
+  const fresh = await apiGet("mytoday", { userId });
+  if (fresh && fresh.ok) saveTodayCache(userId, fresh);
+  return fresh;
 }
 
 // オフライン等でsubmitが失敗したときに使う。送信キューに積んで later flush する

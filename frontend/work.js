@@ -273,7 +273,7 @@ async function submit() {
     }
     toast(res.queued ? "📤 電波が弱いので保留しました（オンライン復帰時に自動送信）" : "✅ 記録しました");
     resetForm();
-    await loadMyRecords();
+    await loadMyRecords(true);
   } catch (err) {
     console.error(err);
     toast("⚠ 送信に失敗しました");
@@ -304,9 +304,16 @@ function resetForm() {
   renderWorkTypes();
 }
 
-async function loadMyRecords() {
-  const res = await apiGet("mytoday", { userId: state.profile.userId });
-  renderMyRecords(res.work || [], res.spray || res.pesticide || []);
+// 記録した直後・取り消した直後は force で取り直す。
+// それ以外はキャッシュを即座に描いて、裏で届いた最新に差し替える
+async function loadMyRecords(force) {
+  const show = (r) => renderMyRecords(r.work || [], r.spray || r.pesticide || []);
+  if (force) {
+    const fresh = await reloadToday(state.profile.userId);
+    if (fresh && fresh.ok) show(fresh);
+    return;
+  }
+  show(await loadToday(state.profile.userId, show));
 }
 
 // 作業画面だけ見てもその日にやったことが揃うよう、散布記録も一緒に並べる。
@@ -372,7 +379,7 @@ async function cancelRecord(id) {
     return;
   }
   toast("取り消しました");
-  await loadMyRecords();
+  await loadMyRecords(true);
 }
 
 // 散布記録の取消。確認欄に出している内容も古くなるので、キャッシュを捨てて取り直す
@@ -385,6 +392,6 @@ async function cancelSprayRecord(id) {
   toast("散布記録を取り消しました");
   state.sprayByDate = {};
   state.sprayLoading = {};
-  await loadMyRecords();
+  await loadMyRecords(true);
   if (state.checking) checkSpray(state.checking);
 }
