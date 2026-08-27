@@ -355,6 +355,18 @@ textarea {
   margin-left: 8px;
 }
 
+/* 履歴の検索結果の状態。押した手応えと、待つべきかどうかが分かるようにする */
+.search-status {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #eef4ee;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #2e7d32;
+  font-weight: bold;
+  text-align: center;
+}
+
 .tab-row {
   display: flex;
   gap: 8px;

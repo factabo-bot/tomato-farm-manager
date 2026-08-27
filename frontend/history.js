@@ -21,6 +21,7 @@ async function init() {
   $("tab-work").addEventListener("click", () => switchTab("work"));
   $("tab-spray").addEventListener("click", () => switchTab("spray"));
   $("tab-growth").addEventListener("click", () => switchTab("growth"));
+  $("search").addEventListener("click", load);
   $("from-date").addEventListener("change", load);
   $("to-date").addEventListener("change", load);
   $("base-filter").addEventListener("change", load);
@@ -85,7 +86,19 @@ function fromStore(kind, params) {
     .sort((a, b) => (recordDate(kind, a) < recordDate(kind, b) ? 1 : -1));
 }
 
+// 押した手応えが無いと待っていいのか分からないので、いまの状態を必ず出す
+function setStatus(text) {
+  $("search-status").textContent = text;
+}
+
+function countLabel(n) {
+  return n === 0 ? "この条件の記録はありません" : n + "件";
+}
+
+let loadSeq = 0; // 続けて押されたとき、古い結果で上書きしないための通し番号
+
 async function load() {
+  const seq = ++loadSeq;
   const params = {
     from: $("from-date").value,
     to: $("to-date").value,
@@ -98,21 +111,28 @@ async function load() {
   render();
 
   // 90日より前まで遡るときだけサーバーに取りに行く
-  const jobs = [apiGet("weatherRange", { from: params.from, to: params.to })];
   const needServer = !storeCovers(params.from);
+  setStatus(needServer ? countLabel(loaded.records.length) + "（古い記録を取得中…）" : countLabel(loaded.records.length) + "（気象を取得中…）");
+
+  const jobs = [apiGet("weatherRange", { from: params.from, to: params.to })];
   if (needServer) {
     const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
     jobs.push(apiGet(action, params));
   }
   const [weatherRes, recordsRes] = await Promise.all(jobs);
+  if (seq !== loadSeq) return; // 待っている間に条件が変わった
 
   const weatherMap = {};
   ((weatherRes && weatherRes.items) || []).forEach((w) => { weatherMap[w.日付] = w; });
-  loaded = {
-    records: needServer && recordsRes && recordsRes.ok ? recordsRes.records || [] : loaded.records,
-    weatherMap,
-  };
+
+  let failed = false;
+  if (needServer) {
+    if (recordsRes && recordsRes.ok) loaded.records = recordsRes.records || [];
+    else failed = true;
+  }
+  loaded.weatherMap = weatherMap;
   render();
+  setStatus(countLabel(loaded.records.length) + (failed ? "（古い記録は読み込めませんでした）" : ""));
 }
 
 function weatherLine(w) {
@@ -147,6 +167,7 @@ function render() {
     : loaded.records;
 
   $("empty-hint").hidden = records.length > 0;
+  setStatus(countLabel(records.length)); // しぼり込んだ結果の件数も出す
   let lastDate = null;
   records.forEach((r) => {
     const date = state.tab === "work" ? r.作業日 : state.tab === "growth" ? r.調査日 : r.使用年月日;

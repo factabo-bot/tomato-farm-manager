@@ -6,7 +6,7 @@
 <title>履歴 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260827b">
+<link rel="stylesheet" href="styles.css?v=20260827c">
 </head>
 <body>
 <header>
@@ -57,6 +57,11 @@
   </section>
 
   <section>
+    <button id="search" class="btn-primary" type="button">🔍 この条件で表示</button>
+    <div id="search-status" class="search-status">読み込み中…</div>
+  </section>
+
+  <section>
     <div id="record-list"></div>
     <p class="hint" id="empty-hint" hidden>この条件の記録はありません</p>
   </section>
@@ -64,10 +69,10 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260827b"></script>
-<script src="masters-default.js?v=20260827b"></script>
-<script src="common.js?v=20260827b"></script>
-<script src="history.js?v=20260827b"></script>
+<script src="config.js?v=20260827c"></script>
+<script src="masters-default.js?v=20260827c"></script>
+<script src="common.js?v=20260827c"></script>
+<script src="history.js?v=20260827c"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
