@@ -15,9 +15,8 @@
  * バージョン「新バージョン」を選んで再デプロイしないと、公開URL（/exec）は
  * 古いコードのまま動き続ける（エディタでの実行と公開URLは別物）。
  *
- * clientId 列を追加したので、このコードに更新したら setup を1回実行すること。
- * ensureSheet_ が既存シートの末尾に clientId 列を足す。列が無い間は重複の
- * 照合が効かない（findByClientId_ が空を返す）だけで、記録自体は従来どおり動く。
+ * clientId 列は保存時に自動で追加されるので（ensureClientIdColumn_）、この更新に
+ * あたって setup を実行する必要はない。再デプロイだけでよい。
  *
  * 旧「防除記録」構成から移行する場合は、setup より先に migrateToSpray を
  * 1回だけ実行する（シート名を散布記録系へ改名する）。
@@ -382,6 +381,15 @@ function doPost(e) {
   }
 }
 
+// clientId 列がまだ無いシートには、保存のついでに足す。
+// setup の実行を忘れても重複の照合が効くようにするため（列が無いと素通りしてしまう）
+function ensureClientIdColumn_(sheetName) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return;
+  if (headerMap_(sheet)["clientId"] !== undefined) return;
+  sheet.getRange(1, sheet.getLastColumn() + 1).setValue("clientId");
+}
+
 // 同じ clientId の記録が既にあれば、その記録IDを返す（無ければ空文字）。
 // 端末が同じ送信を繰り返しても1件しか入らないようにするための照合
 function findByClientId_(sheetName, clientId) {
@@ -401,6 +409,7 @@ function saveWork_(data) {
   if (!data.base) return json_({ ok: false, error: "拠点を選択してください" });
   if (!data.workType) return json_({ ok: false, error: "作業分類を選択してください" });
 
+  ensureClientIdColumn_(SHEET_WORK);
   var dup = findByClientId_(SHEET_WORK, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -494,6 +503,7 @@ function saveSpray_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
+  ensureClientIdColumn_(SHEET_SPRAY);
   var dup = findByClientId_(SHEET_SPRAY, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -573,6 +583,7 @@ function saveGrowth_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
+  ensureClientIdColumn_(SHEET_GROWTH);
   var dup = findByClientId_(SHEET_GROWTH, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
