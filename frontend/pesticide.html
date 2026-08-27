@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -6,7 +6,7 @@
 <title>散布記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260827c">
+<link rel="stylesheet" href="styles.css?v=20260827d">
 </head>
 <body>
 <header>
@@ -27,7 +27,7 @@
 <main>
   <div id="queue-badge" class="queue-badge" hidden></div>
 
-  <p class="hint law-hint">1回の散布ごとに記録します。農薬・展着剤・葉面散布肥料をまとめて混ぜた場合も、この1件に資材を並べて登録してください。正式な法定帳簿として提出する場合は内容を確認のうえ転記してください。</p>
+  <p class="hint law-hint">散布前にこの画面で調製を計算します。作った内容がそのまま記録になります（まずは「予定」として保存し、散布が済んだら「実施した」を押してください）。正式な法定帳簿として提出する場合は内容を確認のうえ転記してください。</p>
 
   <section>
     <h2>使用年月日 <span class="req">★必須</span></h2>
@@ -35,14 +35,28 @@
   </section>
 
   <section>
-    <h2>使用場所（拠点） <span class="req">★必須</span></h2>
+    <h2>① 使用場所（拠点） <span class="req">★必須</span></h2>
     <div id="base-buttons" class="btn-row"><span class="hint">読み込み中…</span></div>
   </section>
 
   <section>
-    <h2>棟・区画（複数選べます）</h2>
+    <h2>② 棟・区画（複数選べます）</h2>
     <div id="building-buttons" class="btn-row"></div>
     <div id="building-bulk" class="btn-row"></div>
+  </section>
+
+  <section>
+    <h2>③ 棟ごとの散布量 <span class="req">★必須</span></h2>
+    <div id="volume-rows"></div>
+    <div class="total-line">合計 <span id="volume-total">0</span> L</div>
+  </section>
+
+  <section>
+    <h2>④ 散布方法</h2>
+    <div id="method-buttons" class="btn-row"></div>
+    <label for="batch-volume">1回の調製容量（L）</label>
+    <input type="number" id="batch-volume" inputmode="decimal" placeholder="例: 15">
+    <p class="hint">タンク1杯ぶんの量。ここから1回あたりの投入量を出します</p>
   </section>
 
   <section>
@@ -60,53 +74,55 @@
   </section>
 
   <section>
-    <h2>散布レシピ（選ぶと下の資材リストに自動入力されます）</h2>
+    <h2>⑤ 散布レシピ（選ぶと資材がまとめて入ります）</h2>
     <div id="recipe-buttons" class="btn-row"></div>
   </section>
 
   <section>
-    <h2>使用する資材（農薬・肥料など） <span class="req">★1件以上必須</span></h2>
-    <input type="text" id="material-name" list="material-list" placeholder="資材名を選択または入力">
-    <datalist id="material-list"></datalist>
+    <h2>⑥ 使用する資材 <span class="req">★1件以上必須</span></h2>
+    <input type="text" id="material-filter" placeholder="資材名で絞り込み（例: アファーム）">
+    <div id="material-picker" class="picker"></div>
     <p class="hint ppe-hint" id="ppe-hint" hidden></p>
-    <div class="grid-2 inner">
-      <input type="text" id="dilution" placeholder="希釈倍数 例: 1000倍">
-      <input type="number" id="amount" placeholder="使用量" inputmode="decimal">
+    <div id="dilution-box" hidden>
+      <label id="dilution-label">希釈倍率</label>
+      <div id="dilution-choices" class="btn-row chip-row"></div>
+      <div class="grid-2 inner">
+        <input type="number" id="dilution" inputmode="decimal" placeholder="倍率（数値）">
+        <select id="dose-unit">
+          <option value="mL">mL（液体）</option>
+          <option value="g">g（粉・顆粒）</option>
+        </select>
+      </div>
+      <p class="hint" id="dilution-note"></p>
+      <button id="add-item" class="btn-secondary" type="button">＋ この資材を加える</button>
     </div>
-    <input type="text" id="amount-unit" placeholder="使用量の単位 例: L/10a">
-    <input type="number" id="total-volume" placeholder="散布液量合計(L)（任意）" inputmode="decimal">
-    <button id="add-item" class="btn-secondary" type="button">＋ この資材をリストに追加</button>
     <div id="item-list"></div>
   </section>
 
-  <section class="grid-2">
-    <div>
-      <label>開始時刻</label>
-      <input type="time" id="start-time">
-    </div>
-    <div>
-      <label>終了時刻</label>
-      <input type="time" id="end-time">
-    </div>
+  <section>
+    <h2>⑦ 調製表</h2>
+    <div id="mix-head" class="hint"></div>
+    <div id="mix-table"></div>
   </section>
 
   <section>
     <textarea id="note" placeholder="備考（任意）"></textarea>
-    <button id="submit" class="btn-primary" type="button">記録する</button>
+    <button id="submit" class="btn-primary" type="button">予定として保存する</button>
   </section>
 
   <section>
     <h2>今日の散布記録</h2>
     <div id="my-records"></div>
+    <p class="hint">散布が済んだら「実施した」を押してください。予定のままの記録は法定帳簿に出ません</p>
   </section>
 </main>
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260827c"></script>
-<script src="masters-default.js?v=20260827c"></script>
-<script src="common.js?v=20260827c"></script>
-<script src="pesticide.js?v=20260827c"></script>
+<script src="config.js?v=20260827d"></script>
+<script src="masters-default.js?v=20260827d"></script>
+<script src="common.js?v=20260827d"></script>
+<script src="pesticide.js?v=20260827d"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

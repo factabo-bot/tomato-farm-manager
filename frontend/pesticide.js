@@ -1,12 +1,18 @@
 "use strict";
 
+// 前回の散布方法と調製容量は覚えておく（毎回同じ機材を使うため）
+const METHOD_KEY = "tfm_spray_method";
+
 const state = {
   masters: null,
   base: null,
   buildings: new Set(), // 1回の散布で複数の棟をまとめて回ることがあるので複数選択
+  volumes: {},          // 棟名 → 散布量L
+  method: "",
   items: [],
-  purposes: new Set(), // 選択中の目的タグ
+  purposes: new Set(),  // 選択中の目的タグ
   recipeName: "",
+  picked: null,         // 選択中の資材（倍率を決める前の状態）
   profile: getProfile(),
 };
 
@@ -17,8 +23,16 @@ async function init() {
   $("user-info").textContent = state.profile.displayName + (isMock ? "（お試しモード）" : "");
   applyHandover(); // 作業画面から日付・場所を引き継いで来た場合はそれを初期値にする
 
+  const last = JSON.parse(localStorage.getItem(METHOD_KEY) || "null");
+  if (last) {
+    state.method = last.method || "";
+    $("batch-volume").value = last.batchL || "";
+  }
+
   // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
-  $("material-name").addEventListener("input", updatePpeHint);
+  $("material-filter").addEventListener("input", renderMaterialPicker);
+  $("dilution").addEventListener("input", renderMixTable);
+  $("batch-volume").addEventListener("input", renderMixTable);
   $("add-item").addEventListener("click", addItem);
   $("submit").addEventListener("click", submit);
   renderItems();
@@ -59,7 +73,8 @@ function renderAll() {
   renderCrops();
   renderPurposes();
   renderRecipes();
-  renderMaterialOptions();
+  renderMaterialPicker();
+  renderMethods();
 }
 
 // マスタ_資材（旧マスタ_農薬）。古いGASからのレスポンスにも耐えるようフォールバックする
@@ -137,6 +152,81 @@ function renderBuildings() {
     });
     bulk.appendChild(clear);
   }
+
+  renderVolumes();
+}
+
+// ---------- 棟ごとの散布量 ----------
+// 8/1の記録が「野呂1:90L、野呂2:90L、野呂3:20L で合計200L」の形だったので、
+// どの棟にどれだけまいたかを残したうえで合計を出す
+
+function renderVolumes() {
+  const box = $("volume-rows");
+  box.innerHTML = "";
+  const names = [...state.buildings];
+  if (names.length === 0) {
+    box.appendChild(el("div", "hint", "棟・区画を選ぶと入力欄が出ます"));
+    updateVolumeTotal();
+    return;
+  }
+  names.forEach((name) => {
+    const row = el("div", "num-row");
+    row.appendChild(el("label", "num-label", name));
+    const input = el("input", "num-input");
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.value = state.volumes[name] === undefined ? "" : state.volumes[name];
+    input.addEventListener("input", () => {
+      state.volumes[name] = input.value;
+      updateVolumeTotal();
+      renderMixTable();
+    });
+    row.appendChild(input);
+    row.appendChild(el("span", "num-unit", "L"));
+    box.appendChild(row);
+  });
+  updateVolumeTotal();
+}
+
+function totalVolume() {
+  return [...state.buildings].reduce((sum, name) => {
+    const v = Number(state.volumes[name]);
+    return sum + (v > 0 ? v : 0);
+  }, 0);
+}
+
+function updateVolumeTotal() {
+  $("volume-total").textContent = String(Math.round(totalVolume() * 10) / 10);
+}
+
+// ---------- 散布方法 ----------
+
+function activeMethods() {
+  return (state.masters.sprayMethods || [])
+    .filter((m) => String(m.有効フラグ).toUpperCase() === "TRUE")
+    .sort((a, b) => Number(a.表示順) - Number(b.表示順));
+}
+
+function renderMethods() {
+  const box = $("method-buttons");
+  box.innerHTML = "";
+  const methods = activeMethods();
+  if (methods.length === 0) {
+    box.appendChild(el("div", "hint", "（マスタ_散布方法が未登録。容量を直接入れてください）"));
+    return;
+  }
+  methods.forEach((m) => {
+    const btn = el("button", "btn" + (m.方法名 === state.method ? " active" : ""),
+      `${m.方法名}（${m["1回調製容量L"]}L）`);
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      state.method = m.方法名;
+      $("batch-volume").value = m["1回調製容量L"];
+      renderMethods();
+      renderMixTable();
+    });
+    box.appendChild(btn);
+  });
 }
 
 function renderCrops() {
@@ -181,16 +271,64 @@ function renderPurposeGroup(box, list) {
   });
 }
 
-function renderMaterialOptions() {
-  const list = $("material-list");
-  list.innerHTML = "";
-  materialList()
+// ---------- 資材を選ぶ ----------
+// datalist はスマホで中身が見えず選びにくいので、絞り込み＋一覧に置き換えた。
+// 1行に 資材名・区分・倍率目安 を出して、押すと倍率の選択に進む
+
+function renderMaterialPicker() {
+  const box = $("material-picker");
+  const word = $("material-filter").value.trim();
+  box.innerHTML = "";
+
+  const list = materialList()
     .filter((m) => String(m.有効フラグ).toUpperCase() === "TRUE")
-    .forEach((m) => {
-      const opt = document.createElement("option");
-      opt.value = m.薬剤名;
-      list.appendChild(opt);
+    .filter((m) => !word || String(m.薬剤名).includes(word) || String(m.区分 || "").includes(word));
+
+  if (list.length === 0) {
+    box.appendChild(el("div", "hint", "見つかりません"));
+    return;
+  }
+
+  list.forEach((m) => {
+    const row = el("button", "picker-row" + (state.picked && state.picked.薬剤名 === m.薬剤名 ? " active" : ""));
+    row.type = "button";
+    row.appendChild(el("span", "mat-badge " + (isPesticide(m) ? "is-pest" : "is-other"),
+      isPesticide(m) ? "農薬" : (m.区分 || "その他")));
+    const text = el("span", "grow");
+    text.appendChild(el("div", "", m.薬剤名));
+    if (m.希釈倍率目安) text.appendChild(el("div", "sub", String(m.希釈倍率目安)));
+    row.appendChild(text);
+    row.addEventListener("click", () => pickMaterial(m));
+    box.appendChild(row);
+  });
+}
+
+function pickMaterial(m) {
+  state.picked = m;
+  renderMaterialPicker();
+  updatePpeHint();
+
+  $("dilution-box").hidden = false;
+  $("dilution-label").textContent = `${m.薬剤名} の希釈倍率`;
+  $("dilution").value = "";
+  $("dose-unit").value = m.調製単位 === "g" ? "g" : "mL";
+  $("dilution-note").textContent = m.希釈倍率目安 ? "ラベルの目安: " + m.希釈倍率目安 : "";
+
+  // 倍率候補（"800,1000" のように幅があるものは複数）をボタンで出す
+  const box = $("dilution-choices");
+  box.innerHTML = "";
+  const choices = String(m.倍率候補 || "").split(",").map((s) => s.trim()).filter(Boolean);
+  choices.forEach((c) => {
+    const btn = el("button", "btn chip", c + "倍");
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      $("dilution").value = c;
+      renderMixTable();
     });
+    box.appendChild(btn);
+  });
+  if (choices.length === 1) $("dilution").value = choices[0]; // 候補が1つならそれを入れておく
+  renderMixTable();
 }
 
 function findMaterial(name) {
@@ -203,7 +341,7 @@ function isPesticide(material) {
 
 // 保護具の注意は農薬登録のある資材のときだけ出す（肥料単独では出さない）
 function updatePpeHint() {
-  const m = findMaterial($("material-name").value.trim());
+  const m = state.picked;
   const hint = $("ppe-hint");
   if (isPesticide(m) && m["必要な保護具"]) {
     hint.hidden = false;
@@ -245,13 +383,14 @@ function applyRecipe(recipe) {
     toast("このレシピには資材が登録されていません");
     return;
   }
-  state.items = items.map((it) => ({
-    materialName: it.薬剤名,
-    dilution: it.希釈倍数 || "",
-    amount: it.使用量 || "",
-    amountUnit: it.使用量単位 || "",
-    totalVolumeL: "",
-  }));
+  state.items = items.map((it) => {
+    const m = findMaterial(it.薬剤名);
+    return {
+      materialName: it.薬剤名,
+      dilution: parseDilution(it.希釈倍数) || "",
+      unit: (m && m.調製単位) || "mL",
+    };
+  });
   // レシピの対象病害虫は、マスタの目的名と一致するものはチップとして選択状態にする
   if (recipe.対象病害虫) {
     const names = (state.masters.purposes || []).map((p) => p.目的名);
@@ -263,28 +402,26 @@ function applyRecipe(recipe) {
   }
   state.recipeName = recipe.レシピ名;
   renderItems();
-  toast(`「${recipe.レシピ名}」の資材を入力しました（内容は編集できます）`);
+  toast(`「${recipe.レシピ名}」の資材を入れました（倍率は編集できます）`);
 }
 
 function addItem() {
-  const name = $("material-name").value.trim();
-  const dilution = $("dilution").value.trim();
-  const amount = $("amount").value;
-  const amountUnit = $("amount-unit").value.trim();
-  const totalVolumeL = $("total-volume").value;
+  if (!state.picked) return toast("資材を選んでください");
+  const dilution = parseDilution($("dilution").value);
+  if (!dilution) return toast("希釈倍率を入れてください");
 
-  if (!name) return toast("資材を選択または入力してください");
-  if (!dilution && !(amount && amountUnit)) {
-    return toast("希釈倍数、または使用量と単位のどちらかを入力してください");
-  }
+  state.items.push({
+    materialName: state.picked.薬剤名,
+    dilution: dilution,
+    unit: $("dose-unit").value,
+  });
 
-  state.items.push({ materialName: name, dilution, amount, amountUnit, totalVolumeL });
-  $("material-name").value = "";
+  state.picked = null;
+  $("dilution-box").hidden = true;
   $("dilution").value = "";
-  $("amount").value = "";
-  $("amount-unit").value = "";
-  $("total-volume").value = "";
   $("ppe-hint").hidden = true;
+  $("material-filter").value = "";
+  renderMaterialPicker();
   renderItems();
 }
 
@@ -294,13 +431,12 @@ function renderItems() {
   state.items.forEach((it, i) => {
     const row = el("div", "item");
     const m = findMaterial(it.materialName);
-    const dose = it.dilution || (it.amount ? it.amount + it.amountUnit : "");
 
     // 混ぜたときにどれが農薬でどれが肥料か一目で分かるようにする
     const badge = el("span", "mat-badge " + (isPesticide(m) ? "is-pest" : "is-other"),
       isPesticide(m) ? "農薬" : (m ? (m.区分 || "その他") : "未登録"));
     row.appendChild(badge);
-    row.appendChild(el("span", "grow", `${it.materialName}（${dose}）`));
+    row.appendChild(el("span", "grow", `${it.materialName}（${it.dilution}倍）`));
 
     const del = el("button", "del", "削除");
     del.type = "button";
@@ -311,23 +447,87 @@ function renderItems() {
     row.appendChild(del);
     box.appendChild(row);
   });
+  renderMixTable();
 }
 
-function computeDuration() {
-  const s = $("start-time").value;
-  const e = $("end-time").value;
-  if (!s || !e) return "";
-  const [sh, sm] = s.split(":").map(Number);
-  const [eh, em] = e.split(":").map(Number);
-  const diff = eh * 60 + em - (sh * 60 + sm);
-  return diff > 0 ? diff : "";
+// ---------- 調製表 ----------
+// これが散布前の指示書になる。総調製量と1回の調製容量から、
+// 資材ごとの投入量（合計・1回あたり）を出す
+
+function batchVolume() {
+  const v = Number($("batch-volume").value);
+  return v > 0 ? v : 0;
+}
+
+function renderMixTable() {
+  const head = $("mix-head");
+  const box = $("mix-table");
+  box.innerHTML = "";
+
+  const total = totalVolume();
+  const batch = batchVolume();
+
+  if (total <= 0 || state.items.length === 0) {
+    head.textContent = "";
+    box.appendChild(el("div", "hint", "棟ごとの散布量と資材を入れると、投入量が出ます"));
+    return;
+  }
+
+  const plan = batchPlan(total, batch);
+  head.textContent = plan
+    ? `総調製量 ${Math.round(total * 10) / 10} L ／ ${state.method || "1回"} ${plan.batchL} L × ${plan.count}回`
+      + (plan.lastL !== plan.batchL ? `（最後の1回は ${plan.lastL} L）` : "")
+    : `総調製量 ${Math.round(total * 10) / 10} L`;
+
+  const header = el("div", "mix-row mix-header");
+  header.appendChild(el("span", "mix-name", "資材"));
+  header.appendChild(el("span", "mix-num", "倍率"));
+  header.appendChild(el("span", "mix-num", "合計"));
+  header.appendChild(el("span", "mix-num", plan ? "1回あたり" : ""));
+  box.appendChild(header);
+
+  state.items.forEach((it) => {
+    const r = mixRow(it, total, batch);
+    const row = el("div", "mix-row");
+    row.appendChild(el("span", "mix-name", r.materialName));
+    row.appendChild(el("span", "mix-num", r.dilution ? r.dilution + "倍" : "—"));
+    row.appendChild(el("span", "mix-num", r.total === null ? "—" : formatDose(r.total) + " " + r.unit));
+    row.appendChild(el("span", "mix-num", r.perBatch === null ? "" : formatDose(r.perBatch) + " " + r.unit));
+    box.appendChild(row);
+  });
+}
+
+// 棟別散布量を「1号棟:90、2号棟:20」の形にする（棟・区画と同じ区切り）
+function volumeByBuildingText() {
+  return [...state.buildings]
+    .filter((n) => Number(state.volumes[n]) > 0)
+    .map((n) => `${n}:${Number(state.volumes[n])}`)
+    .join(PURPOSE_SEPARATOR);
 }
 
 async function submit() {
   if (!state.base) return toast("拠点を選択してください");
   if (state.buildings.size === 0) return toast("棟・区画を選択してください");
+  if (totalVolume() <= 0) return toast("棟ごとの散布量を入れてください");
   if (!$("crop-select").value) return toast("農作物の種類を選択してください");
-  if (state.items.length === 0) return toast("資材を1件以上リストに追加してください");
+  if (state.items.length === 0) return toast("資材を1件以上加えてください");
+
+  const total = totalVolume();
+  const batch = batchVolume();
+  const plan = batchPlan(total, batch);
+
+  // 調製表と同じ計算で、資材ごとの投入量を記録に残す
+  const sendItems = state.items.map((it) => {
+    const r = mixRow(it, total, batch);
+    return {
+      materialName: it.materialName,
+      dilution: it.dilution,
+      amount: formatDose(r.total),
+      amountUnit: it.unit,
+      perBatch: formatDose(r.perBatch),
+      totalVolumeL: total,
+    };
+  });
 
   const payload = {
     type: "spray",
@@ -340,26 +540,29 @@ async function submit() {
     purposeTags: [...state.purposes],
     purposeFree: $("purpose-free").value.trim(),
     recipeName: state.recipeName || "",
-    startTime: $("start-time").value,
-    endTime: $("end-time").value,
-    durationMin: computeDuration(),
+    totalVolumeL: total,
+    method: state.method || "",
+    batchVolumeL: batch || "",
+    batchCount: plan ? plan.count : "",
+    volumeByBuilding: volumeByBuildingText(),
     recorder: state.profile.displayName,
     userId: state.profile.userId,
     note: $("note").value.trim(),
-    items: state.items,
+    items: sendItems,
   };
 
   // 先に手元へ書いて画面に出す（通信を待たない）。散布区分は保存時と同じ判定で決める
-  const items = payload.items.map((it) => {
+  const items = sendItems.map((it) => {
     const master = lookupMaterialMock(it.materialName);
     return {
       資材名: it.materialName,
       区分: master.区分,
       農薬登録の有無: master.農薬登録の有無,
-      希釈倍数: it.dilution || "",
-      使用量: it.amount || "",
-      使用量単位: it.amountUnit || "",
-      散布液量L: it.totalVolumeL || "",
+      希釈倍数: it.dilution,
+      使用量: it.amount,
+      使用量単位: it.amountUnit,
+      "1回使用量": it.perBatch,
+      散布液量L: it.totalVolumeL,
     };
   });
   storeAdd("spray", {
@@ -372,17 +575,23 @@ async function submit() {
     目的タグ: payload.purposeTags.join(PURPOSE_SEPARATOR),
     目的自由入力: payload.purposeFree,
     レシピ名: payload.recipeName,
-    開始時刻: payload.startTime,
-    終了時刻: payload.endTime,
-    所要時間分: payload.durationMin,
+    総調製量L: total,
+    散布方法: payload.method,
+    "1回調製容量L": payload.batchVolumeL,
+    調製回数: payload.batchCount,
+    棟別散布量: payload.volumeByBuilding,
     記録者: payload.recorder,
     userId: payload.userId,
     備考: payload.note,
-    状態: "未同期",
+    状態: "未同期", // 送信が通ったら「予定」になる
     更新日時: nowTimestamp(),
     items: items,
   });
-  toast("✅ 記録しました");
+
+  // 次回のために散布方法と容量を覚えておく
+  localStorage.setItem(METHOD_KEY, JSON.stringify({ method: state.method, batchL: $("batch-volume").value }));
+
+  toast("✅ 予定として保存しました");
   resetForm();
   loadMyRecords();
 
@@ -393,10 +602,15 @@ function resetForm() {
   state.items = [];
   state.purposes.clear();
   state.recipeName = "";
+  state.picked = null;
+  state.volumes = {};
   $("purpose-free").value = "";
-  $("start-time").value = "";
-  $("end-time").value = "";
   $("note").value = "";
+  $("dilution-box").hidden = true;
+  $("ppe-hint").hidden = true;
+  $("material-filter").value = "";
+  renderMaterialPicker();
+  renderVolumes();
   renderItems();
   renderPurposes();
 }
@@ -412,9 +626,15 @@ function loadMyRecords() {
   );
 }
 
+// 投入量が入っていればそれを見せる（何をどれだけ入れたかが一目で分かる）
 function itemsLabel(r) {
   return (r.items || [])
-    .map((it) => `${it.資材名}（${it.希釈倍数 || ((it.使用量 || "") + (it.使用量単位 || ""))}）`)
+    .map((it) => {
+      const dose = it.使用量 ? `${it.使用量}${it.使用量単位 || ""}` : "";
+      const bai = it.希釈倍数 ? `${it.希釈倍数}倍` : "";
+      const detail = [bai, dose].filter(Boolean).join(" ");
+      return `${it.資材名}${detail ? "（" + detail + "）" : ""}`;
+    })
     .join("・");
 }
 
@@ -427,18 +647,41 @@ function renderMyRecords(records) {
   }
   records.slice().reverse().forEach((r) => {
     const pending = !r.記録ID;
+    const planned = r.状態 === "予定" || r.状態 === "未同期";
     const row = el("div", "item" + (pending ? " pending" : ""));
     const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
-    row.appendChild(el("span", "grow", `${kubun}${r["棟・区画"]} / ${itemsLabel(r)}`));
+    const vol = r.総調製量L ? ` ${r.総調製量L}L` : "";
+    row.appendChild(el("span", "grow", `${kubun}${r["棟・区画"]}${vol} / ${itemsLabel(r)}`));
+
     if (pending) {
       row.appendChild(el("span", "pending-mark", r.状態 === "送信エラー" ? "送信エラー" : "未送信"));
+    } else if (planned) {
+      row.appendChild(el("span", "pending-mark", "予定"));
     }
+
+    // 散布が済んだら「実施した」で確定する。予定のままだと法定帳簿に出ない
+    if (planned && r.記録ID) {
+      const done = el("button", "del done", "実施した");
+      done.type = "button";
+      done.addEventListener("click", () => completeStored(r));
+      row.appendChild(done);
+    }
+
     const del = el("button", "del", "取消");
     del.type = "button";
     del.addEventListener("click", () => cancelStored(r));
     row.appendChild(del);
     box.appendChild(row);
   });
+}
+
+// 「実施した」。手元を先に完了にして、時刻を入れてサーバーへ送る
+function completeStored(rec) {
+  const now = nowTimestamp().slice(11, 16);
+  storePatch("spray", recordKey(rec), { 状態: "完了", 終了時刻: now });
+  loadMyRecords();
+  toast("実施として記録しました");
+  sendComplete("spray", rec.記録ID, state.profile.userId, { endTime: now }, loadMyRecords);
 }
 
 // 取消も手元を先に直し、サーバーへの連絡は裏で送る

@@ -42,6 +42,53 @@ function toast(msg) {
   toastTimer = setTimeout(() => (t.hidden = true), 2800);
 }
 
+// ---------- 散布の調製計算 ----------
+// 防除は散布前に調製の計算をしてから行う。その計算がそのまま記録になる。
+// 式は 総調製量(L) × 1000 ÷ 倍率 = 投入量（mL または g）。
+// 2026-08-01の達子さんの指示書と同じ出し方（200L・2000倍 → 100cc）
+
+// 「1000倍」「2,000」のような書き方から倍率の数値を取り出す
+function parseDilution(v) {
+  const n = Number(String(v == null ? "" : v).replace(/[,，倍\s]/g, ""));
+  return n > 0 ? n : null;
+}
+
+function doseFor(volumeL, dilution) {
+  const v = Number(volumeL);
+  const n = parseDilution(dilution);
+  if (!(v > 0) || !n) return null;
+  return (v * 1000) / n;
+}
+
+// 少数第1位まで。100.0 は 100 と出す
+function formatDose(v) {
+  if (v === null || v === undefined) return "";
+  const r = Math.round(v * 10) / 10;
+  return String(r);
+}
+
+// 何回に分けて調製するか。割り切れないときは最後の1回だけ容量が減る
+function batchPlan(totalL, batchL) {
+  const t = Number(totalL);
+  const b = Number(batchL);
+  if (!(t > 0) || !(b > 0)) return null;
+  const count = Math.ceil(t / b);
+  const lastL = Math.round((t - b * (count - 1)) * 10) / 10;
+  return { count: count, batchL: b, lastL: lastL };
+}
+
+// 調製表の1行分。合計と1回あたりを出す
+function mixRow(item, totalL, batchL) {
+  const unit = item.unit || "";
+  return {
+    materialName: item.materialName,
+    dilution: parseDilution(item.dilution),
+    unit: unit,
+    total: doseFor(totalL, item.dilution),
+    perBatch: doseFor(batchL, item.dilution),
+  };
+}
+
 // ---------- 利用者プロフィール（この端末での記録者名。共有端末なら都度変更可） ----------
 
 function getProfile() {
@@ -293,10 +340,19 @@ function storePatch(kind, key, patch) {
   writeStore(store);
 }
 
+// 送信が通ったあと、その記録がサーバー側でどの状態になるか。
+// 散布は散布前に作る調製シートなので「予定」で入る（GAS側 saveSpray_ と同じ）
+function syncedStatus(payload) {
+  if (payload.type === "spray" || payload.type === "pesticide") {
+    return payload.status === "完了" ? "完了" : "予定";
+  }
+  return "完了";
+}
+
 // 送信が通ったら、サーバーが採番した記録IDを書き戻して「未同期」を外す
-function storeMarkSynced(kind, clientId, serverId) {
+function storeMarkSynced(kind, clientId, serverId, status) {
   if (!clientId) return;
-  storePatch(kind, "c:" + clientId, { 記録ID: serverId || "", 状態: "完了" });
+  storePatch(kind, "c:" + clientId, { 記録ID: serverId || "", 状態: status || "完了" });
 }
 
 function storePrune(store) {
@@ -328,7 +384,7 @@ async function sendRecord(kind, payload, onDone) {
   try {
     const res = await apiPostWithQueue(payload);
     if (res.ok && !res.queued) {
-      storeMarkSynced(kind, payload.clientId, res.id);
+      storeMarkSynced(kind, payload.clientId, res.id, syncedStatus(payload));
     } else if (!res.ok) {
       // サーバーに届いたが受け付けられなかった。理由を残して気づけるようにする
       storePatch(kind, "c:" + payload.clientId, { 状態: "送信エラー", 送信エラー: res.error || "" });
@@ -354,6 +410,19 @@ async function sendCancel(kind, id, userId, onDone) {
   try {
     const res = await apiPostWithQueue(payload);
     if (!res.ok) toast("⚠ " + (res.error || "取消をサーバーに伝えられませんでした"));
+  } catch (err) {
+    console.error(err);
+  }
+  updateQueueBadge();
+  if (onDone) onDone();
+}
+
+// 「予定」を「実施」に変える連絡。届かなければキューに残り、あとで送られる
+async function sendComplete(kind, id, userId, times, onDone) {
+  const payload = Object.assign({ type: "completeSpray", id: id, userId: userId }, times || {});
+  try {
+    const res = await apiPostWithQueue(payload);
+    if (!res.ok) toast("⚠ " + (res.error || "実施をサーバーに伝えられませんでした"));
   } catch (err) {
     console.error(err);
   }
@@ -469,7 +538,7 @@ async function flushQueue() {
       if (data.ok) {
         sentCount++;
         // 手元の記録にサーバーの記録IDを書き戻して「未同期」を外す
-        storeMarkSynced(payloadKind(item.payload), item.payload.clientId, data.id);
+        storeMarkSynced(payloadKind(item.payload), item.payload.clientId, data.id, syncedStatus(item.payload));
       } else {
         // サーバーに届いたが受け付けられなかった。原因を残さないと
         // 「未送信◯件」が消えない理由が分からなくなる
@@ -653,6 +722,7 @@ function mockPost(payload) {
   if (payload.type === "spray" || payload.type === "pesticide") return mockSaveSpray(payload);
   if (payload.type === "cancelRecord") return mockCancelWork(payload);
   if (payload.type === "cancelSpray" || payload.type === "cancelPesticide") return mockCancelSpray(payload);
+  if (payload.type === "completeSpray") return mockCompleteSpray(payload);
   if (payload.type === "growth") return mockSaveGrowth(payload);
   if (payload.type === "cancelGrowth") return mockCancelGrowth(payload);
   if (payload.type === "updateRecord") return mockUpdateWork(payload);
@@ -859,6 +929,7 @@ function mockSaveSpray(payload) {
       希釈倍数: it.dilution || "",
       使用量: it.amount || "",
       使用量単位: it.amountUnit || "",
+      "1回使用量": it.perBatch || "",
       散布液量L: it.totalVolumeL || "",
     };
   });
@@ -874,13 +945,19 @@ function mockSaveSpray(payload) {
     目的タグ: (payload.purposeTags || []).join(PURPOSE_SEPARATOR),
     目的自由入力: payload.purposeFree || "",
     レシピ名: payload.recipeName || "",
+    総調製量L: payload.totalVolumeL || "",
+    散布方法: payload.method || "",
+    "1回調製容量L": payload.batchVolumeL || "",
+    調製回数: payload.batchCount || "",
+    棟別散布量: payload.volumeByBuilding || "",
     開始時刻: payload.startTime || "",
     終了時刻: payload.endTime || "",
     所要時間分: payload.durationMin || "",
     記録者: payload.recorder || "",
     userId: payload.userId || "",
     備考: payload.note || "",
-    状態: "完了",
+    // 散布前に作った調製シートは「予定」。散布が済んだら完了にする（GAS側 saveSpray_ と同じ）
+    状態: payload.status === "完了" ? "完了" : "予定",
     更新日時: nowStr,
     items,
   });
@@ -898,6 +975,20 @@ function mockCancelWork(payload) {
   target.状態 = "取消";
   target.更新日時 = nowTimestamp();
   localStorage.setItem(MOCK_WORK_KEY, JSON.stringify(all));
+  return { ok: true };
+}
+
+// 散布が済んだ「予定」を「完了」にする（GAS側 completeSpray_ と同じ）
+function mockCompleteSpray(payload) {
+  const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
+  const target = all.find((r) => r.記録ID === payload.id);
+  if (!target) return { ok: false, error: "対象の記録が見つかりません" };
+  if (target.userId !== (payload.userId || "")) return { ok: false, error: "本人の記録のみ確定できます" };
+  target.状態 = "完了";
+  if (payload.startTime !== undefined) target.開始時刻 = payload.startTime;
+  if (payload.endTime !== undefined) target.終了時刻 = payload.endTime;
+  target.更新日時 = nowTimestamp();
+  localStorage.setItem(MOCK_SPRAY_KEY, JSON.stringify(all));
   return { ok: true };
 }
 
@@ -1015,11 +1106,12 @@ function mockGet(action, params) {
     return { ok: true, items };
   }
 
-  // 法定帳簿。農薬登録のある資材の行だけを抜き出す（GAS側 getLegalLedger_ と同じ）
+  // 法定帳簿。農薬登録のある資材の行だけを抜き出す（GAS側 getLegalLedger_ と同じ）。
+  // まいていない「予定」は帳簿に出さない
   if (action === "legalLedger") {
     const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
     const rows = [];
-    all.filter((r) => r.状態 !== "取消" && inRange(r.使用年月日, params)).forEach((parent) => {
+    all.filter((r) => r.状態 !== "取消" && r.状態 !== "予定" && inRange(r.使用年月日, params)).forEach((parent) => {
       (parent.items || []).forEach((it) => {
         if (String(it.農薬登録の有無).toUpperCase() !== "TRUE") return;
         rows.push({

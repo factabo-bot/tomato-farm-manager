@@ -15,8 +15,9 @@
  * バージョン「新バージョン」を選んで再デプロイしないと、公開URL（/exec）は
  * 古いコードのまま動き続ける（エディタでの実行と公開URLは別物）。
  *
- * clientId 列は保存時に自動で追加されるので（ensureClientIdColumn_）、この更新に
- * あたって setup を実行する必要はない。再デプロイだけでよい。
+ * 記録系シートの不足列は保存時に自動で追加されるので（ensureColumns_）、この更新に
+ * あたって setup を実行する必要はない。ただしマスタ_散布方法は新しいシートなので、
+ * それを使うなら setup を1回実行して作る（実行しなくても散布方法を手入力すれば動く）。
  *
  * 旧「防除記録」構成から移行する場合は、setup より先に migrateToSpray を
  * 1回だけ実行する（シート名を散布記録系へ改名する）。
@@ -53,6 +54,7 @@ var SHEET_MASTER_WORKTYPE = "マスタ_作業分類";
 var SHEET_MASTER_MATERIAL = "マスタ_資材";
 var SHEET_MASTER_CROP = "マスタ_品目";
 var SHEET_MASTER_PURPOSE = "マスタ_散布目的";
+var SHEET_MASTER_SPRAY_METHOD = "マスタ_散布方法";
 var SHEET_RECIPE = "マスタ_散布レシピ";
 var SHEET_RECIPE_ITEMS = "マスタ_散布レシピ明細";
 var SHEET_GROWTH = "生育調査";
@@ -72,10 +74,14 @@ var WORK_HEADERS = [
   "記録者", "userId", "備考", "状態", "更新日時", "clientId",
 ];
 
-// 散布記録（親）: 1回の散布イベント。農薬・葉面散布肥料・展着剤をまとめて1回として扱う
+// 散布記録（親）: 1回の散布イベント。農薬・葉面散布肥料・展着剤をまとめて1回として扱う。
+// 防除は散布前に調製の計算をしてから行うので、その計算内容（総調製量・散布方法・
+// 1回の調製容量・棟ごとの散布量）もここに持つ。計算シートがそのまま記録になる。
+// 状態は 予定 → 完了。作った時点では「予定」で、散布が済んだら「完了」にする
 var SPRAY_HEADERS = [
   "記録ID", "使用年月日", "拠点", "棟・区画", "農作物の種類", "散布区分",
   "目的タグ", "目的自由入力", "レシピ名",
+  "総調製量L", "散布方法", "1回調製容量L", "調製回数", "棟別散布量",
   "開始時刻", "終了時刻", "所要時間分",
   "記録者", "userId", "備考", "状態", "更新日時", "clientId",
 ];
@@ -83,17 +89,26 @@ var SPRAY_HEADERS = [
 // 散布記録明細（子）: 親1件に対して資材ごとに複数行。
 // 区分・農薬登録の有無は保存時点のマスタ値をコピーして固定する
 // （後からマスタを直しても、過去の帳簿の抽出結果が遡って変わらないようにするため）
+// 使用量は総調製量に対する投入量（8/1の指示書と同じ粒度）。
+// 背負い式はタンクごとに調製するので、1回あたりの量も持つ
 var SPRAY_ITEM_HEADERS = [
-  "記録ID", "資材名", "区分", "農薬登録の有無", "希釈倍数", "使用量", "使用量単位", "散布液量L",
+  "記録ID", "資材名", "区分", "農薬登録の有無", "希釈倍数",
+  "使用量", "使用量単位", "1回使用量", "散布液量L",
 ];
 
 var MASTER_BASE_HEADERS = ["拠点ID", "拠点名", "棟区画名", "面積a", "デフォルト品目", "有効フラグ", "表示順"];
 var MASTER_WORKTYPE_HEADERS = ["作業ID", "作業名", "農薬関連フラグ", "表示順", "有効フラグ"];
+// 倍率候補はカンマ区切りの数値（"800,1000" のように幅があるものは複数）。画面で選ばせる。
+// 調製単位は剤型による mL / g。希釈倍率目安は原文のまま残し、注記として見せる
 var MASTER_MATERIAL_HEADERS = [
   "薬剤ID", "薬剤名", "区分", "有効成分", "系統・IRAC/FRACコード", "登録番号",
-  "主な対象病害虫", "希釈倍率目安", "PHI目安", "有機JAS適合", "必要な保護具",
+  "主な対象病害虫", "希釈倍率目安", "倍率候補", "調製単位",
+  "PHI目安", "有機JAS適合", "必要な保護具",
   "農薬登録の有無", "備考・出典", "有効フラグ",
 ];
+
+// 散布方法ごとの1回の調製容量。背負い動噴15L・セット動噴200Lのように機材で決まる
+var MASTER_SPRAY_METHOD_HEADERS = ["方法ID", "方法名", "1回調製容量L", "表示順", "有効フラグ"];
 var MASTER_CROP_HEADERS = ["品目ID", "品目名", "品種", "備考"];
 var MASTER_PURPOSE_HEADERS = ["目的ID", "目的名", "分類", "表示順", "有効フラグ"];
 
@@ -205,6 +220,7 @@ function setup() {
   ensureSheet_(ss, SHEET_MASTER_MATERIAL, MASTER_MATERIAL_HEADERS);
   ensureSheet_(ss, SHEET_MASTER_CROP, MASTER_CROP_HEADERS);
   ensureSheet_(ss, SHEET_MASTER_PURPOSE, MASTER_PURPOSE_HEADERS);
+  ensureSheet_(ss, SHEET_MASTER_SPRAY_METHOD, MASTER_SPRAY_METHOD_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE, RECIPE_HEADERS);
   ensureSheet_(ss, SHEET_RECIPE_ITEMS, RECIPE_ITEM_HEADERS);
   ensureSheet_(ss, SHEET_GROWTH, GROWTH_HEADERS);
@@ -335,6 +351,15 @@ function seedMastersIfEmpty_(ss) {
     purposeSheet.getRange(2, 1, prows.length, MASTER_PURPOSE_HEADERS.length).setValues(prows);
   }
 
+  // 散布方法。1回の調製容量は機材で決まる（研修先の実機の値）
+  var methodSheet = ss.getSheetByName(SHEET_MASTER_SPRAY_METHOD);
+  if (methodSheet.getLastRow() < 2) {
+    methodSheet.getRange(2, 1, 2, MASTER_SPRAY_METHOD_HEADERS.length).setValues([
+      ["M01", "背負い動噴", 15, 1, "TRUE"],
+      ["M02", "セット動噴", 200, 2, "TRUE"],
+    ]);
+  }
+
   // サンプルレシピ（使い方の見本。実際の資材選定は防除基準・登録情報の確認が前提）
   var recipeSheet = ss.getSheetByName(SHEET_RECIPE);
   if (recipeSheet.getLastRow() < 2) {
@@ -372,6 +397,7 @@ function doPost(e) {
     if (data.type === "updateRecord") return updateRecord_(data);
     if (data.type === "cancelRecord") return cancelRecord_(data);
     if (data.type === "cancelSpray" || data.type === "cancelPesticide") return cancelSpray_(data);
+    if (data.type === "completeSpray") return completeSpray_(data);
     if (data.type === "growth") return saveGrowth_(data);
     if (data.type === "cancelGrowth") return cancelGrowth_(data);
     if (data.type === "upsertMaster") return upsertMaster_(data);
@@ -381,13 +407,16 @@ function doPost(e) {
   }
 }
 
-// clientId 列がまだ無いシートには、保存のついでに足す。
-// setup の実行を忘れても重複の照合が効くようにするため（列が無いと素通りしてしまう）
-function ensureClientIdColumn_(sheetName) {
+// 足りない列を保存のついでに補う。
+// objectToRowBySheet_ は列が無い値を黙って捨てるので、setup を実行し忘れたまま
+// 新しい項目を保存すると気づかずにデータが落ちる。自己修復にしておく
+function ensureColumns_(sheetName, headers) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) return;
-  if (headerMap_(sheet)["clientId"] !== undefined) return;
-  sheet.getRange(1, sheet.getLastColumn() + 1).setValue("clientId");
+  var hm = headerMap_(sheet);
+  var missing = headers.filter(function (h) { return hm[h] === undefined; });
+  if (missing.length === 0) return;
+  sheet.getRange(1, sheet.getLastColumn() + 1, 1, missing.length).setValues([missing]);
 }
 
 // 同じ clientId の記録が既にあれば、その記録IDを返す（無ければ空文字）。
@@ -409,7 +438,7 @@ function saveWork_(data) {
   if (!data.base) return json_({ ok: false, error: "拠点を選択してください" });
   if (!data.workType) return json_({ ok: false, error: "作業分類を選択してください" });
 
-  ensureClientIdColumn_(SHEET_WORK);
+  ensureColumns_(SHEET_WORK, WORK_HEADERS);
   var dup = findByClientId_(SHEET_WORK, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -503,7 +532,8 @@ function saveSpray_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
-  ensureClientIdColumn_(SHEET_SPRAY);
+  ensureColumns_(SHEET_SPRAY, SPRAY_HEADERS);
+  ensureColumns_(SHEET_SPRAY_ITEMS, SPRAY_ITEM_HEADERS);
   var dup = findByClientId_(SHEET_SPRAY, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -523,6 +553,7 @@ function saveSpray_(data) {
       "希釈倍数": it.dilution || "",
       "使用量": it.amount || "",
       "使用量単位": it.amountUnit || "",
+      "1回使用量": it.perBatch || "",
       "散布液量L": it.totalVolumeL || "",
     };
   });
@@ -540,13 +571,19 @@ function saveSpray_(data) {
     "目的タグ": purposeTags,
     "目的自由入力": data.purposeFree || data.targetPest || "",
     "レシピ名": data.recipeName || "",
+    "総調製量L": data.totalVolumeL || "",
+    "散布方法": data.method || "",
+    "1回調製容量L": data.batchVolumeL || "",
+    "調製回数": data.batchCount || "",
+    "棟別散布量": data.volumeByBuilding || "",
     "開始時刻": data.startTime || "",
     "終了時刻": data.endTime || "",
     "所要時間分": data.durationMin || "",
     "記録者": data.recorder || "",
     "userId": data.userId || "",
     "備考": data.note || "",
-    "状態": "完了",
+    // 散布前に作った調製シートは「予定」。散布が済んだら completeSpray_ で「完了」にする
+    "状態": data.status === "完了" ? "完了" : "予定",
     "更新日時": nowStr,
     "clientId": data.clientId || "",
   };
@@ -583,7 +620,7 @@ function saveGrowth_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
-  ensureClientIdColumn_(SHEET_GROWTH);
+  ensureColumns_(SHEET_GROWTH, GROWTH_HEADERS);
   var dup = findByClientId_(SHEET_GROWTH, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -801,6 +838,31 @@ function cancelRecord_(data) {
   return json_({ ok: false, error: "対象の記録が見つかりません" });
 }
 
+// 散布が済んだ「予定」を「完了」にする。時刻はこのとき入る。
+// 中止した予定は完了にならないので、法定帳簿にはまいたものだけが出る
+function completeSpray_(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY);
+  var values = sheet.getDataRange().getValues();
+  var hm = headerMap_(sheet);
+
+  for (var i = 1; i < values.length; i++) {
+    if (values[i][hm["記録ID"]] !== data.id) continue;
+    if (values[i][hm["userId"]] !== (data.userId || "")) {
+      return json_({ ok: false, error: "本人の記録のみ確定できます" });
+    }
+    var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
+    var updated = values[i].slice();
+    updated[hm["状態"]] = "完了";
+    setIfDefinedByMap_(updated, hm, "開始時刻", data.startTime);
+    setIfDefinedByMap_(updated, hm, "終了時刻", data.endTime);
+    setIfDefinedByMap_(updated, hm, "所要時間分", data.durationMin);
+    updated[hm["更新日時"]] = nowStr;
+    sheet.getRange(i + 1, 1, 1, updated.length).setValues([updated]);
+    return json_({ ok: true });
+  }
+  return json_({ ok: false, error: "対象の記録が見つかりません" });
+}
+
 // 散布記録の取消（簡易帳簿として運用するため理由入力は求めない。論理削除で明細は残す）
 function cancelSpray_(data) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY);
@@ -857,6 +919,7 @@ function getMasters_() {
     pesticides: materials, // 旧フロント互換
     crops: sheetToObjects_(ss, SHEET_MASTER_CROP),
     purposes: sheetToObjects_(ss, SHEET_MASTER_PURPOSE),
+    sprayMethods: sheetToObjects_(ss, SHEET_MASTER_SPRAY_METHOD),
     recipes: sheetToObjects_(ss, SHEET_RECIPE),
     recipeItems: sheetToObjects_(ss, SHEET_RECIPE_ITEMS),
   });
@@ -1113,7 +1176,8 @@ function getLastGrowth_(params) {
 }
 
 // 法定帳簿用の抽出。農薬登録のある資材の行だけを、親の情報と結合して平らに返す。
-// 展着剤も農薬登録があれば対象に含まれ、肥料（クロロゲン等）は除外される
+// 展着剤も農薬登録があれば対象に含まれ、肥料（クロロゲン等）は除外される。
+// 「予定」のまま散布しなかったものも除外する（まいていないものを帳簿に出さない）
 function getLegalLedger_(params) {
   var from = params.from || "0000-00-00";
   var to = params.to || "9999-99-99";
@@ -1128,7 +1192,8 @@ function getLegalLedger_(params) {
   for (var i = 1; i < sprayValues.length; i++) {
     var d = dateKey_(sprayValues[i][shm["使用年月日"]]);
     if (d < from || d > to) continue;
-    if (sprayValues[i][shm["状態"]] === "取消") continue;
+    var st = sprayValues[i][shm["状態"]];
+    if (st === "取消" || st === "予定") continue;
     var parent = rowToObjectBySheet_(shm, sprayValues[i]);
     (itemMap[parent["記録ID"]] || []).forEach(function (it) {
       if (String(it["農薬登録の有無"]).toUpperCase() !== "TRUE") return;

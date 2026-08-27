@@ -218,6 +218,81 @@ label {
   background: #fff;
 }
 
+/* 棟ごとの散布量の合計 */
+.total-line {
+  text-align: right;
+  font-weight: bold;
+  color: #2e7d32;
+  padding: 6px 4px;
+  border-top: 1px solid #ddd;
+}
+.num-unit {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+/* 資材を選ぶ一覧。datalistはスマホで中身が見えないので置き換えた */
+.picker {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  margin-top: 6px;
+}
+.picker-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+  text-align: left;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.picker-row:last-child { border-bottom: none; }
+.picker-row.active { background: #e8f5e9; }
+.picker-row .sub {
+  display: block;
+  margin-left: 0;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+/* 調製表。これが散布前の指示書になる */
+.mix-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+  font-size: 0.9rem;
+}
+.mix-row:first-child { border-radius: 10px 10px 0 0; }
+.mix-row:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+.mix-header {
+  background: #eef4ee;
+  color: #2e7d32;
+  font-size: 0.78rem;
+  font-weight: bold;
+}
+.mix-name { flex: 1 1 auto; min-width: 0; }
+.mix-num {
+  flex: 0 0 78px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 予定を実施に変えるボタン */
+.item .del.done {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
 .ppe-hint {
   background: #fde0dc;
   color: #b71c1c;
