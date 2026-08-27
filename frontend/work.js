@@ -6,9 +6,7 @@ const state = {
   buildings: new Set(), // 収穫などで複数の棟をまとめて回ることがあるので複数選択
   workType: null,
   profile: getProfile(),
-  sprayByDate: {},  // 日付 → その日の散布記録。同じ日を何度も問い合わせないためのキャッシュ
-  sprayLoading: {}, // 日付 → 取得中の約束。押し直しで問い合わせが二重に走らないようにする
-  checking: null,   // 確認中の散布区分（"防除" / "葉面散布"）。未確認のときは null
+  checking: null, // 確認中の散布区分（"防除" / "葉面散布"）。未確認のときは null
 };
 
 init();
@@ -24,6 +22,10 @@ async function init() {
   $("check-foliar").addEventListener("click", () => checkSpray("葉面散布"));
   $("work-date").addEventListener("change", clearSprayStatus);
 
+  // 手元のストアだけを見て即座に描く。取り込みが済んだら描き直す
+  onStoreChange = loadMyRecords;
+  loadMyRecords();
+
   // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
   state.masters = await loadMasters(function (fresh) {
     state.masters = fresh;
@@ -33,8 +35,6 @@ async function init() {
 
   renderBases();
   renderWorkTypes();
-
-  loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
 }
 
 function renderBases() {
@@ -131,44 +131,16 @@ function clearSprayStatus() {
   box.innerHTML = "";
 }
 
-async function checkSpray(kubun) {
+// 散布記録は手元のストアにあるので、押した瞬間に答えが出る（通信しない）
+function checkSpray(kubun) {
   if (!state.base) return toast("拠点を選択してください");
   state.checking = kubun;
   const date = $("work-date").value || formatToday();
-
-  const box = $("spray-status");
-  box.hidden = false;
-  box.className = "spray-status checking";
-  box.textContent = "確認中…";
-
-  let list;
-  try {
-    list = await loadSprays(date);
-  } catch (err) {
-    console.error(err);
-    if (state.checking !== kubun) return;
-    box.className = "spray-status missing";
-    box.textContent = "⚠ 散布記録を確認できませんでした（電波が届いていないかもしれません）";
-    return;
-  }
-  if (state.checking !== kubun) return; // 待っている間に別のボタンが押された
-  renderSprayStatus(list, kubun, date);
+  renderSprayStatus(spraysOn(date), kubun, date);
 }
 
-// GASの応答は5秒前後かかるので、一度読んだ日はキャッシュから返す。
-// 読んでいる途中に押し直されても問い合わせが二重に走らないよう、実行中の約束も持っておく
-async function loadSprays(date) {
-  if (state.sprayByDate[date]) return state.sprayByDate[date];
-  if (!state.sprayLoading[date]) {
-    state.sprayLoading[date] = apiGet("sprays", { from: date, to: date })
-      .then((res) => {
-        const list = (res.records || []).filter((r) => r.状態 !== "取消");
-        state.sprayByDate[date] = list;
-        return list;
-      })
-      .finally(() => { delete state.sprayLoading[date]; });
-  }
-  return state.sprayLoading[date];
+function spraysOn(date) {
+  return storeRead("spray").filter((r) => recordDate("spray", r) === date && r.状態 !== "取消");
 }
 
 // 散布区分は「防除・葉面散布」のように2つ入ることがあるので部分一致で見る
@@ -206,13 +178,11 @@ function sprayLink(label, date, kubun) {
   return a;
 }
 
-// 確認済みの表示を、いまの日付・場所で出し直す（通信はせずキャッシュだけ見る）
+// 確認済みの表示を、いまの日付・場所で出し直す
 function refreshSprayStatus() {
   if (!state.checking) return;
   const date = $("work-date").value || formatToday();
-  const list = state.sprayByDate[date];
-  if (!list) return;
-  renderSprayStatus(list, state.checking, date);
+  renderSprayStatus(spraysOn(date), state.checking, date);
 }
 
 function renderSprayStatus(list, kubun, date) {
@@ -248,6 +218,7 @@ async function submit() {
   }
 
   const payload = {
+    clientId: newClientId(),
     workDate: $("work-date").value || formatToday(),
     base: state.base,
     // 複数の棟をまとめて回った場合は「1号棟、2号棟」のように1つの記録にまとめる
@@ -264,22 +235,31 @@ async function submit() {
     note: $("note").value.trim(),
   };
 
-  $("submit").disabled = true;
-  try {
-    const res = await apiPostWithQueue(payload);
-    if (!res.ok) {
-      toast("⚠ " + (res.error || "記録に失敗しました"));
-      return;
-    }
-    toast(res.queued ? "📤 電波が弱いので保留しました（オンライン復帰時に自動送信）" : "✅ 記録しました");
-    resetForm();
-    await loadMyRecords(true);
-  } catch (err) {
-    console.error(err);
-    toast("⚠ 送信に失敗しました");
-  } finally {
-    $("submit").disabled = false;
-  }
+  // 先に手元へ書いて画面に出す。ここまで通信しないので待ち時間はゼロ
+  storeAdd("work", {
+    clientId: payload.clientId,
+    作業日: payload.workDate,
+    記録日時: nowTimestamp(),
+    拠点: payload.base,
+    "棟・区画": payload.building,
+    作業分類: payload.workType,
+    作業詳細: payload.workDetail,
+    開始時刻: payload.startTime,
+    終了時刻: payload.endTime,
+    所要時間分: payload.durationMin,
+    数量: payload.quantity,
+    数量単位: payload.quantityUnit,
+    記録者: payload.recorder,
+    userId: payload.userId,
+    備考: payload.note,
+    状態: "未同期",
+  });
+  toast("✅ 記録しました");
+  resetForm();
+  loadMyRecords();
+
+  // 送信は裏で。失敗してもキューに残るので記録は消えない
+  sendRecord("work", payload, loadMyRecords);
 }
 
 function computeDuration() {
@@ -304,16 +284,18 @@ function resetForm() {
   renderWorkTypes();
 }
 
-// 記録した直後・取り消した直後は force で取り直す。
-// それ以外はキャッシュを即座に描いて、裏で届いた最新に差し替える
-async function loadMyRecords(force) {
-  const show = (r) => renderMyRecords(r.work || [], r.spray || r.pesticide || []);
-  if (force) {
-    const fresh = await reloadToday(state.profile.userId);
-    if (fresh && fresh.ok) show(fresh);
-    return;
-  }
-  show(await loadToday(state.profile.userId, show));
+// 今日ぶんの自分の記録をストアから取り出す
+function todayMine(kind) {
+  const today = formatToday();
+  const uid = state.profile.userId;
+  return storeRead(kind).filter(
+    (r) => recordDate(kind, r) === today && r.状態 !== "取消" && (r.userId || uid) === uid
+  );
+}
+
+function loadMyRecords() {
+  renderMyRecords(todayMine("work"), todayMine("spray"));
+  refreshSprayStatus(); // 散布が増減したら確認欄も追従させる
 }
 
 // 作業画面だけ見てもその日にやったことが揃うよう、散布記録も一緒に並べる。
@@ -329,7 +311,7 @@ function renderMyRecords(work, sprays) {
   const rows = work.map((r) => ({
     time: timeLabel(r.記録日時),
     label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
-    id: r.記録ID,
+    rec: r,
     kind: "work",
   }));
 
@@ -339,7 +321,7 @@ function renderMyRecords(work, sprays) {
     rows.push({
       time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
       label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
-      id: r.記録ID,
+      rec: r,
       kind: "spray",
     });
   });
@@ -347,12 +329,16 @@ function renderMyRecords(work, sprays) {
   rows.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
 
   rows.forEach((r) => {
-    const row = el("div", "item");
+    const pending = !r.rec.記録ID;
+    const row = el("div", "item" + (pending ? " pending" : ""));
     row.appendChild(el("span", "grow", `${r.time} ${r.label}`));
-    if (!r.id) {
-      box.appendChild(row);
-      return;
+
+    // まだ送れていない記録は、送信済みと区別が付くようにしておく
+    if (pending) {
+      const mark = r.rec.状態 === "送信エラー" ? "送信エラー" : "未送信";
+      row.appendChild(el("span", "pending-mark", mark));
     }
+
     const del = el("button", "del", "取消");
     del.type = "button";
     del.addEventListener("click", () => {
@@ -365,33 +351,25 @@ function renderMyRecords(work, sprays) {
         }, 3000);
         return;
       }
-      r.kind === "spray" ? cancelSprayRecord(r.id) : cancelRecord(r.id);
+      cancelStored(r.kind, r.rec);
     });
     row.appendChild(del);
     box.appendChild(row);
   });
 }
 
-async function cancelRecord(id) {
-  const res = await apiPost({ type: "cancelRecord", id, userId: state.profile.userId });
-  if (!res.ok) {
-    toast("⚠ " + (res.error || "取消に失敗しました"));
+// 取消も手元を先に直す。サーバーへの連絡は裏で送る
+function cancelStored(kind, rec) {
+  storePatch(kind, recordKey(rec), { 状態: "取消" });
+  loadMyRecords();
+
+  if (!rec.記録ID) {
+    // まだ送っていない記録なので、キューに残っている送信も取り下げる
+    dropQueuedRecord(rec.clientId);
+    toast("取り消しました");
     return;
   }
-  toast("取り消しました");
-  await loadMyRecords(true);
+  toast(kind === "spray" ? "散布記録を取り消しました" : "取り消しました");
+  sendCancel(kind, rec.記録ID, state.profile.userId, loadMyRecords);
 }
 
-// 散布記録の取消。確認欄に出している内容も古くなるので、キャッシュを捨てて取り直す
-async function cancelSprayRecord(id) {
-  const res = await apiPost({ type: "cancelSpray", id, userId: state.profile.userId });
-  if (!res.ok) {
-    toast("⚠ " + (res.error || "取消に失敗しました"));
-    return;
-  }
-  toast("散布記録を取り消しました");
-  state.sprayByDate = {};
-  state.sprayLoading = {};
-  await loadMyRecords(true);
-  if (state.checking) checkSpray(state.checking);
-}

@@ -26,6 +26,7 @@ async function init() {
   $("base-filter").addEventListener("change", load);
   $("purpose-filter").addEventListener("input", render);
 
+  onStoreChange = load; // 取り込みが済んだら描き直す
   load(); // 一覧の取得は拠点フィルタの描画を待たずに始める
 
   state.masters = await loadMasters(function (fresh) {
@@ -65,20 +66,52 @@ function switchTab(tab) {
 // 取得した記録を保持しておき、目的での絞り込みは再取得せず手元で行う
 let loaded = { records: [], weatherMap: {} };
 
+// ストアは直近90日ぶんを持っている。その範囲ならサーバーに聞かずに描ける
+function storeCovers(from) {
+  const limit = new Date();
+  limit.setDate(limit.getDate() - STORE_DAYS);
+  return from >= formatDate(limit);
+}
+
+function fromStore(kind, params) {
+  return storeRead(kind)
+    .filter((r) => {
+      const d = recordDate(kind, r);
+      if (params.from && d < params.from) return false;
+      if (params.to && d > params.to) return false;
+      if (params.base && r.拠点 !== params.base) return false;
+      return true;
+    })
+    .sort((a, b) => (recordDate(kind, a) < recordDate(kind, b) ? 1 : -1));
+}
+
 async function load() {
   const params = {
     from: $("from-date").value,
     to: $("to-date").value,
     base: $("base-filter").value,
   };
-  const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
-  const [recordsRes, weatherRes] = await Promise.all([
-    apiGet(action, params),
-    apiGet("weatherRange", { from: params.from, to: params.to }),
-  ]);
+  const kind = state.tab === "work" ? "work" : state.tab === "growth" ? "growth" : "spray";
+
+  // まず手元のぶんで描く（待たせない）
+  loaded = { records: fromStore(kind, params), weatherMap: loaded.weatherMap };
+  render();
+
+  // 90日より前まで遡るときだけサーバーに取りに行く
+  const jobs = [apiGet("weatherRange", { from: params.from, to: params.to })];
+  const needServer = !storeCovers(params.from);
+  if (needServer) {
+    const action = state.tab === "work" ? "records" : state.tab === "growth" ? "growths" : "sprays";
+    jobs.push(apiGet(action, params));
+  }
+  const [weatherRes, recordsRes] = await Promise.all(jobs);
+
   const weatherMap = {};
-  (weatherRes.items || []).forEach((w) => { weatherMap[w.日付] = w; });
-  loaded = { records: recordsRes.records || [], weatherMap };
+  ((weatherRes && weatherRes.items) || []).forEach((w) => { weatherMap[w.日付] = w; });
+  loaded = {
+    records: needServer && recordsRes && recordsRes.ok ? recordsRes.records || [] : loaded.records,
+    weatherMap,
+  };
   render();
 }
 

@@ -23,14 +23,16 @@ async function init() {
   $("submit").addEventListener("click", submit);
   renderItems();
 
+  // 手元のストアだけを見て即座に描く。取り込みが済んだら描き直す
+  onStoreChange = loadMyRecords;
+  loadMyRecords();
+
   // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
   state.masters = await loadMasters(function (fresh) {
     state.masters = fresh;
     renderAll();
   });
   renderAll();
-
-  loadMyRecords(); // 今日の記録は入力を妨げないよう待たずに読む
 }
 
 // 作業画面の「🧪 防除」「🧪 葉面散布」からURLパラメータで渡された日付・拠点・棟を反映する。
@@ -329,6 +331,7 @@ async function submit() {
 
   const payload = {
     type: "spray",
+    clientId: newClientId(),
     useDate: $("use-date").value,
     base: state.base,
     // 複数の棟をまとめて回った場合は「1号棟、2号棟」のように1つの記録にまとめる
@@ -346,22 +349,44 @@ async function submit() {
     items: state.items,
   };
 
-  $("submit").disabled = true;
-  try {
-    const res = await apiPostWithQueue(payload);
-    if (!res.ok) {
-      toast("⚠ " + (res.error || "記録に失敗しました"));
-      return;
-    }
-    toast(res.queued ? "📤 電波が弱いので保留しました（オンライン復帰時に自動送信）" : "✅ 記録しました");
-    resetForm();
-    await loadMyRecords(true);
-  } catch (err) {
-    console.error(err);
-    toast("⚠ 送信に失敗しました");
-  } finally {
-    $("submit").disabled = false;
-  }
+  // 先に手元へ書いて画面に出す（通信を待たない）。散布区分は保存時と同じ判定で決める
+  const items = payload.items.map((it) => {
+    const master = lookupMaterialMock(it.materialName);
+    return {
+      資材名: it.materialName,
+      区分: master.区分,
+      農薬登録の有無: master.農薬登録の有無,
+      希釈倍数: it.dilution || "",
+      使用量: it.amount || "",
+      使用量単位: it.amountUnit || "",
+      散布液量L: it.totalVolumeL || "",
+    };
+  });
+  storeAdd("spray", {
+    clientId: payload.clientId,
+    使用年月日: payload.useDate,
+    拠点: payload.base,
+    "棟・区画": payload.building,
+    農作物の種類: payload.crop,
+    散布区分: decideSprayTypeMock(items),
+    目的タグ: payload.purposeTags.join(PURPOSE_SEPARATOR),
+    目的自由入力: payload.purposeFree,
+    レシピ名: payload.recipeName,
+    開始時刻: payload.startTime,
+    終了時刻: payload.endTime,
+    所要時間分: payload.durationMin,
+    記録者: payload.recorder,
+    userId: payload.userId,
+    備考: payload.note,
+    状態: "未同期",
+    更新日時: nowTimestamp(),
+    items: items,
+  });
+  toast("✅ 記録しました");
+  resetForm();
+  loadMyRecords();
+
+  sendRecord("spray", payload, loadMyRecords);
 }
 
 function resetForm() {
@@ -376,15 +401,15 @@ function resetForm() {
   renderPurposes();
 }
 
-// 記録・取消の直後は force で取り直す。それ以外はキャッシュを即座に描いて裏で差し替える
-async function loadMyRecords(force) {
-  const show = (r) => renderMyRecords(r.spray || r.pesticide || []);
-  if (force) {
-    const fresh = await reloadToday(state.profile.userId);
-    if (fresh && fresh.ok) show(fresh);
-    return;
-  }
-  show(await loadToday(state.profile.userId, show));
+// 手元のストアから今日ぶんの自分の散布記録を取り出す
+function loadMyRecords() {
+  const today = formatToday();
+  const uid = state.profile.userId;
+  renderMyRecords(
+    storeRead("spray").filter(
+      (r) => recordDate("spray", r) === today && r.状態 !== "取消" && (r.userId || uid) === uid
+    )
+  );
 }
 
 function itemsLabel(r) {
@@ -401,23 +426,30 @@ function renderMyRecords(records) {
     return;
   }
   records.slice().reverse().forEach((r) => {
-    const row = el("div", "item");
+    const pending = !r.記録ID;
+    const row = el("div", "item" + (pending ? " pending" : ""));
     const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
     row.appendChild(el("span", "grow", `${kubun}${r["棟・区画"]} / ${itemsLabel(r)}`));
+    if (pending) {
+      row.appendChild(el("span", "pending-mark", r.状態 === "送信エラー" ? "送信エラー" : "未送信"));
+    }
     const del = el("button", "del", "取消");
     del.type = "button";
-    del.addEventListener("click", () => cancelRecord(r.記録ID));
+    del.addEventListener("click", () => cancelStored(r));
     row.appendChild(del);
     box.appendChild(row);
   });
 }
 
-async function cancelRecord(id) {
-  const res = await apiPost({ type: "cancelSpray", id, userId: state.profile.userId });
-  if (!res.ok) {
-    toast("⚠ " + (res.error || "取消に失敗しました"));
+// 取消も手元を先に直し、サーバーへの連絡は裏で送る
+function cancelStored(rec) {
+  storePatch("spray", recordKey(rec), { 状態: "取消" });
+  loadMyRecords();
+  if (!rec.記録ID) {
+    dropQueuedRecord(rec.clientId);
+    toast("取り消しました");
     return;
   }
   toast("取り消しました");
-  await loadMyRecords(true);
+  sendCancel("spray", rec.記録ID, state.profile.userId, loadMyRecords);
 }

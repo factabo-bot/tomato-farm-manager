@@ -73,6 +73,10 @@ async function init() {
   DEFAULT_LABELS.forEach((l) => addPlant(l));
   renderPlants();
 
+  // 手元のストアだけを見て即座に描く。取り込みが済んだら描き直す
+  onStoreChange = loadMyRecords;
+  loadMyRecords();
+
   state.masters = await loadMasters(function (fresh) {
     state.masters = fresh;
     renderBases();
@@ -80,8 +84,6 @@ async function init() {
   });
   renderBases();
   renderCrops();
-
-  loadMyRecords();
 }
 
 function addPlant(label) {
@@ -329,6 +331,7 @@ async function submit() {
 
   const payload = {
     type: "growth",
+    clientId: newClientId(),
     surveyDate: $("survey-date").value || formatToday(),
     base: state.base,
     building: state.building,
@@ -339,23 +342,41 @@ async function submit() {
     items: filled,
   };
 
-  $("submit").disabled = true;
-  try {
-    const res = await apiPostWithQueue(payload);
-    if (!res.ok) {
-      toast("⚠ " + (res.error || "記録に失敗しました"));
-      return;
-    }
-    toast(res.queued ? "📤 電波が弱いので保留しました（オンライン復帰時に自動送信）" : "✅ 記録しました");
-    resetForm();
-    await loadMyRecords();
-    await loadLastGrowth();
-  } catch (err) {
-    console.error(err);
-    toast("⚠ 送信に失敗しました");
-  } finally {
-    $("submit").disabled = false;
-  }
+  // 先に手元へ書いて画面に出す（通信を待たない）
+  storeAdd("growth", {
+    clientId: payload.clientId,
+    調査日: payload.surveyDate,
+    拠点: payload.base,
+    "棟・区画": payload.building,
+    農作物の種類: payload.crop,
+    記録者: payload.recorder,
+    userId: payload.userId,
+    所感: payload.note,
+    状態: "未同期",
+    更新日時: nowTimestamp(),
+    items: filled.map(plantToRow),
+  });
+  toast("✅ 記録しました");
+  resetForm();
+  loadMyRecords();
+
+  sendRecord("growth", payload, loadMyRecords);
+}
+
+// 入力欄の持ち方（英字キー）から、記録として保存される形（日本語の列名）に直す。
+// 数値項目は prevKey が、目視項目は label がそのままシートの列名になっている
+function plantToRow(p) {
+  const row = { 株ラベル: p.label };
+  const keep = (v) => (v === undefined || v === null ? "" : v);
+  NUM_FIELDS.concat(DISORDER_FIELDS).forEach((f) => {
+    row[f.prevKey] = keep(p[f.key]);
+  });
+  VISUAL_CHECKS.forEach((v) => {
+    row[v.label] = keep(p[v.key]);
+  });
+  row["障害果メモ"] = keep(p.disorderMemo);
+  row["メモ"] = keep(p.memo);
+  return row;
 }
 
 function resetForm() {
@@ -366,9 +387,15 @@ function resetForm() {
   renderPlants();
 }
 
-async function loadMyRecords() {
-  const res = await apiGet("mytoday", { userId: state.profile.userId });
-  renderMyRecords(res.growth || []);
+// 手元のストアから今日ぶんの自分の調査を取り出す
+function loadMyRecords() {
+  const today = formatToday();
+  const uid = state.profile.userId;
+  renderMyRecords(
+    storeRead("growth").filter(
+      (r) => recordDate("growth", r) === today && r.状態 !== "取消" && (r.userId || uid) === uid
+    )
+  );
 }
 
 function renderMyRecords(records) {
@@ -379,14 +406,18 @@ function renderMyRecords(records) {
     return;
   }
   records.slice().reverse().forEach((r) => {
-    const row = el("div", "item");
+    const pending = !r.記録ID;
+    const row = el("div", "item" + (pending ? " pending" : ""));
     const items = r.items || [];
     const avg = averageOf(items, "茎径mm");
     const label = `${r["棟・区画"]} / ${items.length}株` + (avg ? `（茎径 平均${avg}mm）` : "");
     row.appendChild(el("span", "grow", label));
+    if (pending) {
+      row.appendChild(el("span", "pending-mark", r.状態 === "送信エラー" ? "送信エラー" : "未同期"));
+    }
     const del = el("button", "del", "取消");
     del.type = "button";
-    del.addEventListener("click", () => cancelRecord(r.記録ID));
+    del.addEventListener("click", () => cancelStored(r));
     row.appendChild(del);
     box.appendChild(row);
   });
@@ -398,12 +429,14 @@ function averageOf(items, key) {
   return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
 }
 
-async function cancelRecord(id) {
-  const res = await apiPost({ type: "cancelGrowth", id, userId: state.profile.userId });
-  if (!res.ok) {
-    toast("⚠ " + (res.error || "取消に失敗しました"));
+// 取消も手元を先に直し、サーバーへの連絡は裏で送る
+function cancelStored(rec) {
+  storePatch("growth", recordKey(rec), { 状態: "取消" });
+  loadMyRecords();
+  toast("取り消しました");
+  if (!rec.記録ID) {
+    dropQueuedRecord(rec.clientId);
     return;
   }
-  toast("取り消しました");
-  await loadMyRecords();
+  sendCancel("growth", rec.記録ID, state.profile.userId, loadMyRecords);
 }

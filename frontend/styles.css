@@ -440,6 +440,31 @@ textarea {
   margin-bottom: 12px;
   cursor: pointer;
 }
+/* 未送信が無いときは同期状況を控えめに出す（送れているかは常に見える状態にしておく） */
+.queue-badge.quiet {
+  background: transparent;
+  color: #999;
+  font-weight: normal;
+  padding: 4px 2px;
+}
+
+/* まだサーバーに送れていない記録。手元にはあることが分かるようにする */
+.item.pending {
+  border-style: dashed;
+  border-color: #d8b45a;
+  background: #fffdf6;
+}
+.pending-mark {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  font-size: 0.72rem;
+  font-weight: bold;
+  color: #8a6d00;
+  background: #fff3cd;
+  border-radius: 10px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
 
 /* 未送信の中身。溜まったまま消えないときに、何が残っているか確かめて捨てるための欄 */
 .queue-panel {

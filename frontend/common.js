@@ -222,57 +222,196 @@ async function loadMasters(onFresh) {
   return fresh || Object.assign({ ok: true }, MASTERS_DEFAULT);
 }
 
-// ---------- 今日の記録のキャッシュ ----------
-// mytoday は実測で3.5〜5秒かかる。開いてから数秒間なにも出ないと「記録が無い」ように
-// 見えてしまうので、前回の内容をすぐ描いてから裏で最新に差し替える（マスタと同じ考え方）
+// ---------- 手元の記録ストア ----------
+// GASは何もしないAPIでも1.5秒かかる（実測）。毎回サーバーに聞いてから描いていたので、
+// 開くたびに数秒なにも出なかった。記録はこの端末に持ち、画面は常にここだけを見て描く。
+// サーバーとのやり取りは裏で行い、画面を待たせない。
+//
+// 保持は直近90日。実測で21日26件なので localStorage で足りる
+// （足りなくなったら IndexedDB に移す。いまは不要）
 
-const TODAY_CACHE_KEY = "tfm_today_cache";
+const STORE_KEY = "tfm_store";
+const STORE_DAYS = 90;
+const KINDS = ["work", "spray", "growth"];
 
-function readTodayCache(userId) {
+function emptyStore() {
+  return { userId: "", work: [], spray: [], growth: [], syncedAt: 0 };
+}
+
+function readStore() {
   try {
-    const raw = JSON.parse(localStorage.getItem(TODAY_CACHE_KEY) || "null");
-    if (raw && raw.date === formatToday() && raw.userId === userId) return raw.data;
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    // 利用者が変わったストアは使わない（別の人の記録を自分のものとして見せないため）
+    if (raw && raw.userId === getProfile().userId) return Object.assign(emptyStore(), raw);
   } catch (err) {
-    console.warn("今日の記録のキャッシュ読み込みに失敗", err);
+    console.warn("記録ストアの読み込みに失敗", err);
   }
-  return null; // 日付や利用者が変わったキャッシュは使わない
+  return emptyStore();
 }
 
-function saveTodayCache(userId, data) {
+function writeStore(store) {
   try {
-    localStorage.setItem(TODAY_CACHE_KEY, JSON.stringify({ date: formatToday(), userId, data }));
+    store.userId = getProfile().userId;
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
   } catch (err) {
-    console.warn("今日の記録のキャッシュ保存に失敗", err);
+    console.warn("記録ストアの保存に失敗", err);
   }
 }
 
-// キャッシュがあれば待たずに返し、裏で最新を取りに行く。
-// 中身が変わっていたときだけ onFresh(最新) を呼ぶ
-async function loadToday(userId, onFresh) {
-  const cached = readTodayCache(userId);
-
-  const fetching = apiGet("mytoday", { userId })
-    .then((fresh) => {
-      if (!fresh || !fresh.ok) return null;
-      const changed = JSON.stringify(fresh) !== JSON.stringify(cached);
-      saveTodayCache(userId, fresh);
-      if (changed && cached && onFresh) onFresh(fresh);
-      return fresh;
-    })
-    .catch((err) => {
-      console.warn("今日の記録の取得に失敗", err);
-      return null;
-    });
-
-  if (cached) return cached;
-  return (await fetching) || { ok: true, work: [], spray: [], growth: [] };
+// 記録の日付の列名は種類ごとに違う
+function recordDate(kind, r) {
+  const v = kind === "work" ? r["作業日"] : kind === "growth" ? r["調査日"] : r["使用年月日"];
+  return String(v || "").slice(0, 10);
 }
 
-// 記録した直後や取り消した直後は、キャッシュを使わず取り直す
-async function reloadToday(userId) {
-  const fresh = await apiGet("mytoday", { userId });
-  if (fresh && fresh.ok) saveTodayCache(userId, fresh);
-  return fresh;
+// サーバーに載った記録は記録IDで、まだ送れていない記録はclientIdで見分ける
+function recordKey(r) {
+  return r["記録ID"] ? "s:" + r["記録ID"] : "c:" + (r.clientId || "");
+}
+
+function payloadKind(payload) {
+  if (payload.type === "spray" || payload.type === "pesticide") return "spray";
+  if (payload.type === "growth") return "growth";
+  return "work";
+}
+
+function storeRead(kind) {
+  return readStore()[kind] || [];
+}
+
+// 手元で作った記録を足す（送信を待たずに画面へ出すため）
+function storeAdd(kind, record) {
+  const store = readStore();
+  store[kind] = (store[kind] || []).concat([record]);
+  writeStore(store);
+}
+
+// 同じ記録を差し替える。無ければ何もしない
+function storePatch(kind, key, patch) {
+  const store = readStore();
+  store[kind] = (store[kind] || []).map((r) => (recordKey(r) === key ? Object.assign({}, r, patch) : r));
+  writeStore(store);
+}
+
+// 送信が通ったら、サーバーが採番した記録IDを書き戻して「未同期」を外す
+function storeMarkSynced(kind, clientId, serverId) {
+  if (!clientId) return;
+  storePatch(kind, "c:" + clientId, { 記録ID: serverId || "", 状態: "完了" });
+}
+
+function storePrune(store) {
+  const limit = new Date();
+  limit.setDate(limit.getDate() - STORE_DAYS);
+  const limitKey = formatDate(limit);
+  KINDS.forEach((kind) => {
+    store[kind] = (store[kind] || []).filter((r) => recordDate(kind, r) >= limitKey);
+  });
+  return store;
+}
+
+function newClientId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "c-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+}
+
+// 記録は手元に書いたあと、この関数で裏から送る。
+// 通れば記録IDを書き戻し、送れなければキューに残る（どちらでも手元の記録は消えない）
+async function sendRecord(kind, payload, onDone) {
+  try {
+    const res = await apiPostWithQueue(payload);
+    if (res.ok && !res.queued) {
+      storeMarkSynced(kind, payload.clientId, res.id);
+    } else if (!res.ok) {
+      // サーバーに届いたが受け付けられなかった。理由を残して気づけるようにする
+      storePatch(kind, "c:" + payload.clientId, { 状態: "送信エラー", 送信エラー: res.error || "" });
+      toast("⚠ " + (res.error || "記録を保存できませんでした"));
+    }
+  } catch (err) {
+    console.error(err);
+    storePatch(kind, "c:" + payload.clientId, { 状態: "送信エラー", 送信エラー: String((err && err.message) || err) });
+  }
+  updateQueueBadge();
+  if (onDone) onDone();
+}
+
+// 取消の連絡。届かなければキューに残り、あとで送られる
+function cancelType(kind) {
+  if (kind === "spray") return "cancelSpray";
+  if (kind === "growth") return "cancelGrowth";
+  return "cancelRecord";
+}
+
+async function sendCancel(kind, id, userId, onDone) {
+  const payload = { type: cancelType(kind), id, userId };
+  try {
+    const res = await apiPostWithQueue(payload);
+    if (!res.ok) toast("⚠ " + (res.error || "取消をサーバーに伝えられませんでした"));
+  } catch (err) {
+    console.error(err);
+  }
+  updateQueueBadge();
+  if (onDone) onDone();
+}
+
+// まだ送っていない記録を取り消したときは、キューに積まれた送信も取り下げる
+function dropQueuedRecord(clientId) {
+  if (!clientId) return;
+  writeQueue(readQueue().filter((item) => (item.payload || {}).clientId !== clientId));
+}
+
+// ---------- 同期 ----------
+// ① 溜まっている送信を出す ② サーバーの内容を取り込む、の順で回す。
+// スプレッドシートは台帳として直接編集されるので、②は必須（送るだけでは足りない）
+
+let syncing = false;
+let syncLabel = "";
+
+// お試しモードでも同じ道を通す（mockGet/mockPostがサーバーの代わりになる）
+async function sync(onChange) {
+  if (syncing) return;
+  syncing = true;
+  syncLabel = "同期中…";
+  updateQueueBadge();
+  try {
+    await flushQueue();
+    const changed = await pullRecords();
+    if (changed && onChange) onChange();
+  } catch (err) {
+    console.warn("同期に失敗", err);
+  } finally {
+    syncing = false;
+    syncLabel = "";
+    updateQueueBadge();
+  }
+}
+
+// 90日分をまるごと取り直して置き換える。
+// 差分ではなく総取りにしているのは、シート側での手直しや行削除も拾う必要があるため。
+// 裏で走るので遅くても画面は止まらない
+async function pullRecords() {
+  const res = await apiGet("history", { days: STORE_DAYS });
+  if (!res || !res.ok) return false;
+
+  const fetched = { work: [], spray: [], growth: [] };
+  (res.items || []).forEach((it) => {
+    const kind = it._type === "spray" ? "spray" : it._type === "growth" ? "growth" : "work";
+    fetched[kind].push(it);
+  });
+
+  const store = readStore();
+  const before = JSON.stringify(KINDS.map((k) => store[k] || []));
+
+  KINDS.forEach((kind) => {
+    // まだ送れていない記録はサーバーに無いので、取り込んだ内容に足し戻す。
+    // 送る前に取り消したものは送られないので、ここで落とす
+    const pending = (store[kind] || []).filter((r) => !r["記録ID"] && r.状態 !== "取消");
+    store[kind] = fetched[kind].concat(pending);
+  });
+  storePrune(store);
+  store.syncedAt = Date.now();
+  writeStore(store);
+
+  return JSON.stringify(KINDS.map((k) => store[k] || [])) !== before;
 }
 
 // オフライン等でsubmitが失敗したときに使う。送信キューに積んで later flush する
@@ -314,6 +453,8 @@ async function flushQueue() {
       const data = await postWithRetry(item.payload);
       if (data.ok) {
         sentCount++;
+        // 手元の記録にサーバーの記録IDを書き戻して「未同期」を外す
+        storeMarkSynced(payloadKind(item.payload), item.payload.clientId, data.id);
       } else {
         // サーバーに届いたが受け付けられなかった。原因を残さないと
         // 「未送信◯件」が消えない理由が分からなくなる
@@ -330,20 +471,33 @@ async function flushQueue() {
   if (sentCount > 0) toast(`保留中だった記録 ${sentCount}件を送信しました`);
 }
 
+// 未送信があるときは目立たせ、無いときは最終同期を控えめに出す。
+// 「送れているのか」が常に分かる状態にしておく
 function updateQueueBadge() {
   const badge = $("queue-badge");
   if (!badge) return;
   const n = queueLength();
-  badge.hidden = n === 0;
-  badge.textContent = `📤 未送信 ${n}件（タップで中身を見る）`;
+  const panel = document.getElementById("queue-panel");
+
   if (!badge.dataset.bound) {
     badge.dataset.bound = "1";
     badge.addEventListener("click", toggleQueuePanel);
   }
+
+  badge.hidden = false;
+  badge.classList.toggle("quiet", n === 0);
+  if (n > 0) {
+    badge.textContent = `📤 未送信 ${n}件（タップで中身を見る）`;
+  } else if (syncLabel) {
+    badge.textContent = "🔄 " + syncLabel;
+  } else {
+    const at = readStore().syncedAt;
+    badge.textContent = at ? "✓ 最終同期 " + timeLabel(new Date(at).toTimeString()) : "✓ 手元に保存中";
+  }
+
   if (n === 0) {
-    const panel = document.getElementById("queue-panel");
     if (panel) panel.hidden = true;
-  } else if (document.getElementById("queue-panel") && !document.getElementById("queue-panel").hidden) {
+  } else if (panel && !panel.hidden) {
     renderQueuePanel();
   }
 }
@@ -450,10 +604,21 @@ function renderQueuePanel() {
   panel.appendChild(retry);
 }
 
-window.addEventListener("online", flushQueue);
+// 同期のきっかけ。画面はストアを見て描いているので、いつ走っても待たせない。
+// 各画面は onStoreChange に描き直す処理を入れて、取り込みが済んだら反映させる
+let onStoreChange = null;
+
+function syncNow() {
+  sync(() => { if (onStoreChange) onStoreChange(); });
+}
+
+window.addEventListener("online", syncNow);
+window.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") syncNow(); // アプリに戻ったとき
+});
 window.addEventListener("DOMContentLoaded", () => {
-  flushQueue();
   updateQueueBadge();
+  syncNow();
 });
 
 // ---------- お試しモード（GAS未接続。localStorageのみで動く） ----------

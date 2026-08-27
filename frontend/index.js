@@ -17,14 +17,24 @@ async function init() {
     $("user-info").textContent = name + (isMock ? "（お試しモード）" : "");
   });
 
-  // キャッシュがあれば即座に描画し、最新が届いて中身が変わっていたら描き直す
-  render(await loadToday(profile.userId, render));
+  // 手元のストアだけを見て即座に描く。取り込みが済んだら描き直す（待ち時間ゼロ）
+  onStoreChange = render;
+  render();
 }
 
-function render(res) {
-  const work = res.work || [];
-  const spray = res.spray || res.pesticide || [];
-  const growth = res.growth || [];
+// 今日ぶんの自分の記録をストアから取り出す
+function todayMine(kind) {
+  const today = formatToday();
+  const uid = profile.userId;
+  return storeRead(kind).filter(
+    (r) => recordDate(kind, r) === today && r.状態 !== "取消" && (r.userId || uid) === uid
+  );
+}
+
+function render() {
+  const work = todayMine("work");
+  const spray = todayMine("spray");
+  const growth = todayMine("growth");
   $("work-count").textContent = work.length;
   $("spray-count").textContent = spray.length;
   $("growth-count").textContent = growth.length;
