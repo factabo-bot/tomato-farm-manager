@@ -665,6 +665,13 @@ function keepValue(v) {
   return (v === undefined || v === null || v === "") ? "" : v;
 }
 
+// 同じ clientId で送り直されたら既存の記録IDを返す（GAS側 findByClientId_ と同じ）
+function mockFindByClientId(key, clientId) {
+  if (!clientId) return "";
+  const found = JSON.parse(localStorage.getItem(key) || "[]").find((r) => r.clientId === clientId);
+  return found ? found.記録ID : "";
+}
+
 // 生育調査（GAS側 validateGrowth_ / saveGrowth_ と同じロジック）
 function mockSaveGrowth(payload) {
   const missing = [];
@@ -675,11 +682,15 @@ function mockSaveGrowth(payload) {
   else items.forEach((it, i) => { if (!it.label) missing.push((i + 1) + "件目の株ラベル"); });
   if (missing.length > 0) return { ok: false, error: "必須項目が未入力です: " + missing.join("、") };
 
+  const dup = mockFindByClientId(MOCK_GROWTH_KEY, payload.clientId);
+  if (dup) return { ok: true, id: dup, duplicate: true };
+
   const all = JSON.parse(localStorage.getItem(MOCK_GROWTH_KEY) || "[]");
   const id = "mock-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
   const nowStr = nowTimestamp();
   all.push({
     記録ID: id,
+    clientId: payload.clientId || "",
     調査日: payload.surveyDate,
     拠点: payload.base,
     "棟・区画": payload.building || "",
@@ -731,11 +742,16 @@ function mockCancelGrowth(payload) {
 function mockSaveWork(payload) {
   if (!payload.base) return { ok: false, error: "拠点を選択してください" };
   if (!payload.workType) return { ok: false, error: "作業分類を選択してください" };
+
+  const dup = mockFindByClientId(MOCK_WORK_KEY, payload.clientId);
+  if (dup) return { ok: true, id: dup, duplicate: true };
+
   const all = JSON.parse(localStorage.getItem(MOCK_WORK_KEY) || "[]");
   const id = "mock-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
   const nowStr = nowTimestamp();
   all.push({
     記録ID: id,
+    clientId: payload.clientId || "",
     作業日: payload.workDate || formatToday(),
     記録日時: nowStr,
     拠点: payload.base,
@@ -825,6 +841,10 @@ function decideSprayTypeMock(itemRows) {
 function mockSaveSpray(payload) {
   const missing = validateSprayPayload(payload);
   if (missing.length > 0) return { ok: false, error: "必須項目が未入力です: " + missing.join("、") };
+
+  const dup = mockFindByClientId(MOCK_SPRAY_KEY, payload.clientId);
+  if (dup) return { ok: true, id: dup, duplicate: true };
+
   const all = JSON.parse(localStorage.getItem(MOCK_SPRAY_KEY) || "[]");
   const id = "mock-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
   const nowStr = nowTimestamp();
@@ -845,6 +865,7 @@ function mockSaveSpray(payload) {
 
   all.push({
     記録ID: id,
+    clientId: payload.clientId || "",
     使用年月日: payload.useDate,
     拠点: payload.base,
     "棟・区画": payload.building || "",

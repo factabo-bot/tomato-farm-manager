@@ -15,6 +15,10 @@
  * バージョン「新バージョン」を選んで再デプロイしないと、公開URL（/exec）は
  * 古いコードのまま動き続ける（エディタでの実行と公開URLは別物）。
  *
+ * clientId 列を追加したので、このコードに更新したら setup を1回実行すること。
+ * ensureSheet_ が既存シートの末尾に clientId 列を足す。列が無い間は重複の
+ * 照合が効かない（findByClientId_ が空を返す）だけで、記録自体は従来どおり動く。
+ *
  * 旧「防除記録」構成から移行する場合は、setup より先に migrateToSpray を
  * 1回だけ実行する（シート名を散布記録系へ改名する）。
  *
@@ -59,10 +63,14 @@ var SHEET_WEATHER = "気象データ";
 // 目的タグを1つの列にまとめるときの区切り文字。マスタの目的名にこの文字は使わない
 var PURPOSE_SEPARATOR = "、";
 
+// clientId は端末側が採番する送信の識別子。
+// 送信が失敗したように見えて実際は保存されていることがあり（GASのリダイレクトが
+// 不安定なため）、押し直しで同じ記録が何件も入る事故が起きた。同じ clientId が
+// 既にあれば書き込まずに既存の記録IDを返すことで、何度送っても1件にする
 var WORK_HEADERS = [
   "記録ID", "作業日", "記録日時", "拠点", "棟・区画", "作業分類", "作業詳細",
   "開始時刻", "終了時刻", "所要時間分", "数量", "数量単位",
-  "記録者", "userId", "備考", "状態", "更新日時",
+  "記録者", "userId", "備考", "状態", "更新日時", "clientId",
 ];
 
 // 散布記録（親）: 1回の散布イベント。農薬・葉面散布肥料・展着剤をまとめて1回として扱う
@@ -70,7 +78,7 @@ var SPRAY_HEADERS = [
   "記録ID", "使用年月日", "拠点", "棟・区画", "農作物の種類", "散布区分",
   "目的タグ", "目的自由入力", "レシピ名",
   "開始時刻", "終了時刻", "所要時間分",
-  "記録者", "userId", "備考", "状態", "更新日時",
+  "記録者", "userId", "備考", "状態", "更新日時", "clientId",
 ];
 
 // 散布記録明細（子）: 親1件に対して資材ごとに複数行。
@@ -98,7 +106,7 @@ var RECIPE_ITEM_HEADERS = ["レシピID", "表示順", "薬剤名", "希釈倍�
 // 生育調査（親）: 1回の調査。週1回・中庸な株を4〜8株みるのが公的資料の標準
 var GROWTH_HEADERS = [
   "記録ID", "調査日", "拠点", "棟・区画", "農作物の種類",
-  "記録者", "userId", "所感", "状態", "更新日時",
+  "記録者", "userId", "所感", "状態", "更新日時", "clientId",
 ];
 
 // 生育調査明細（子）: 株ごとの測定値。株ラベルを毎回そろえると同じ株の推移を追える。
@@ -374,9 +382,27 @@ function doPost(e) {
   }
 }
 
+// 同じ clientId の記録が既にあれば、その記録IDを返す（無ければ空文字）。
+// 端末が同じ送信を繰り返しても1件しか入らないようにするための照合
+function findByClientId_(sheetName, clientId) {
+  if (!clientId) return "";
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return "";
+  var hm = headerMap_(sheet);
+  if (hm["clientId"] === undefined || hm["記録ID"] === undefined) return ""; // 列が無い＝古いシート
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][hm["clientId"]]) === String(clientId)) return values[i][hm["記録ID"]];
+  }
+  return "";
+}
+
 function saveWork_(data) {
   if (!data.base) return json_({ ok: false, error: "拠点を選択してください" });
   if (!data.workType) return json_({ ok: false, error: "作業分類を選択してください" });
+
+  var dup = findByClientId_(SHEET_WORK, data.clientId);
+  if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WORK);
   var now = new Date();
@@ -400,6 +426,7 @@ function saveWork_(data) {
     "備考": data.note || "",
     "状態": "完了",
     "更新日時": nowStr,
+    "clientId": data.clientId || "",
   };
   sheet.appendRow(objectToRowBySheet_(sheet, obj));
   return json_({ ok: true, id: id });
@@ -467,6 +494,9 @@ function saveSpray_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
+  var dup = findByClientId_(SHEET_SPRAY, data.clientId);
+  if (dup) return json_({ ok: true, id: dup, duplicate: true });
+
   var now = new Date();
   var nowStr = Utilities.formatDate(now, TZ, "yyyy-MM-dd HH:mm:ss");
   var id = Utilities.getUuid();
@@ -508,6 +538,7 @@ function saveSpray_(data) {
     "備考": data.note || "",
     "状態": "完了",
     "更新日時": nowStr,
+    "clientId": data.clientId || "",
   };
   sheet.appendRow(objectToRowBySheet_(sheet, obj));
 
@@ -542,6 +573,9 @@ function saveGrowth_(data) {
     return json_({ ok: false, error: "必須項目が未入力です: " + missing.join("、") });
   }
 
+  var dup = findByClientId_(SHEET_GROWTH, data.clientId);
+  if (dup) return json_({ ok: true, id: dup, duplicate: true });
+
   var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
   var id = Utilities.getUuid();
 
@@ -557,6 +591,7 @@ function saveGrowth_(data) {
     "所感": data.note || "",
     "状態": "完了",
     "更新日時": nowStr,
+    "clientId": data.clientId || "",
   }));
 
   // 「0個だった」という記録にも意味があるので、0を空欄に潰さないようにする
@@ -845,17 +880,30 @@ function getRecords_(params) {
   return json_({ ok: true, records: records });
 }
 
-// 記録IDに紐づく散布記録明細（資材ごとの実績）を取得する
-function getSprayItems_(recordId) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SPRAY_ITEMS);
-  var values = sheet.getDataRange().getValues();
+// 明細シートを1回だけ読んで、記録IDごとにまとめた辞書を返す。
+// 以前は親1件ごとに明細シート全体を読み直しており、記録が増えるほど
+// 二乗で重くなっていた。一覧を作るときは必ずこれを1回呼んで使い回す
+function itemsByRecordId_(sheetName) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  var map = {};
+  if (!sheet || sheet.getLastRow() < 2) return map;
   var hm = headerMap_(sheet);
   var idCol = hm["記録ID"];
-  var items = [];
-  for (var i = 1; i < values.length; i++) {
-    if (values[i][idCol] === recordId) items.push(rowToObjectBySheet_(hm, values[i]));
-  }
-  return items;
+  if (idCol === undefined) return map;
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
+  values.forEach(function (row) {
+    var id = row[idCol];
+    if (!id) return;
+    if (!map[id]) map[id] = [];
+    map[id].push(rowToObjectBySheet_(hm, row));
+  });
+  return map;
+}
+
+// 記録IDに紐づく散布記録明細（資材ごとの実績）を取得する。1件だけ要るとき用
+function getSprayItems_(recordId) {
+  return itemsByRecordId_(SHEET_SPRAY_ITEMS)[recordId] || [];
 }
 
 function getSprays_(params) {
@@ -867,13 +915,14 @@ function getSprays_(params) {
   var base = params.base || "";
   var dateCol = hm["使用年月日"];
   var baseCol = hm["拠点"];
+  var itemMap = itemsByRecordId_(SHEET_SPRAY_ITEMS);
   var records = [];
   for (var i = 1; i < values.length; i++) {
     var d = dateKey_(values[i][dateCol]);
     if (d < from || d > to) continue;
     if (base && values[i][baseCol] !== base) continue;
     var rec = rowToObjectBySheet_(hm, values[i]);
-    rec.items = getSprayItems_(rec["記録ID"]);
+    rec.items = itemMap[rec["記録ID"]] || [];
     records.push(rec);
   }
   records.reverse();
@@ -899,13 +948,14 @@ function getMyToday_(params) {
   var spraySheet = ss.getSheetByName(SHEET_SPRAY);
   var sprayValues = spraySheet.getDataRange().getValues();
   var shm = headerMap_(spraySheet);
+  var sprayItemMap = itemsByRecordId_(SHEET_SPRAY_ITEMS);
   var spray = [];
   for (var j = 1; j < sprayValues.length; j++) {
     if (dateKey_(sprayValues[j][shm["使用年月日"]]) !== today) continue;
     if (sprayValues[j][shm["userId"]] !== uid) continue;
     if (sprayValues[j][shm["状態"]] === "取消") continue;
     var rec = rowToObjectBySheet_(shm, sprayValues[j]);
-    rec.items = getSprayItems_(rec["記録ID"]);
+    rec.items = sprayItemMap[rec["記録ID"]] || [];
     spray.push(rec);
   }
 
@@ -914,12 +964,13 @@ function getMyToday_(params) {
   if (growthSheet) {
     var growthValues = growthSheet.getDataRange().getValues();
     var ghm = headerMap_(growthSheet);
+    var growthItemMap = itemsByRecordId_(SHEET_GROWTH_ITEMS);
     for (var k = 1; k < growthValues.length; k++) {
       if (dateKey_(growthValues[k][ghm["調査日"]]) !== today) continue;
       if (growthValues[k][ghm["userId"]] !== uid) continue;
       if (growthValues[k][ghm["状態"]] === "取消") continue;
       var g = rowToObjectBySheet_(ghm, growthValues[k]);
-      g.items = getGrowthItems_(g["記録ID"]);
+      g.items = growthItemMap[g["記録ID"]] || [];
       growth.push(g);
     }
   }
@@ -953,13 +1004,14 @@ function getHistory_(params) {
   var spraySheet = ss.getSheetByName(SHEET_SPRAY);
   var sprayValues = spraySheet.getDataRange().getValues();
   var shm = headerMap_(spraySheet);
+  var sprayItemMap = itemsByRecordId_(SHEET_SPRAY_ITEMS);
   for (var j = 1; j < sprayValues.length; j++) {
     var d2 = dateKey_(sprayValues[j][shm["使用年月日"]]);
     if (d2 < sinceKey) continue;
     if (sprayValues[j][shm["状態"]] === "取消") continue;
     var o2 = rowToObjectBySheet_(shm, sprayValues[j]);
     o2._type = "spray";
-    o2.items = getSprayItems_(o2["記録ID"]);
+    o2.items = sprayItemMap[o2["記録ID"]] || [];
     items.push(o2);
   }
 
@@ -967,13 +1019,14 @@ function getHistory_(params) {
   if (growthSheet) {
     var growthValues = growthSheet.getDataRange().getValues();
     var ghm = headerMap_(growthSheet);
+    var growthItemMap = itemsByRecordId_(SHEET_GROWTH_ITEMS);
     for (var k = 1; k < growthValues.length; k++) {
       var d3 = dateKey_(growthValues[k][ghm["調査日"]]);
       if (d3 < sinceKey) continue;
       if (growthValues[k][ghm["状態"]] === "取消") continue;
       var o3 = rowToObjectBySheet_(ghm, growthValues[k]);
       o3._type = "growth";
-      o3.items = getGrowthItems_(o3["記録ID"]);
+      o3.items = growthItemMap[o3["記録ID"]] || [];
       items.push(o3);
     }
   }
@@ -996,17 +1049,9 @@ function historyDate_(o) {
   return o["使用年月日"];
 }
 
-// 記録IDに紐づく生育調査明細（株ごとの測定値）を取得する
+// 記録IDに紐づく生育調査明細（株ごとの測定値）を取得する。1件だけ要るとき用
 function getGrowthItems_(recordId) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_GROWTH_ITEMS);
-  var values = sheet.getDataRange().getValues();
-  var hm = headerMap_(sheet);
-  var idCol = hm["記録ID"];
-  var items = [];
-  for (var i = 1; i < values.length; i++) {
-    if (values[i][idCol] === recordId) items.push(rowToObjectBySheet_(hm, values[i]));
-  }
-  return items;
+  return itemsByRecordId_(SHEET_GROWTH_ITEMS)[recordId] || [];
 }
 
 function getGrowths_(params) {
@@ -1016,13 +1061,14 @@ function getGrowths_(params) {
   var from = params.from || "0000-00-00";
   var to = params.to || "9999-99-99";
   var base = params.base || "";
+  var itemMap = itemsByRecordId_(SHEET_GROWTH_ITEMS);
   var records = [];
   for (var i = 1; i < values.length; i++) {
     var d = dateKey_(values[i][hm["調査日"]]);
     if (d < from || d > to) continue;
     if (base && values[i][hm["拠点"]] !== base) continue;
     var rec = rowToObjectBySheet_(hm, values[i]);
-    rec.items = getGrowthItems_(rec["記録ID"]);
+    rec.items = itemMap[rec["記録ID"]] || [];
     records.push(rec);
   }
   records.reverse();
@@ -1066,13 +1112,14 @@ function getLegalLedger_(params) {
   var sprayValues = spraySheet.getDataRange().getValues();
   var shm = headerMap_(spraySheet);
 
+  var itemMap = itemsByRecordId_(SHEET_SPRAY_ITEMS);
   var rows = [];
   for (var i = 1; i < sprayValues.length; i++) {
     var d = dateKey_(sprayValues[i][shm["使用年月日"]]);
     if (d < from || d > to) continue;
     if (sprayValues[i][shm["状態"]] === "取消") continue;
     var parent = rowToObjectBySheet_(shm, sprayValues[i]);
-    getSprayItems_(parent["記録ID"]).forEach(function (it) {
+    (itemMap[parent["記録ID"]] || []).forEach(function (it) {
       if (String(it["農薬登録の有無"]).toUpperCase() !== "TRUE") return;
       rows.push({
         "使用年月日": parent["使用年月日"],
