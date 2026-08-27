@@ -292,6 +292,67 @@ label {
   background: #e8f5e9;
   color: #2e7d32;
 }
+.item .del.sheet {
+  background: #eef2f7;
+  color: #37474f;
+}
+
+/* はかり方の選択。数値欄より広く取る */
+.unit-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+}
+
+/* 調製早見表。タンクの前で見るので、量る数字を大きく出す */
+.mix-sheet {
+  background: #fff;
+  border: 2px solid #2e7d32;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.mix-sheet h2 { margin-bottom: 4px; }
+.sheet-sub {
+  font-size: 0.8rem;
+  color: #777;
+  margin-bottom: 12px;
+}
+.sheet-big {
+  margin: 14px 0 6px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #2e7d32;
+  border-bottom: 1px solid #cfe0cf;
+  padding-bottom: 4px;
+}
+.sheet-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 2px;
+}
+.sheet-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.95rem;
+}
+.sheet-dose {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #e65100;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-note {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: #8a6d00;
+  background: #fff3cd;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
 
 .ppe-hint {
   background: #fde0dc;

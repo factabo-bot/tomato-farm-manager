@@ -6,7 +6,7 @@
 <title>散布記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260827d">
+<link rel="stylesheet" href="styles.css?v=20260827e">
 </head>
 <body>
 <header>
@@ -26,6 +26,9 @@
 
 <main>
   <div id="queue-badge" class="queue-badge" hidden></div>
+
+  <!-- 保存したあと、タンクの前で見るための早見表。今日の記録からも開き直せる -->
+  <section id="mix-sheet" class="mix-sheet" hidden></section>
 
   <p class="hint law-hint">散布前にこの画面で調製を計算します。作った内容がそのまま記録になります（まずは「予定」として保存し、散布が済んだら「実施した」を押してください）。正式な法定帳簿として提出する場合は内容を確認のうえ転記してください。</p>
 
@@ -84,16 +87,21 @@
     <div id="material-picker" class="picker"></div>
     <p class="hint ppe-hint" id="ppe-hint" hidden></p>
     <div id="dilution-box" hidden>
-      <label id="dilution-label">希釈倍率</label>
+      <h3 id="dilution-label">希釈倍率</h3>
+      <p class="hint" id="dilution-note"></p>
       <div id="dilution-choices" class="btn-row chip-row"></div>
-      <div class="grid-2 inner">
-        <input type="number" id="dilution" inputmode="decimal" placeholder="倍率（数値）">
-        <select id="dose-unit">
-          <option value="mL">mL（液体）</option>
-          <option value="g">g（粉・顆粒）</option>
+      <div class="num-row">
+        <label class="num-label" for="dilution">希釈倍率</label>
+        <input class="num-input" type="number" id="dilution" inputmode="decimal">
+        <span class="num-unit">倍</span>
+      </div>
+      <div class="num-row">
+        <label class="num-label" for="dose-unit">はかり方</label>
+        <select class="unit-select" id="dose-unit">
+          <option value="mL">mL ではかる（乳剤・液剤）</option>
+          <option value="g">g ではかる（水和剤・顆粒）</option>
         </select>
       </div>
-      <p class="hint" id="dilution-note"></p>
       <button id="add-item" class="btn-secondary" type="button">＋ この資材を加える</button>
     </div>
     <div id="item-list"></div>
@@ -119,10 +127,10 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260827d"></script>
-<script src="masters-default.js?v=20260827d"></script>
-<script src="common.js?v=20260827d"></script>
-<script src="pesticide.js?v=20260827d"></script>
+<script src="config.js?v=20260827e"></script>
+<script src="masters-default.js?v=20260827e"></script>
+<script src="common.js?v=20260827e"></script>
+<script src="pesticide.js?v=20260827e"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

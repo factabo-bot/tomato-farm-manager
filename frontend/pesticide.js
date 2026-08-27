@@ -13,6 +13,7 @@ const state = {
   purposes: new Set(),  // 選択中の目的タグ
   recipeName: "",
   picked: null,         // 選択中の資材（倍率を決める前の状態）
+  choices: [],          // その資材の倍率候補
   profile: getProfile(),
 };
 
@@ -31,7 +32,10 @@ async function init() {
 
   // 通信を待つ前にイベントを登録する（待っている間のタップを取りこぼさないため）
   $("material-filter").addEventListener("input", renderMaterialPicker);
-  $("dilution").addEventListener("input", renderMixTable);
+  $("dilution").addEventListener("input", () => {
+    renderDilutionChoices();
+    renderMixTable();
+  });
   $("batch-volume").addEventListener("input", renderMixTable);
   $("add-item").addEventListener("click", addItem);
   $("submit").addEventListener("click", submit);
@@ -317,20 +321,27 @@ function pickMaterial(m) {
   // 倍率候補（"800/1000" のように幅があるものは複数）をボタンで出す。
   // カンマ区切りにするとスプレッドシートが桁区切りの数値と解釈して
   // 800,1000 が 8001000 になってしまうため「/」で区切る（読み込みは両対応）
+  state.choices = String(m.倍率候補 || "").split(/[/,、／]/).map((s) => s.trim()).filter(Boolean);
+  if (state.choices.length === 1) $("dilution").value = state.choices[0]; // 候補が1つならそれを入れておく
+  renderDilutionChoices();
+  renderMixTable();
+}
+
+// 選んでいる候補が分かるようにする（下の数値欄と同じ値なら光らせる）
+function renderDilutionChoices() {
   const box = $("dilution-choices");
   box.innerHTML = "";
-  const choices = String(m.倍率候補 || "").split(/[/,、／]/).map((s) => s.trim()).filter(Boolean);
-  choices.forEach((c) => {
-    const btn = el("button", "btn chip", c + "倍");
+  const current = $("dilution").value;
+  state.choices.forEach((c) => {
+    const btn = el("button", "btn chip" + (String(current) === c ? " active" : ""), c + "倍");
     btn.type = "button";
     btn.addEventListener("click", () => {
       $("dilution").value = c;
+      renderDilutionChoices();
       renderMixTable();
     });
     box.appendChild(btn);
   });
-  if (choices.length === 1) $("dilution").value = choices[0]; // 候補が1つならそれを入れておく
-  renderMixTable();
 }
 
 function findMaterial(name) {
@@ -499,6 +510,53 @@ function renderMixTable() {
   });
 }
 
+// ---------- 調製早見表 ----------
+// 保存したあと、タンクの前で見るためのもの。
+// 実際に量るのは「1回あたり」なので、そこを大きく出す
+
+function showMixSheet(rec) {
+  const box = $("mix-sheet");
+  box.innerHTML = "";
+  box.hidden = false;
+
+  const batch = Number(rec["1回調製容量L"]) || 0;
+  const total = Number(rec.総調製量L) || 0;
+  const count = Number(rec.調製回数) || 0;
+  const plan = batchPlan(total, batch);
+
+  box.appendChild(el("h2", "", "🧪 調製早見表"));
+  box.appendChild(el("div", "sheet-sub",
+    `${rec.使用年月日}　${rec.拠点}　${rec["棟別散布量"] || rec["棟・区画"] || ""}`));
+
+  if (batch > 0) {
+    box.appendChild(el("div", "sheet-big", `${rec.散布方法 || "1回"} ${batch}L のタンクに入れる量`));
+    (rec.items || []).forEach((it) => {
+      const row = el("div", "sheet-row");
+      row.appendChild(el("span", "sheet-name", it.資材名));
+      row.appendChild(el("span", "sheet-dose", `${it["1回使用量"] || "—"} ${it.使用量単位 || ""}`));
+      box.appendChild(row);
+    });
+    box.appendChild(el("div", "sheet-note",
+      plan && plan.lastL !== plan.batchL
+        ? `これを ${count}回。最後の1回は ${plan.lastL}L なので量も減らす`
+        : `これを ${count}回`));
+  }
+
+  box.appendChild(el("div", "sheet-big", `全体（${total}L）で使う量`));
+  (rec.items || []).forEach((it) => {
+    const row = el("div", "sheet-row");
+    row.appendChild(el("span", "sheet-name", `${it.資材名}${it.希釈倍数 ? `（${it.希釈倍数}倍）` : ""}`));
+    row.appendChild(el("span", "sheet-dose", `${it.使用量 || "—"} ${it.使用量単位 || ""}`));
+    box.appendChild(row);
+  });
+
+  const close = el("button", "btn-secondary", "閉じる");
+  close.type = "button";
+  close.addEventListener("click", () => { box.hidden = true; });
+  box.appendChild(close);
+  box.scrollIntoView({ block: "start" });
+}
+
 // 棟別散布量を「1号棟:90、2号棟:20」の形にする（棟・区画と同じ区切り）
 function volumeByBuildingText() {
   return [...state.buildings]
@@ -567,7 +625,7 @@ async function submit() {
       散布液量L: it.totalVolumeL,
     };
   });
-  storeAdd("spray", {
+  const saved = {
     clientId: payload.clientId,
     使用年月日: payload.useDate,
     拠点: payload.base,
@@ -588,7 +646,8 @@ async function submit() {
     状態: "未同期", // 送信が通ったら「予定」になる
     更新日時: nowTimestamp(),
     items: items,
-  });
+  };
+  storeAdd("spray", saved);
 
   // 次回のために散布方法と容量を覚えておく
   localStorage.setItem(METHOD_KEY, JSON.stringify({ method: state.method, batchL: $("batch-volume").value }));
@@ -596,6 +655,7 @@ async function submit() {
   toast("✅ 予定として保存しました");
   resetForm();
   loadMyRecords();
+  showMixSheet(saved); // そのままタンクの前で見られるように出す
 
   sendRecord("spray", payload, loadMyRecords);
 }
@@ -660,6 +720,12 @@ function renderMyRecords(records) {
     } else if (planned) {
       row.appendChild(el("span", "pending-mark", "予定"));
     }
+
+    // タンクの前で見返せるように、いつでも早見表を開き直せる
+    const sheet = el("button", "del sheet", "早見表");
+    sheet.type = "button";
+    sheet.addEventListener("click", () => showMixSheet(r));
+    row.appendChild(sheet);
 
     // 散布が済んだら「実施した」で確定する。予定のままだと法定帳簿に出ない
     if (planned && r.記録ID) {
