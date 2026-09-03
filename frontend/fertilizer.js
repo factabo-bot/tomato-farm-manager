@@ -325,6 +325,8 @@ function calcSolution(input) {
     balanceDiff: balance.diff,
     balanceErrorPct: balance.errorPct,
     ecEstimate: ec,
+    phBand: estimatePhBand(ions),
+    stockPhEstimate: estimateStockPh(ions.H, dilution),
     ecCoefficient: coefficient,
     ecCoefficientIsDefault: coefficient === EC_COEFFICIENT,
     ecMeasured: measured > 0 ? measured : null,
@@ -333,6 +335,78 @@ function calcSolution(input) {
     tanks,
     warnings,
   };
+}
+
+// ---------- pHの目安 ----------
+// 絶対値を1点で出すには炭酸平衡・リン酸緩衝・根呼吸のCO2まで解く必要があり、
+// リン酸緩衝を無視したときの誤差を定量した一次資料も見つからなかった。
+// そこで「帯」で返す。設計時のアタリをつけるには足りるが、実測の代わりにはならない。
+//
+// 根拠にできるのは次の2点だけ:
+//   ・目標pHは 5.5〜6.5（複数の資料で一致）
+//   ・原水のアルカリ度は 1.0 meq/L 程度を残す設計（アーカンソー大学の実務教材）
+// この2つを突き合わせると「残留アルカリ度1.0前後なら目標に入りやすい」と言える。
+// それ以外の帯は、そこからの外挿。
+function estimatePhBand(ions) {
+  const hco3 = Number(ions.HCO3) || 0;   // 残留アルカリ度
+  const freeH = Number(ions.H) || 0;     // 中和しきれずに残った酸
+  const phosphate = Number(ions.H2PO4) || 0;
+
+  // リン酸が1 mmol/L以上あれば、pKa2=7.21 の緩衝が効いて振れが小さくなる
+  const buffered = phosphate >= 1.0;
+
+  if (freeH > 0.01) {
+    // 酸が余っている＝アルカリ度を使い切って、さらに入れた状態。
+    // 強酸が完全解離すると仮定した下限値を出す（実際はリン酸の緩衝でもう少し高い）
+    const floor = -Math.log10(freeH / 1000);
+    return {
+      level: "low",
+      label: `${round(Math.max(3.0, floor), 1)} 前後かそれ以下`,
+      message: `酸が ${round(freeH, 3)} mmol/L 余っています。原水のアルカリ度を使い切っているので、pHは目標(5.5〜6.5)を下回る見込みです`,
+      buffered: buffered,
+    };
+  }
+
+  if (hco3 < 0.2) {
+    return {
+      level: "low",
+      label: "5.5 未満になりやすい",
+      message: "残留アルカリ度がほぼゼロです。pHを支えるものがないので下振れしやすくなります",
+      buffered: buffered,
+    };
+  }
+  if (hco3 <= 1.5) {
+    return {
+      level: "ok",
+      label: "5.5〜6.5 に入りやすい",
+      message: `残留アルカリ度 ${round(hco3, 2)} mmol/L。実務で目安とされる1.0前後の範囲です`,
+      buffered: buffered,
+    };
+  }
+  if (hco3 <= 2.5) {
+    return {
+      level: "high",
+      label: "6.5 を超えやすい",
+      message: `残留アルカリ度 ${round(hco3, 2)} mmol/L はやや多めです。酸を増やすと目標に寄せられます`,
+      buffered: buffered,
+    };
+  }
+  return {
+    level: "high",
+    label: "7 前後かそれ以上",
+    message: `残留アルカリ度 ${round(hco3, 2)} mmol/L は多すぎます。このままでは鉄・マンガンが不可給化する側に振れます`,
+    buffered: buffered,
+  };
+}
+
+// 原液タンクのpH。給液と違い、酸が希釈倍率のぶん濃縮される。
+// キレート鉄が壊れる下限（3.0〜3.5）を割りやすいので別に見る
+function estimateStockPh(freeHInFeed, dilution) {
+  const h = Number(freeHInFeed) || 0;
+  const d = Number(dilution) || 1;
+  if (!(h > 0)) return null;
+  const conc = (h * d) / 1000; // mol/L
+  return -Math.log10(conc);
 }
 
 // ---------- 逆算（目標組成 → 単肥の量） ----------
@@ -480,7 +554,7 @@ if (typeof window !== "undefined") {
   window.FertilizerCalc = {
     calcSolution, dissolveItem, calcTank, chargeBalance, estimateEC,
     deriveEcCoefficient, stockPhRange, ionMeq, round,
-    solveRecipe, mmolToKg,
+    solveRecipe, mmolToKg, estimatePhBand, estimateStockPh,
     EC_COEFFICIENT,
   };
 }

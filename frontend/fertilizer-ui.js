@@ -333,6 +333,20 @@ function recalc() {
   balNote.textContent = `陽 ${FertilizerCalc.round(result.cationMeq, 2)} / 陰 ${FertilizerCalc.round(result.anionMeq, 2)} meq/L`;
   balNote.className = "fert-stat-note " + (result.balanceErrorPct > 0.5 ? "fert-inline-warn" : "fert-inline-ok");
 
+  // pHの目安。絶対値ではなく帯で出す（実測の代わりにはならない）
+  const ph = result.phBand;
+  const phEl = $("res-ph");
+  phEl.textContent = ph.label;
+  phEl.className = "fert-stat-value fert-ph-value fert-ph-" + ph.level;
+  const phNote = [ph.message];
+  if (ph.buffered) phNote.push("リン酸1mmol/L以上あり緩衝が効く");
+  if (result.stockPhEstimate !== null) {
+    // 給液で余っている酸は、原液タンクでは希釈倍率のぶん濃い。
+    // キレート鉄の下限（3.0前後）を割りやすいので、酸を原液に入れてよいかの判断に使う
+    phNote.push(`酸を原液に入れると原液pHは ${FertilizerCalc.round(result.stockPhEstimate, 1)} 相当（${num(state.dilution)}倍濃いため）`);
+  }
+  $("res-ph-note").textContent = phNote.join(" / ");
+
   // 警告
   const warnBox = $("res-warnings");
   warnBox.innerHTML = "";

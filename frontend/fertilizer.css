@@ -54,6 +54,12 @@
 .fert-warn-warn   { background: #fff6e5; border-left: 4px solid #ef6c00; color: #8a4b00; }
 .fert-warn-info   { background: #eef4fb; border-left: 4px solid #1565c0; color: #10457e; }
 
+/* pHは「5.5〜6.5に入りやすい」のような文になるので、ECより小さい字で出す */
+.fert-ph-value { font-size: 15px; line-height: 1.3; display: block; }
+.fert-ph-ok   { color: #2e7d32; }
+.fert-ph-high { color: #ef6c00; }
+.fert-ph-low  { color: #1565c0; }
+
 .fert-inline-warn { color: #c62828; font-weight: 600; }
 .fert-inline-ok   { color: #2e7d32; }
 
