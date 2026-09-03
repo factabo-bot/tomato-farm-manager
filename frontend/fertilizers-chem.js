@@ -180,10 +180,10 @@ const FERTILIZER_PRICE_REF = {
   // 農業用（養液栽培用）の単肥。食品添加物グレードだと1,687円/kgになるので、
   // グレードを間違えると倍以上ずれる
   mono_potassium_phosphate: { yenPerKg: 638, note: "第一リン酸カリ（旭化学工業・養液栽培用）25kg 17,545円(税込)" },
+  orient_mix: { yenPerKg: 2036, note: "オリエントミックス 5kg 10,180円(税別)。モノタロウ 注文コード59425558" },
   //
-  // オリエントミックスの単独価格は確認できず。同等品の「微量要素8」は約1,000円/kg
-  // だが、成分が違うので当てはめない。
-  // orient_mix / nitric_acid / sulfuric_acid / ammonium_nitrate
+  // 酸のうち硝酸・硫酸は未確認。リン酸は上にある
+  // nitric_acid / sulfuric_acid / ammonium_nitrate（規制品なので既定リストにも出さない）
 };
 
 // ---------- 原液タンクを分ける理由 ----------
