@@ -386,17 +386,21 @@ function solveRecipe(target, water) {
   // 1) カルシウム。Ca源は硝酸カルシウムしかないので最初に決まる
   add("calcium_nitrate_4h", need.Ca);
 
-  // 2) リン酸。第一リン酸カリで入れる（Kが同時に入る）
-  add("mono_potassium_phosphate", need.H2PO4);
+  // 2) リン酸とアンモニア。
+  //    硝酸アンモニウムは販売時に本人確認が要る規制品なので、使わずに済ませたい。
+  //    NH4がリン酸の必要量以下なら、その分を第一リン酸アンモニウム(MAP)で入れれば
+  //    リン酸とアンモニアを同時に満たせる（愛知県改良処方 NH4 0.5 / P 1.67 はこれで足りる）
+  const nh4ByMap = Math.min(need.NH4, need.H2PO4);
+  add("mono_ammonium_phosphate", nh4ByMap);
+  add("mono_potassium_phosphate", need.H2PO4 - nh4ByMap);
 
-  // 3) アンモニア。硝酸アンモニウムは規制品なので、リン酸がまだ余っていればMAPを優先…
-  //    ではなく、ここではリン酸を既に確定させているので硝酸アンモニウムを使う。
-  //    トマトはNH4を0〜1.5に抑えるので、そもそも0でよいことが多い
-  if (need.NH4 > 0.0001) {
-    add("ammonium_nitrate", need.NH4);
+  // 3) MAPで足りなかったアンモニアだけ硝酸アンモニウムで補う
+  const nh4Rest = need.NH4 - supplied.NH4;
+  if (nh4Rest > 0.0001) {
+    add("ammonium_nitrate", nh4Rest);
     warnings.push({
       level: "info",
-      message: "アンモニアの供給に硝酸アンモニウム（販売時に本人確認が要る規制品）を使っています。NH4を0にすれば不要です",
+      message: `アンモニアがリン酸より多いので、${round(nh4Rest, 2)} mmol/L 分に硝酸アンモニウム（販売時に本人確認が要る規制品）を使っています。NH4を ${round(need.H2PO4, 2)} 以下にすれば、第一リン酸アンモニウムだけで足ります`,
     });
   }
 
@@ -409,9 +413,13 @@ function solveRecipe(target, water) {
   // 5) 硫酸の残りは硫酸カリで（Kが2倍入る）
   add("potassium_sulfate", need.SO4 - supplied.SO4);
 
+  // 帳尻の許容幅。目標値は小数2桁に丸めて入力されるので、
+  // それ以下のズレを警告に出しても意味がない（電荷バランスの判定を1%にしているのと揃える）
+  const SLACK = 0.05;
+
   // 6) カリの残りを硝酸カリで
   const kRest = need.K - supplied.K;
-  if (kRest < -0.01) {
+  if (kRest < -SLACK) {
     warnings.push({
       level: "warn",
       message: `カリウムが目標を ${round(-kRest, 2)} mmol/L 超えます。リン酸カリと硫酸カリから入る分だけで足りているので、リン酸か硫酸の目標を下げてください`,
@@ -421,12 +429,12 @@ function solveRecipe(target, water) {
 
   // 7) 硝酸の帳尻。ここまでの塩で入った分と目標を比べる
   const no3Rest = need.NO3 - supplied.NO3;
-  if (no3Rest < -0.01) {
+  if (no3Rest < -SLACK) {
     warnings.push({
       level: "warn",
       message: `硝酸が目標を ${round(-no3Rest, 2)} mmol/L 超えます。Ca・Mg・Kを硝酸塩で入れると避けられないので、硫酸塩の比率を上げるか硝酸の目標を上げてください`,
     });
-  } else if (no3Rest > 0.01) {
+  } else if (no3Rest > SLACK) {
     // 目標の電荷が合っていれば、ここは0になるはず。
     // 残るということは目標側で陰イオンが余っている＝酸で入れる分にあたる
     warnings.push({
