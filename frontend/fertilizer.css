@@ -180,6 +180,19 @@
   padding: 0 6px;
   cursor: pointer;
 }
+/* タンクの箱の中に出す警告。計算結果まで見に行かなくても気づけるようにする */
+.fert-tank-warn {
+  background: #fdecea;
+  border-left: 4px solid #c62828;
+  color: #8e1b13;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 6px 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .fert-add-row { margin-top: 6px; }
 .fert-add-row select { width: 100%; }
 

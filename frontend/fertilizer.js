@@ -141,30 +141,112 @@ function deriveEcCoefficient(measuredEc, cationMeq) {
   return ec / meq;
 }
 
-// ---------- 沈殿チェック ----------
-// Ca²⁺ と SO4²⁻ → 石膏(CaSO4)、Ca²⁺ と H2PO4⁻ → リン酸カルシウム。
-// 濃縮された原液タンクの中では溶解度を超えるので、同じタンクに入れてはいけない。
+// ---------- タンクの相性 ----------
+// 肥料が「タンクを分ける理由」をどれだけ持っているかを、定義から導出する。
+// 肥料ごとに属性を手書きしないので、新しい肥料を足しても書き忘れが起きない
+function fertilizerTankRoles(id) {
+  const chem = lookupFertilizer(id);
+  if (!chem) return [];
+  const roles = [];
+  if (chem.ions) {
+    if (chem.ions.Ca) roles.push("calcium");
+    if (chem.ions.SO4) roles.push("sulfate");
+    if (chem.ions.H2PO4) roles.push("phosphate");
+  }
+  if (chem.isAcid) roles.push("acid");
+  // 原液pHに下限がある＝キレート剤。酸と同居させられない
+  if (chem.stockPh && chem.stockPh.min !== undefined) roles.push("chelate");
+  return roles;
+}
+
+// タンクの中身が持っている役割を集める
+function tankRoles(tank) {
+  const set = {};
+  (tank.items || []).forEach((it) => {
+    if (!(Number(it.kg) > 0) && it.kg !== "") {
+      // 量が0でも「入れるつもり」なので役割は数える（空欄も同様）
+    }
+    fertilizerTankRoles(it.id).forEach((r) => (set[r] = true));
+  });
+  return set;
+}
+
+// この肥料をこのタンクに足したら衝突するか。選択肢の可否判定に使う
+function conflictsWithTank(tank, id) {
+  const incoming = fertilizerTankRoles(id);
+  if (incoming.length === 0) return [];
+  const existing = tankRoles(tank);
+  const hits = [];
+  TANK_CONFLICTS.forEach((c) => {
+    if (incoming.indexOf(c.a) >= 0 && existing[c.b]) hits.push(c);
+    else if (incoming.indexOf(c.b) >= 0 && existing[c.a]) hits.push(c);
+  });
+  return hits;
+}
+
+// タンクの中で既に起きている衝突。警告表示に使う
+function tankConflicts(tank) {
+  const roles = tankRoles(tank);
+  return TANK_CONFLICTS.filter((c) => roles[c.a] && roles[c.b]);
+}
+
+// 濃縮原液の中では溶解度を超えるので、沈殿する組み合わせは分けなければならない。
+// 判定は tankConflicts に一本化してある
 function checkPrecipitation(tanks) {
   const warnings = [];
   tanks.forEach((t) => {
-    const hasCa = t.ions.Ca > 0;
-    if (!hasCa) return;
-    if (t.ions.SO4 > 0) {
+    tankConflicts(t).forEach((c) => {
       warnings.push({
         level: "danger",
         tank: t.name,
-        message: `${t.name}にカルシウムと硫酸が同居しています。濃縮原液で石膏(CaSO4)が沈殿します。タンクを分けてください`,
+        message: `${t.name}：${TANK_ROLE_LABEL[c.a]}と${TANK_ROLE_LABEL[c.b]}が同居しています。${c.label}。タンクを分けてください`,
       });
-    }
-    if (t.ions.H2PO4 > 0) {
-      warnings.push({
-        level: "danger",
-        tank: t.name,
-        message: `${t.name}にカルシウムとリン酸が同居しています。濃縮原液でリン酸カルシウムが沈殿します。タンクを分けてください`,
-      });
-    }
+    });
   });
   return warnings;
+}
+
+// ---------- 2本のタンクへの自動振り分け ----------
+// 制約のあるものから先に置き場所を決め、どちらでもよいものは
+// 合計重量が軽い方へ入れて量を揃える
+function splitIntoTwoTanks(items) {
+  const g1 = [];  // カルシウム側
+  const g2 = [];  // 硫酸・リン酸側
+  const neutral = [];
+  const roleOf = {};
+
+  (items || []).forEach((it) => {
+    const roles = fertilizerTankRoles(it.id);
+    roleOf[it.id] = roles;
+    if (roles.indexOf("calcium") >= 0) g1.push(it);
+    else if (roles.indexOf("sulfate") >= 0 || roles.indexOf("phosphate") >= 0) g2.push(it);
+    else neutral.push(it);
+  });
+
+  // 酸とキレート剤は、互いに居ない方へ寄せる。
+  // 既にリン酸系としてg2に入っている酸（リン酸85%など）はそのまま
+  const has = (g, role) => g.some((it) => (roleOf[it.id] || []).indexOf(role) >= 0);
+
+  const rest = [];
+  neutral.forEach((it) => {
+    const roles = roleOf[it.id] || [];
+    if (roles.indexOf("acid") >= 0) {
+      (has(g1, "chelate") ? g2 : g1).push(it);
+    } else if (roles.indexOf("chelate") >= 0) {
+      (has(g1, "acid") ? g2 : g1).push(it);
+    } else {
+      rest.push(it);
+    }
+  });
+
+  // どちらでもよいものは軽い方へ
+  const weight = (g) => g.reduce((s, it) => s + (Number(it.kg) || 0), 0);
+  rest.sort((a, b) => (Number(b.kg) || 0) - (Number(a.kg) || 0));
+  rest.forEach((it) => {
+    (weight(g1) <= weight(g2) ? g1 : g2).push(it);
+  });
+
+  return { calciumSide: g1, sulfateSide: g2 };
 }
 
 // ---------- 原液pHの許容範囲 ----------
@@ -594,6 +676,7 @@ if (typeof window !== "undefined") {
     calcSolution, dissolveItem, calcTank, chargeBalance, estimateEC,
     deriveEcCoefficient, stockPhRange, ionMeq, round,
     solveRecipe, mmolToKg, estimatePhBand, tankStockPh,
+    fertilizerTankRoles, tankRoles, conflictsWithTank, tankConflicts, splitIntoTwoTanks,
     EC_COEFFICIENT,
   };
 }

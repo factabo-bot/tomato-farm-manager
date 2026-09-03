@@ -120,10 +120,18 @@ function fertilizerOptions() {
   Object.keys(FERTILIZER_CHEM).forEach((id) => {
     const c = FERTILIZER_CHEM[id];
     if (c.restricted) return;
-    list.push({ id, name: c.name, group: c.isAcid ? "酸" : "単肥" });
+    list.push({
+      id, name: c.name,
+      group: c.isAcid ? "酸" : "単肥",
+      roles: FertilizerCalc.fertilizerTankRoles(id),
+    });
   });
   Object.keys(FERTILIZER_PRODUCTS).forEach((id) => {
-    list.push({ id, name: FERTILIZER_PRODUCTS[id].name, group: "微量要素" });
+    list.push({
+      id, name: FERTILIZER_PRODUCTS[id].name,
+      group: "微量要素",
+      roles: FertilizerCalc.fertilizerTankRoles(id),
+    });
   });
   return list;
 }
@@ -211,6 +219,12 @@ function renderTanks() {
       box.appendChild(row);
     });
 
+    // このタンクで既に起きている衝突。計算結果まで見に行かなくても分かるよう箱の中に出す
+    FertilizerCalc.tankConflicts(tank).forEach((c) => {
+      box.appendChild(el("div", "fert-tank-warn",
+        `⚠ ${TANK_ROLE_LABEL[c.a]}と${TANK_ROLE_LABEL[c.b]}が同居しています。${c.label}`));
+    });
+
     // 追加行
     const addRow = el("div", "fert-add-row");
     const sel = el("select", "unit-select");
@@ -226,8 +240,21 @@ function renderTanks() {
         sel.appendChild(group);
         lastGroup = o.group;
       }
-      const opt = el("option", "", o.name);
+      // このタンクに入れると沈殿・分解するものは選べないようにし、理由を書く
+      const conflicts = FertilizerCalc.conflictsWithTank(tank, o.id);
+      let label = o.name;
+      if (conflicts.length > 0) {
+        const other = conflicts.map((c) => {
+          const mine = FertilizerCalc.fertilizerTankRoles(o.id);
+          return TANK_ROLE_LABEL[mine.indexOf(c.a) >= 0 ? c.b : c.a];
+        });
+        label += `（${other.join("・")}と同居できません）`;
+      } else if (o.roles.length > 0) {
+        label += `【${o.roles.map((r) => TANK_ROLE_LABEL[r]).join("・")}】`;
+      }
+      const opt = el("option", "", label);
       opt.value = o.id;
+      opt.disabled = conflicts.length > 0;
       group.appendChild(opt);
     });
     sel.addEventListener("change", () => {
@@ -618,28 +645,55 @@ function runSolve() {
   box.appendChild(apply);
 }
 
-// 逆算した配合をタンクに流し込む。
-// Caと硫酸・リン酸は沈殿するので、A液（Ca側）とB液に自動で振り分ける
-function applySolve(tankL, dilution) {
-  if (!lastSolve || lastSolve.picks.length === 0) return;
+// 品目を2本のタンクに振り分けて state に入れる。
+// タンク名は既存のものを引き継ぐ（「A液＝カルシウム側」という決まりは無く、
+// 研修先はB液がカルシウム側、CFアプリはA液が酸性側で揃っていないため）。
+// どちらのタンクがカルシウム側だったかは、いまの中身から推定する
+function assignToTanks(items, tankL) {
+  const split = FertilizerCalc.splitIntoTwoTanks(items);
 
-  const aItems = [];
-  const bItems = [];
-  lastSolve.picks.forEach((p) => {
-    const chem = FERTILIZER_CHEM[p.id];
-    const kg = FertilizerCalc.round(FertilizerCalc.mmolToKg(p.mmol, p.id, tankL, dilution), 3);
-    const hasCa = chem && chem.ions && chem.ions.Ca;
-    (hasCa ? aItems : bItems).push({ id: p.id, kg: kg });
-  });
+  const name0 = (state.tanks[0] && state.tanks[0].name) || "A液";
+  const name1 = (state.tanks[1] && state.tanks[1].name) || "B液";
+
+  // 1本目に既にカルシウムが入っていれば、1本目をカルシウム側として保つ
+  const firstHasCa = ((state.tanks[0] && state.tanks[0].items) || [])
+    .some((it) => FertilizerCalc.fertilizerTankRoles(it.id).indexOf("calcium") >= 0);
+  const secondHasCa = ((state.tanks[1] && state.tanks[1].items) || [])
+    .some((it) => FertilizerCalc.fertilizerTankRoles(it.id).indexOf("calcium") >= 0);
+  const caFirst = firstHasCa || !secondHasCa;
 
   state.tanks = [
-    { name: "A液", tankL: tankL, items: aItems },
-    { name: "B液", tankL: tankL, items: bItems },
+    { name: name0, tankL: tankL, items: caFirst ? split.calciumSide : split.sulfateSide },
+    { name: name1, tankL: tankL, items: caFirst ? split.sulfateSide : split.calciumSide },
   ];
+  const caName = caFirst ? name0 : name1;
+  return caName;
+}
+
+// 逆算した配合をタンクに流し込む
+function applySolve(tankL, dilution) {
+  if (!lastSolve || lastSolve.picks.length === 0) return;
+  const items = lastSolve.picks.map((p) => ({
+    id: p.id,
+    kg: FertilizerCalc.round(FertilizerCalc.mmolToKg(p.mmol, p.id, tankL, dilution), 3),
+  }));
+  const caName = assignToTanks(items, tankL);
   state.recipeId = "";
   saveState();
   initRender();
-  toast("配合をタンクに入れました（カルシウムはA液に分けています）");
+  toast(`配合をタンクに入れました（カルシウムは${caName}側）`);
+}
+
+// いま手で入れてある肥料を、沈殿しないように2本へ組み直す
+function autoSplitTanks() {
+  const items = [];
+  state.tanks.forEach((t) => (t.items || []).forEach((it) => items.push({ id: it.id, kg: it.kg })));
+  if (items.length === 0) { toast("肥料が入っていません"); return; }
+  const tankL = num(state.tanks[0] && state.tanks[0].tankL) || 100;
+  const caName = assignToTanks(items, tankL);
+  saveState();
+  initRender();
+  toast(`2本に分け直しました（カルシウムは${caName}側）`);
 }
 
 // ---------- 処方の呼び出し・保存 ----------
@@ -844,6 +898,8 @@ function bindInputs() {
     saveState();
     recalc();
   });
+
+  $("auto-split").addEventListener("click", autoSplitTanks);
 
   $("add-tank").addEventListener("click", () => {
     state.tanks.push({ name: "タンク" + (state.tanks.length + 1), tankL: 100, items: [] });

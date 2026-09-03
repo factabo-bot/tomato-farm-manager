@@ -159,6 +159,28 @@ const FERTILIZER_PRODUCTS = {
   },
 };
 
+// ---------- 原液タンクを分ける理由 ----------
+// 同じタンクに入れてはいけない組み合わせ。
+// 役割（role）は肥料ごとに手で書かず、ions と stockPh から導出する
+// （fertilizer.js の fertilizerTankRoles）。新しい肥料を足したときの書き忘れを防ぐため。
+//
+// タンク名で判定しないこと。研修先はB液が硝酸カルシウム側、CFアプリはA液が酸性側で、
+// 「A液＝カルシウム側」という決まりは存在しない
+const TANK_CONFLICTS = [
+  { a: "calcium", b: "sulfate", label: "石膏(CaSO4)が沈殿します" },
+  { a: "calcium", b: "phosphate", label: "リン酸カルシウムが沈殿します" },
+  { a: "acid", b: "chelate", label: "原液pHが下限を割ってキレートが分解します" },
+];
+
+// 役割の表示名。選択肢のバッジに使う
+const TANK_ROLE_LABEL = {
+  calcium: "Ca側",
+  sulfate: "硫酸側",
+  phosphate: "リン酸側",
+  acid: "酸",
+  chelate: "キレート",
+};
+
 // ---------- 判定基準 ----------
 // 出典: Nutrient Solutions for Greenhouse Crops (AkzoNobel/Eurofins/Yara/SQM, 2016) p.56
 //       原典 De Kreij, Voogt, van den Bos, Baas (1999)
