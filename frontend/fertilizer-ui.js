@@ -49,8 +49,8 @@ function defaultState() {
     target: {},
     // 「この元素だけ決めたい」の入力（空欄＝自動調整）
     lock: {},
-    // 規模の試算（株数・1株1日の給液量mL・年間の給液日数）
-    scale: { plants: "", ml: "", days: "" },
+    // 規模の試算。ピークは設備の設計に、平均は費用の見積もりに使う
+    scale: { plants: "", peak: "", avg: "", days: "" },
   };
 }
 
@@ -612,6 +612,37 @@ function runBuildTarget() {
 
 // ---------- コストと規模 ----------
 
+// 根拠にした月別の実測値を、いつでも見えるところに出しておく
+function renderScaleRef() {
+  const box = $("scale-ref");
+  if (!box) return;
+  box.innerHTML = "";
+
+  const table = el("table", "fert-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["月", "吸水量", "給液量", "排液率"].forEach((h) => hr.appendChild(el("th", "", h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  FEED_VOLUME_AICHI.forEach((m) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", m.month + "月"));
+    tr.appendChild(el("td", "num sub", FertilizerCalc.round(m.uptakeMl, 0)));
+    tr.appendChild(el("td", "num", m.feedMl));
+    tr.appendChild(el("td", "num sub", m.drainPct + "%"));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = el("div", "fert-table-wrap");
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+  box.appendChild(el("p", "hint",
+    "単位 mL/日/株。愛知県農総試 研報53号(2021) 表4。夏秋作ミニトマト（5月定植・7〜10月）の実測で、8月定植の越冬長期どりとは作型が違う。冬期を含まないので平均は高めに出る"));
+  box.appendChild(el("p", "hint",
+    "越冬作型の冬期は 0.5 L/株/日 前後まで下がり、2月から増えて5月に1.2L程度（愛知県ガイドライン 図I-12 の目視読み取り・実測表ではない）"));
+}
+
 function renderCost() {
   const box = $("cost-result");
   box.innerHTML = "";
@@ -660,27 +691,41 @@ function renderCost() {
   // 規模の試算
   const scale = FertilizerCalc.scaleEstimate(cost, dilution, {
     plants: num(state.scale.plants),
-    mlPerPlantDay: num(state.scale.ml),
+    peakMlPerPlantDay: num(state.scale.peak),
+    avgMlPerPlantDay: num(state.scale.avg),
     daysPerYear: num(state.scale.days),
   });
   if (!scale) {
-    box.appendChild(el("p", "hint", "株数と1株あたりの給液量を入れると、タンクの持ち日数と年間コストが出ます"));
+    box.appendChild(el("p", "hint", "株数とピーク時の給液量を入れると、タンクの持ち日数が出ます"));
     return;
   }
 
   const st = el("div", "fert-scale");
-  const add = (label, value) => {
-    const row = el("div", "fert-scale-row");
+  const add = (label, value, cls) => {
+    const row = el("div", "fert-scale-row" + (cls ? " " + cls : ""));
     row.appendChild(el("span", "fert-scale-label", label));
     row.appendChild(el("span", "fert-scale-value", value));
     st.appendChild(row);
   };
-  add("1日の給液量", `${Math.round(scale.feedLPerDay).toLocaleString()} L`);
-  add("1日に減る原液", `${FertilizerCalc.round(scale.stockLPerDay, 1)} L（タンク1本あたり）`);
+
+  add("── 設備の設計（ピーク時）", "", "fert-scale-head");
+  add("給液量", `${Math.round(scale.peakFeedLPerDay).toLocaleString()} L/日`);
+  add("原液の減り", `${FertilizerCalc.round(scale.peakStockLPerDay, 1)} L/日（タンク1本）`);
   add("このタンクの持ち", `${FertilizerCalc.round(scale.daysPerBatch, 1)} 日`);
-  add("肥料代", `${Math.round(scale.yenPerDay).toLocaleString()} 円/日`);
-  if (scale.yenPerYear > 0) {
-    add("年間の肥料代", `${Math.round(scale.yenPerYear).toLocaleString()} 円`);
+
+  if (scale.avgFeedLPerDay !== null) {
+    add("── 費用の見積もり（年間平均）", "", "fert-scale-head");
+    add("給液量", `${Math.round(scale.avgFeedLPerDay).toLocaleString()} L/日`);
+    add("肥料代", `${Math.round(scale.avgYenPerDay).toLocaleString()} 円/日`);
+    if (scale.yenPerYear !== null) {
+      add("年間の肥料代", `${Math.round(scale.yenPerYear).toLocaleString()} 円`);
+      add("年間の給液量", `${Math.round(scale.feedLPerYear).toLocaleString()} L`);
+    }
+  } else {
+    box.appendChild(st);
+    box.appendChild(el("p", "hint",
+      "年間平均の給液量も入れると、肥料代の見積もりが出ます。ピークの値を年間に掛けると数割多く見積もることになります"));
+    return;
   }
   box.appendChild(st);
 }
@@ -1219,8 +1264,23 @@ function bindInputs() {
   $("solve").addEventListener("click", runSolve);
   $("build-target").addEventListener("click", runBuildTarget);
 
+  // 愛知県の実測値をそのまま入れる。ピークは8月の給液量指針、
+  // 平均は7〜10月の給液量指針の単純平均（冬を含まないので高めに出る）
+  $("scale-preset").addEventListener("click", () => {
+    const peak = Math.max.apply(null, FEED_VOLUME_AICHI.map((m) => m.feedMl));
+    const avg = FEED_VOLUME_AICHI.reduce((s, m) => s + m.feedMl, 0) / FEED_VOLUME_AICHI.length;
+    state.scale.peak = String(peak);
+    state.scale.avg = String(Math.round(avg));
+    saveState();
+    $("scale-peak").value = state.scale.peak;
+    $("scale-avg").value = state.scale.avg;
+    renderCost();
+    renderScaleRef();
+    toast("愛知県の実測値を入れました");
+  });
+
   // --- 規模の入力 ---
-  [["scale-plants", "plants"], ["scale-ml", "ml"], ["scale-days", "days"]].forEach((pair) => {
+  [["scale-plants", "plants"], ["scale-peak", "peak"], ["scale-avg", "avg"], ["scale-days", "days"]].forEach((pair) => {
     const elm = $(pair[0]);
     elm.value = state.scale[pair[1]];
     elm.addEventListener("focus", () => elm.select());
@@ -1256,8 +1316,10 @@ function initRender() {
   renderTargetInputs();
   renderLockInputs();
   $("scale-plants").value = state.scale.plants;
-  $("scale-ml").value = state.scale.ml;
+  $("scale-peak").value = state.scale.peak;
+  $("scale-avg").value = state.scale.avg;
   $("scale-days").value = state.scale.days;
+  renderScaleRef();
   recalc();
 }
 

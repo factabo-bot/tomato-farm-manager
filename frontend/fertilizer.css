@@ -137,6 +137,14 @@
 }
 .fert-scale-label { color: #555; }
 .fert-scale-value { font-weight: 600; text-align: right; }
+/* 「ピーク」「平均」の見出し行 */
+.fert-scale-head { margin-top: 6px; }
+.fert-scale-head:first-child { margin-top: 0; }
+.fert-scale-head .fert-scale-label {
+  font-weight: 700;
+  color: #2e7d32;
+  font-size: 12px;
+}
 
 /* ---- タンク ---- */
 .fert-tank {

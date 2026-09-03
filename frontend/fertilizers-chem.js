@@ -160,21 +160,30 @@ const FERTILIZER_PRODUCTS = {
 };
 
 // ---------- 参考価格 ----------
-// 単位は 円/kg（税別）。2026-09時点の通販掲載価格から換算した概算。
+// 単位は 円/kg（税別）。2026-09-03 時点の通販掲載価格から換算した概算。
+// いずれも個人・小規模向けの通販価格で、大口取引価格ではない。
 // 銘柄・荷姿・仕入れ先で大きく変わるので、処方どうしのコスト差を見る用途に留める。
 // 就農後は実際の仕入れ価格を スプレッドシートの銘柄マスタ に入れて差し替える。
 //
-// 出典: たまごや商店の掲載価格（vault「養液肥料設計機能_計画」§9-D）
+// 荷姿で単価が数倍変わる。例：硫酸マグネシウムは800g袋だと445円/kg、
+// 20kg袋なら149円/kg。ここでは実際に使う想定の大袋価格を採る
 const FERTILIZER_PRICE_REF = {
   calcium_nitrate_4h: { yenPerKg: 245, note: "硝酸カルシウム2水塩 20〜25kg 5,520円" },
   potassium_nitrate: { yenPerKg: 675, note: "粒状13-0-45 20kg 13,500円" },
   potassium_sulfate: { yenPerKg: 551, note: "水溶性 20〜25kg 12,400円" },
-  mono_ammonium_phosphate: { yenPerKg: 1100, note: "800g 880円。小袋価格なので大袋ならもっと安い" },
-  magnesium_sulfate_7h: { yenPerKg: 445, note: "硫酸マグネシウム16 800g 356円。小袋価格" },
-  // 以下は価格を確認できていない。表示では「未設定」として除外し、合計に含めない
-  // mono_potassium_phosphate（第一リン酸カリ単体の掲載価格が見つからず）
-  // magnesium_nitrate_6h / phosphoric_acid / nitric_acid / sulfuric_acid
-  // orient_mix / chelated_iron_dtpa_11 / chelated_iron_edta_13
+  mono_ammonium_phosphate: { yenPerKg: 600, note: "第一燐酸アンモン特撰 25kg 15,000円" },
+  magnesium_sulfate_7h: { yenPerKg: 149, note: "硫酸マグネシウム25（水溶性苦土25%）20kg 2,986円" },
+  magnesium_nitrate_6h: { yenPerKg: 203, note: "硝酸マグネシウム6水塩 25kg 5,071円（税込表示のみ）" },
+  phosphoric_acid: { yenPerKg: 742, note: "りん酸液85% 35kg 25,980円（税込表示のみ）。20kgだと870円/kg" },
+  chelated_iron_dtpa_11: { yenPerKg: 1872, note: "DTPAキレート鉄11% 25kg 46,800円。500g小袋だと2,700円/kg" },
+  chelated_iron_edta_13: { yenPerKg: 2088, note: "EDTA鉄13% 800g 1,670円（小口価格のみ）" },
+  // 第一リン酸カリは農業用単肥としての掲載価格が見つからず、
+  // 食品添加物グレード25kgで1,687円/kg。用途が違うため参考にせず未設定のままにする。
+  // mono_potassium_phosphate
+  //
+  // オリエントミックスの単独価格は確認できず。同等品の「微量要素8」は約1,000円/kg
+  // だが、成分が違うので当てはめない。
+  // orient_mix / nitric_acid / sulfuric_acid / ammonium_nitrate
 };
 
 // ---------- 原液タンクを分ける理由 ----------
@@ -225,6 +234,32 @@ const REFERENCE_RANGES = {
     Mo: { standard: 0.048 }, // 0.5 μmol/L
   },
 };
+
+// 月別の給液量の実測値（mL/日/株）。
+// 出典: 大野栄子・大竹敏也「夏秋作ミニトマトのヤシがら培地耕栽培における給液量指針の策定」
+//       愛知県農業総合試験場研究報告 53:251-254 (2021) 表4
+//
+// 注意が2つある。
+//  ・「給液量指針」は吸水量より2〜5割多い。排液率30〜35%を確保するため、
+//    作物が吸う量そのままではなく、余分に与えて流す。費用は給液量で決まる
+//  ・この試験は夏秋作ミニトマト（5月定植・7〜10月）で、8月定植の越冬長期どり
+//    とは作型が違う。7〜10月の重なる期間の参考として使う
+const FEED_VOLUME_AICHI = [
+  { month: 7, uptakeMl: 1220.6, feedMl: 1600, drainPct: 35 },
+  { month: 8, uptakeMl: 1695.6, feedMl: 2500, drainPct: 35 },
+  { month: 9, uptakeMl: 927.9, feedMl: 1300, drainPct: 35 },
+  { month: 10, uptakeMl: 737.5, feedMl: 900, drainPct: 30 },
+];
+
+// 越冬長期どりの吸水量カーブ（L/株/日）。
+// 愛知県ガイドライン 図I-12 の目視読み取り値で、実測表ではない。
+// 9月中旬定植・大玉・養液土耕・3,000株/10a の別試験のグラフなので、
+// おおよその形（冬に沈み、2月から急に増える）を掴む用途に留める
+const UPTAKE_CURVE_ROUGH = [
+  { month: 9, uptakeL: 0.25 }, { month: 10, uptakeL: 0.5 }, { month: 11, uptakeL: 0.5 },
+  { month: 12, uptakeL: 0.5 }, { month: 1, uptakeL: 0.5 }, { month: 2, uptakeL: 0.65 },
+  { month: 3, uptakeL: 0.83 }, { month: 4, uptakeL: 0.88 }, { month: 5, uptakeL: 1.2 },
+];
 
 // 生育ステージ別の給液EC。
 // 出典: 愛知県農業総合試験場「トマト・ミニトマトにおける環境制御ガイドライン」

@@ -208,8 +208,13 @@
       <span class="num-unit">株</span>
     </div>
     <div class="num-row">
-      <label class="num-label" for="scale-ml">1株1日</label>
-      <input class="num-input" type="number" id="scale-ml" inputmode="numeric" placeholder="例: 1200">
+      <label class="num-label" for="scale-peak">ピーク時 1株1日</label>
+      <input class="num-input" type="number" id="scale-peak" inputmode="numeric" placeholder="例: 1700">
+      <span class="num-unit">mL</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="scale-avg">年間平均 1株1日</label>
+      <input class="num-input" type="number" id="scale-avg" inputmode="numeric" placeholder="例: 1100">
       <span class="num-unit">mL</span>
     </div>
     <div class="num-row">
@@ -217,7 +222,10 @@
       <input class="num-input" type="number" id="scale-days" inputmode="numeric" placeholder="例: 270">
       <span class="num-unit">日</span>
     </div>
-    <p class="hint">給液量の目安：愛知県農総試の夏秋ミニトマト（ヤシガラ）で1回100〜120mL/株を8〜19回/日、月別の最大吸水量は737〜1696mL/日/株</p>
+    <p class="hint"><strong>タンク容量はピークで、費用は平均で見ます。</strong>1つの値で兼ねると、タンクが足りないか費用を数割多く見積もるかのどちらかになります</p>
+    <p class="hint">⚠ 入れるのは<strong>吸水量ではなく給液量</strong>です。排液率30〜35%を確保するため、実際に作る液は作物が吸う量より2〜5割多くなります</p>
+    <button id="scale-preset" class="btn-secondary" type="button">愛知県の実測値を入れる</button>
+    <div id="scale-ref"></div>
     <div id="cost-result"></div>
   </section>
 

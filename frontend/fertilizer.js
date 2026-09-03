@@ -581,24 +581,35 @@ function recipeCost(tanks, dilution) {
 // 給液量の目安（愛知県農業総合試験場・夏秋ミニトマトのヤシガラ培地耕）:
 //   1回 100〜120 mL/株（高温期8月は150）、8〜19回/日
 //   月別の最大吸水量 737.5〜1695.6 mL/日/株
+// ピーク時と年間平均を分けて扱う。
+//   タンク容量・調製の頻度 → ピーク（いちばん厳しい日に足りるか）
+//   年間の肥料費           → 平均（繁忙期の値を年間に掛けると過大になる）
+// 1つの値で兼ねると、タンクが足りないか、費用を数割多く見積もるかのどちらかになる
 function scaleEstimate(cost, dilution, opts) {
   const plants = Number(opts.plants) || 0;
-  const mlPerPlantDay = Number(opts.mlPerPlantDay) || 0;
+  const peakMl = Number(opts.peakMlPerPlantDay) || 0;
+  const avgMl = Number(opts.avgMlPerPlantDay) || 0;
   const daysPerYear = Number(opts.daysPerYear) || 0;
   const d = Number(dilution) || 1;
-  if (!(plants > 0) || !(mlPerPlantDay > 0)) return null;
+  if (!(plants > 0) || !(peakMl > 0)) return null;
 
-  const feedLPerDay = (plants * mlPerPlantDay) / 1000;   // 1日に作る給液
-  const stockLPerDay = feedLPerDay / d;                   // 1日に減る原液（タンク1本あたり）
+  const peakFeedL = (plants * peakMl) / 1000;
+  const avgFeedL = avgMl > 0 ? (plants * avgMl) / 1000 : null;
 
   return {
-    feedLPerDay: feedLPerDay,
-    stockLPerDay: stockLPerDay,
-    // cost.feedVolumeL は「タンク1本ぶんの原液で作れる給液量」＝1回の調製でまかなえる量
-    daysPerBatch: feedLPerDay > 0 ? cost.feedVolumeL / feedLPerDay : 0,
-    yenPerDay: (cost.yenPer1000L * feedLPerDay) / 1000,
-    yenPerYear: daysPerYear > 0 ? (cost.yenPer1000L * feedLPerDay * daysPerYear) / 1000 : 0,
-    feedLPerYear: daysPerYear > 0 ? feedLPerDay * daysPerYear : 0,
+    // ピーク側（設備の設計に使う）
+    peakFeedLPerDay: peakFeedL,
+    peakStockLPerDay: peakFeedL / d,
+    daysPerBatch: peakFeedL > 0 ? cost.feedVolumeL / peakFeedL : 0,
+    peakYenPerDay: (cost.yenPer1000L * peakFeedL) / 1000,
+
+    // 平均側（費用の見積もりに使う）
+    avgFeedLPerDay: avgFeedL,
+    avgYenPerDay: avgFeedL === null ? null : (cost.yenPer1000L * avgFeedL) / 1000,
+    feedLPerYear: avgFeedL === null || !(daysPerYear > 0) ? null : avgFeedL * daysPerYear,
+    yenPerYear: avgFeedL === null || !(daysPerYear > 0)
+      ? null
+      : (cost.yenPer1000L * avgFeedL * daysPerYear) / 1000,
   };
 }
 
