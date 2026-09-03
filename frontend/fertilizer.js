@@ -335,6 +335,131 @@ function calcSolution(input) {
   };
 }
 
+// ---------- 逆算（目標組成 → 単肥の量） ----------
+// 連立方程式を一発で解くのではなく、実務者の手計算と同じ順に割り当てる。
+// 単肥は1つで複数のイオンを出すので、順番を決めないと解が定まらない。
+//
+//   Ca → P → NH4 → Mg/SO4 → K → NO3 の順。
+//   後ろのイオンほど「前の段階で入った分」を差し引いて残りを埋める。
+//
+// 目標が達成できない組み合わせ（前段で入る量が目標を超える）は、
+// 負の量になる前に警告として返す。
+
+const SOLVE_ORDER_NOTE = "Ca→P→NH4→Mg/SO4→K→NO3 の順に割り当て";
+
+function solveRecipe(target, water) {
+  const ions = ["K", "Ca", "Mg", "NH4", "NO3", "H2PO4", "SO4"];
+  const need = {};
+  ions.forEach((k) => {
+    need[k] = Math.max(0, (Number(target[k]) || 0) - (Number((water || {})[k]) || 0));
+  });
+
+  const supplied = {};
+  ions.forEach((k) => (supplied[k] = 0));
+  const picks = [];
+  const warnings = [];
+
+  // 入口で目標組成そのものを検証する。
+  // 塩は中性なので、陽陰が釣り合っていない目標は塩だけでは作れない。
+  // 差は酸（H⁺）か水酸化物で埋めることになり、pHが動く。
+  // 公表されている処方（オランダ標準など）も丸めやHCO3の省略で1前後ずれることがある
+  const targetBalance = chargeBalance(target);
+  if (targetBalance.errorPct > 1) {
+    const over = targetBalance.diff > 0 ? "陽イオン" : "陰イオン";
+    warnings.push({
+      level: "warn",
+      message: `目標組成の電荷が ${round(Math.abs(targetBalance.diff), 2)} meq/L ずれています（${over}が多い。陽 ${round(targetBalance.cationMeq, 2)} / 陰 ${round(targetBalance.anionMeq, 2)}）。塩だけでは作れないので、この差は酸か水酸化物で埋めることになります`,
+    });
+  }
+
+  function add(id, mmol) {
+    if (!(mmol > 0.0001)) return;
+    const chem = FERTILIZER_CHEM[id];
+    if (!chem) return;
+    picks.push({ id: id, name: chem.name, mmol: mmol });
+    Object.keys(chem.ions).forEach((ion) => {
+      if (supplied[ion] === undefined) supplied[ion] = 0;
+      supplied[ion] += mmol * chem.ions[ion];
+    });
+  }
+
+  // 1) カルシウム。Ca源は硝酸カルシウムしかないので最初に決まる
+  add("calcium_nitrate_4h", need.Ca);
+
+  // 2) リン酸。第一リン酸カリで入れる（Kが同時に入る）
+  add("mono_potassium_phosphate", need.H2PO4);
+
+  // 3) アンモニア。硝酸アンモニウムは規制品なので、リン酸がまだ余っていればMAPを優先…
+  //    ではなく、ここではリン酸を既に確定させているので硝酸アンモニウムを使う。
+  //    トマトはNH4を0〜1.5に抑えるので、そもそも0でよいことが多い
+  if (need.NH4 > 0.0001) {
+    add("ammonium_nitrate", need.NH4);
+    warnings.push({
+      level: "info",
+      message: "アンモニアの供給に硝酸アンモニウム（販売時に本人確認が要る規制品）を使っています。NH4を0にすれば不要です",
+    });
+  }
+
+  // 4) マグネシウムと硫酸。硫酸マグネシウムで両方を同時に埋め、
+  //    足りない側をそれぞれ別の塩で補う
+  const mgBySulfate = Math.min(need.Mg, need.SO4);
+  add("magnesium_sulfate_7h", mgBySulfate);
+  add("magnesium_nitrate_6h", need.Mg - mgBySulfate);
+
+  // 5) 硫酸の残りは硫酸カリで（Kが2倍入る）
+  add("potassium_sulfate", need.SO4 - supplied.SO4);
+
+  // 6) カリの残りを硝酸カリで
+  const kRest = need.K - supplied.K;
+  if (kRest < -0.01) {
+    warnings.push({
+      level: "warn",
+      message: `カリウムが目標を ${round(-kRest, 2)} mmol/L 超えます。リン酸カリと硫酸カリから入る分だけで足りているので、リン酸か硫酸の目標を下げてください`,
+    });
+  }
+  add("potassium_nitrate", kRest);
+
+  // 7) 硝酸の帳尻。ここまでの塩で入った分と目標を比べる
+  const no3Rest = need.NO3 - supplied.NO3;
+  if (no3Rest < -0.01) {
+    warnings.push({
+      level: "warn",
+      message: `硝酸が目標を ${round(-no3Rest, 2)} mmol/L 超えます。Ca・Mg・Kを硝酸塩で入れると避けられないので、硫酸塩の比率を上げるか硝酸の目標を上げてください`,
+    });
+  } else if (no3Rest > 0.01) {
+    // 目標の電荷が合っていれば、ここは0になるはず。
+    // 残るということは目標側で陰イオンが余っている＝酸で入れる分にあたる
+    warnings.push({
+      level: "info",
+      message: `硝酸が ${round(no3Rest, 2)} mmol/L 残ります。硝酸（HNO3）で入れることになり、同じ量のH⁺が原水のアルカリ度を中和します`,
+    });
+  }
+
+  // 電荷の帳尻。塩だけで組んだ結果が目標とどれだけ違うか
+  const suppliedBalance = chargeBalance(supplied);
+
+  // 目標との差
+  const diff = {};
+  ions.forEach((k) => (diff[k] = round(supplied[k] - need[k], 3)));
+
+  return {
+    picks: picks, supplied: supplied, need: need, diff: diff,
+    targetBalance: targetBalance, suppliedBalance: suppliedBalance,
+    acidNeeded: Math.max(0, round(no3Rest, 3)),
+    warnings: warnings, note: SOLVE_ORDER_NOTE,
+  };
+}
+
+// mmol/L → タンクに入れる kg
+//   kg = mmol/L × 分子量 × 希釈倍率 × タンク容量L ÷ 1,000,000
+// 検算: 硝酸カリ 4.121 mmol/L を 100L・120倍 → 4.121×101.10×120×100÷1e6 = 5.00 kg
+function mmolToKg(mmol, id, tankL, dilution) {
+  const chem = FERTILIZER_CHEM[id];
+  if (!chem || !(mmol > 0)) return 0;
+  const purity = chem.purity === undefined ? 1 : chem.purity;
+  return (mmol * chem.mw * dilution * tankL) / 1000000 / purity;
+}
+
 // ---------- me/L への換算（表示用） ----------
 function ionMeq(ions, name) {
   const charge = ION_CHARGE[name];
@@ -347,6 +472,7 @@ if (typeof window !== "undefined") {
   window.FertilizerCalc = {
     calcSolution, dissolveItem, calcTank, chargeBalance, estimateEC,
     deriveEcCoefficient, stockPhRange, ionMeq, round,
+    solveRecipe, mmolToKg,
     EC_COEFFICIENT,
   };
 }

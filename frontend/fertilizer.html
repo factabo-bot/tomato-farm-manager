@@ -160,9 +160,32 @@
     </div>
   </section>
 
+  <!-- ============ 逆算 ============ -->
+  <section>
+    <h2>⑥ 逆算（目標の組成から配合を出す）</h2>
+    <p class="hint">作りたい組成を入れると、必要な単肥の量を計算します。<strong>塩は中性なので、目標の電荷が釣り合っていないと作れません</strong>（差は酸で埋めることになります）</p>
+
+    <select id="target-preset">
+      <option value="">（プリセットを選ぶ）</option>
+      <option value="dutch">オランダ標準（トマト・不活性培地）</option>
+      <option value="aichi">愛知県 改良処方（NH4を下げP・Kを上げた版）</option>
+      <option value="current">いまの計算結果をそのまま目標にする</option>
+    </select>
+
+    <div id="target-inputs" class="fert-water-grid"></div>
+
+    <div class="total-line">
+      目標の電荷: 陽 <span id="target-cation">0</span> / 陰 <span id="target-anion">0</span> meq/L
+      <span id="target-balance-note"></span>
+    </div>
+
+    <button id="solve" class="btn-primary" type="button">この組成にする配合を出す</button>
+    <div id="solve-result"></div>
+  </section>
+
   <!-- ============ 書き出し ============ -->
   <section>
-    <h2>⑥ 書き出し</h2>
+    <h2>⑦ 書き出し</h2>
     <button id="copy-result" class="btn-secondary" type="button">📋 計算結果をコピー</button>
     <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
     <p class="hint">処方の保存（マスタ登録）は次の段階で実装します。いまはコピーして貼り付けてください</p>

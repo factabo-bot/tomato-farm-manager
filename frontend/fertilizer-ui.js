@@ -45,6 +45,8 @@ function defaultState() {
     recipeName: "",
     recipeStage: "",
     waterId: "",
+    // 逆算の目標組成（mmol/L・空欄可）
+    target: {},
   };
 }
 
@@ -476,6 +478,156 @@ function resultToText() {
   return lines.join("\n");
 }
 
+// ---------- 逆算（目標組成 → 配合） ----------
+
+const TARGET_FIELDS = ["K", "Ca", "Mg", "NH4", "NO3", "H2PO4", "SO4"];
+
+// 目標組成のプリセット。単位はすべて mmol/L。
+//
+// 愛知県の資料は me/L 表記なので換算した。リン酸は3価（PO4³⁻）で書かれている
+// と読める：5.0 me/L ÷ 3 = 1.67 mmol/L とすると電荷が 陽23.0 / 陰22.97 でほぼ揃う。
+// 1価として5.0 mmol/L にすると陰が26.3となり3.3もずれるので、3価換算が正しい。
+const TARGET_PRESETS = {
+  dutch: {
+    label: "オランダ標準",
+    values: { K: 9.5, Ca: 5.4, Mg: 2.4, NH4: 1.2, NO3: 15, H2PO4: 1.5, SO4: 4.4 },
+    note: "Nutrient Solutions for Greenhouse Crops (2016) のトマト・不活性培地。公表値のままだと電荷が1.0ずれる",
+  },
+  aichi: {
+    label: "愛知県 改良処方",
+    values: { K: 10.5, Ca: 4.0, Mg: 2.0, NH4: 0.5, NO3: 16.8, H2PO4: 1.67, SO4: 2.25 },
+    note: "愛知県農総試2015。NH4を1.3→0.5に下げP・Kを上げた版（尻腐れ減・可販果増）。me/L表記を換算",
+  },
+};
+
+function renderTargetInputs() {
+  const wrap = $("target-inputs");
+  wrap.innerHTML = "";
+  TARGET_FIELDS.forEach((k) => {
+    const row = el("div", "fert-water-row");
+    row.appendChild(el("label", "num-label", `${k} ${ION_LABEL[k] || ""}`));
+    const input = el("input", "num-input");
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.step = "0.1";
+    input.placeholder = "0";
+    input.value = state.target[k] === undefined ? "" : state.target[k];
+    input.addEventListener("focus", () => input.select());
+    input.addEventListener("input", () => {
+      state.target[k] = input.value;
+      saveState();
+      renderTargetBalance();
+    });
+    row.appendChild(input);
+    row.appendChild(el("span", "num-unit", "mmol/L"));
+    wrap.appendChild(row);
+  });
+  renderTargetBalance();
+}
+
+function targetAsNumbers() {
+  const t = {};
+  TARGET_FIELDS.forEach((k) => (t[k] = num(state.target[k])));
+  return t;
+}
+
+function renderTargetBalance() {
+  const b = FertilizerCalc.chargeBalance(targetAsNumbers());
+  $("target-cation").textContent = FertilizerCalc.round(b.cationMeq, 2);
+  $("target-anion").textContent = FertilizerCalc.round(b.anionMeq, 2);
+  const note = $("target-balance-note");
+  if (b.cationMeq === 0 && b.anionMeq === 0) {
+    note.textContent = "";
+    note.className = "";
+  } else if (b.errorPct > 1) {
+    const over = b.diff > 0 ? "陽" : "陰";
+    note.textContent = ` ⚠ ${over}が ${FertilizerCalc.round(Math.abs(b.diff), 2)} meq/L 多い`;
+    note.className = "fert-inline-warn";
+  } else {
+    note.textContent = " ✓ 釣り合っています";
+    note.className = "fert-inline-ok";
+  }
+}
+
+let lastSolve = null;
+
+function runSolve() {
+  const water = {};
+  WATER_FIELDS.forEach((f) => {
+    const v = num(state.water[f.key]);
+    if (v) water[f.key] = v;
+  });
+  const sol = FertilizerCalc.solveRecipe(targetAsNumbers(), water);
+  lastSolve = sol;
+
+  const box = $("solve-result");
+  box.innerHTML = "";
+
+  if (sol.picks.length === 0) {
+    box.appendChild(el("p", "hint", "目標が空です。組成を入れてください"));
+    return;
+  }
+
+  sol.warnings.forEach((w) => {
+    box.appendChild(el("div", "fert-warn fert-warn-" + w.level, w.message));
+  });
+
+  // タンク容量と希釈倍率は、いま入力されている1本目の値を使う
+  const tankL = num(state.tanks[0] && state.tanks[0].tankL) || 100;
+  const dilution = num(state.dilution) || 120;
+
+  box.appendChild(el("p", "hint",
+    `${tankL}Lタンク・${dilution}倍希釈に換算した量（${sol.note}）`));
+
+  const table = el("table", "fert-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["肥料", "mmol/L", "kg"].forEach((h) => hr.appendChild(el("th", "", h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  sol.picks.forEach((p) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", p.name));
+    tr.appendChild(el("td", "num sub", FertilizerCalc.round(p.mmol, 2)));
+    tr.appendChild(el("td", "num", FertilizerCalc.round(FertilizerCalc.mmolToKg(p.mmol, p.id, tankL, dilution), 2)));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = el("div", "fert-table-wrap");
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+
+  const apply = el("button", "btn-secondary", "この配合をタンクに入れる");
+  apply.type = "button";
+  apply.addEventListener("click", () => applySolve(tankL, dilution));
+  box.appendChild(apply);
+}
+
+// 逆算した配合をタンクに流し込む。
+// Caと硫酸・リン酸は沈殿するので、A液（Ca側）とB液に自動で振り分ける
+function applySolve(tankL, dilution) {
+  if (!lastSolve || lastSolve.picks.length === 0) return;
+
+  const aItems = [];
+  const bItems = [];
+  lastSolve.picks.forEach((p) => {
+    const chem = FERTILIZER_CHEM[p.id];
+    const kg = FertilizerCalc.round(FertilizerCalc.mmolToKg(p.mmol, p.id, tankL, dilution), 3);
+    const hasCa = chem && chem.ions && chem.ions.Ca;
+    (hasCa ? aItems : bItems).push({ id: p.id, kg: kg });
+  });
+
+  state.tanks = [
+    { name: "A液", tankL: tankL, items: aItems },
+    { name: "B液", tankL: tankL, items: bItems },
+  ];
+  state.recipeId = "";
+  saveState();
+  initRender();
+  toast("配合をタンクに入れました（カルシウムはA液に分けています）");
+}
+
 // ---------- 処方の呼び出し・保存 ----------
 
 function renderRecipeSelect() {
@@ -803,6 +955,33 @@ function bindInputs() {
     deleteRecipe();
   });
 
+  // --- 逆算 ---
+  $("target-preset").addEventListener("change", (e) => {
+    const key = e.target.value;
+    if (!key) return;
+    if (key === "current") {
+      // いまの計算結果をそのまま目標に写す
+      if (lastResult) {
+        TARGET_FIELDS.forEach((k) => {
+          state.target[k] = String(FertilizerCalc.round(lastResult.ions[k], 2));
+        });
+        toast("いまの組成を目標に写しました");
+      }
+    } else {
+      const p = TARGET_PRESETS[key];
+      if (!p) return;
+      TARGET_FIELDS.forEach((k) => {
+        state.target[k] = p.values[k] === undefined ? "" : String(p.values[k]);
+      });
+      toast(p.label + " を読み込みました");
+    }
+    e.target.value = "";
+    saveState();
+    renderTargetInputs();
+  });
+
+  $("solve").addEventListener("click", runSolve);
+
   // --- 原水 ---
   $("water-select").addEventListener("change", (e) => {
     state.waterId = e.target.value;
@@ -825,6 +1004,7 @@ function initRender() {
   renderWaterSelect();
   renderTanks();
   renderWater();
+  renderTargetInputs();
   recalc();
 }
 
