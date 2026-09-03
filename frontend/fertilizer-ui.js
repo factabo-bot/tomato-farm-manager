@@ -47,6 +47,10 @@ function defaultState() {
     waterId: "",
     // 逆算の目標組成（mmol/L・空欄可）
     target: {},
+    // 「この元素だけ決めたい」の入力（空欄＝自動調整）
+    lock: {},
+    // 規模の試算（株数・1株1日の給液量mL・年間の給液日数）
+    scale: { plants: "", ml: "", days: "" },
   };
 }
 
@@ -384,6 +388,7 @@ function recalc() {
   // 主要イオン
   renderIonTable(result);
   renderMicroTable(result);
+  renderCost();
 
   // 実測ECが入っていれば係数の補正ボタンを出す
   $("ec-coef-box").hidden = !(result.ecCoefficientDerived > 0);
@@ -517,6 +522,167 @@ function resultToText() {
     r.warnings.forEach((w) => lines.push("  ・" + w.message));
   }
   return lines.join("\n");
+}
+
+// ---------- 元素を指定して組成を作る ----------
+// 「Caを6.0にしたい。他は基準内なら何でもよい」という組み方。
+// 指定しなかった元素を基準の範囲で動かし、電荷が釣り合う組成にする
+
+function renderLockInputs() {
+  const wrap = $("lock-inputs");
+  wrap.innerHTML = "";
+  TARGET_FIELDS.forEach((k) => {
+    const row = el("div", "fert-water-row");
+    row.appendChild(el("label", "num-label", `${k} ${ION_LABEL[k] || ""}`));
+    const input = el("input", "num-input");
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.step = "0.1";
+    const r = REFERENCE_RANGES.ions[k];
+    input.placeholder = r ? `${r.min}〜${r.max}` : "";
+    input.value = state.lock[k] === undefined ? "" : state.lock[k];
+    input.addEventListener("focus", () => input.select());
+    input.addEventListener("input", () => {
+      state.lock[k] = input.value;
+      saveState();
+    });
+    row.appendChild(input);
+    row.appendChild(el("span", "num-unit", "mmol/L"));
+    wrap.appendChild(row);
+  });
+}
+
+function runBuildTarget() {
+  const fixed = {};
+  let count = 0;
+  TARGET_FIELDS.forEach((k) => {
+    if (state.lock[k] !== undefined && String(state.lock[k]).trim() !== "") {
+      fixed[k] = num(state.lock[k]);
+      count++;
+    }
+  });
+
+  const box = $("build-result");
+  box.innerHTML = "";
+  if (count === 0) {
+    box.appendChild(el("p", "hint", "動かしたい元素の値を1つ以上入れてください（空欄のものが自動で調整されます）"));
+    return;
+  }
+
+  const r = FertilizerCalc.buildBalancedTarget(fixed);
+  box.appendChild(el("div", "fert-warn fert-warn-" + (r.feasible ? "info" : "warn"), r.message));
+
+  const table = el("table", "fert-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["イオン", "mmol/L", "基準"].forEach((h) => hr.appendChild(el("th", "", h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  TARGET_FIELDS.forEach((k) => {
+    const ref = REFERENCE_RANGES.ions[k];
+    const tr = el("tr");
+    const isFixed = fixed[k] !== undefined;
+    tr.appendChild(el("td", "", `${isFixed ? "🔒 " : ""}${k} ${ION_LABEL[k] || ""}`));
+    const cell = el("td", "num" + (isFixed ? " fert-locked" : ""), FertilizerCalc.round(r.target[k], 2));
+    tr.appendChild(cell);
+    tr.appendChild(el("td", "num sub", ref ? `${ref.min}〜${ref.max}` : "—"));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = el("div", "fert-table-wrap");
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+
+  if (r.feasible) {
+    const apply = el("button", "btn-secondary", "この組成を下の逆算に入れる");
+    apply.type = "button";
+    apply.addEventListener("click", () => {
+      TARGET_FIELDS.forEach((k) => {
+        state.target[k] = String(FertilizerCalc.round(r.target[k], 2));
+      });
+      saveState();
+      renderTargetInputs();
+      toast("目標組成に入れました");
+      $("solve").scrollIntoView({ block: "center" });
+    });
+    box.appendChild(apply);
+  }
+}
+
+// ---------- コストと規模 ----------
+
+function renderCost() {
+  const box = $("cost-result");
+  box.innerHTML = "";
+
+  const tanks = state.tanks.map((t) => ({
+    name: t.name, tankL: num(t.tankL),
+    items: (t.items || []).filter((i) => num(i.kg) > 0),
+  }));
+  const dilution = num(state.dilution) || 120;
+  const cost = FertilizerCalc.recipeCost(tanks, dilution);
+
+  if (cost.rows.length === 0 && cost.unpriced.length === 0) {
+    box.appendChild(el("p", "hint", "タンクに肥料を入れると計算します"));
+    return;
+  }
+
+  // 単価のわかる分の内訳
+  const table = el("table", "fert-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["肥料", "kg", "円"].forEach((h) => hr.appendChild(el("th", "", h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  cost.rows.forEach((r) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", r.name));
+    tr.appendChild(el("td", "num sub", FertilizerCalc.round(r.kg, 2)));
+    tr.appendChild(el("td", "num", Math.round(r.yen).toLocaleString()));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = el("div", "fert-table-wrap");
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+
+  const sum = el("div", "total-line");
+  sum.textContent = `原液1回ぶん ${Math.round(cost.batchTotal).toLocaleString()}円 → 給液 ${Math.round(cost.feedVolumeL).toLocaleString()}L 分 ＝ ${FertilizerCalc.round(cost.yenPer1000L, 1)}円/1000L`;
+  box.appendChild(sum);
+
+  if (cost.unpriced.length > 0) {
+    box.appendChild(el("div", "fert-warn fert-warn-info",
+      `価格が未設定のため合計に入っていません: ${cost.unpriced.map((u) => u.name).join("・")}`));
+  }
+
+  // 規模の試算
+  const scale = FertilizerCalc.scaleEstimate(cost, dilution, {
+    plants: num(state.scale.plants),
+    mlPerPlantDay: num(state.scale.ml),
+    daysPerYear: num(state.scale.days),
+  });
+  if (!scale) {
+    box.appendChild(el("p", "hint", "株数と1株あたりの給液量を入れると、タンクの持ち日数と年間コストが出ます"));
+    return;
+  }
+
+  const st = el("div", "fert-scale");
+  const add = (label, value) => {
+    const row = el("div", "fert-scale-row");
+    row.appendChild(el("span", "fert-scale-label", label));
+    row.appendChild(el("span", "fert-scale-value", value));
+    st.appendChild(row);
+  };
+  add("1日の給液量", `${Math.round(scale.feedLPerDay).toLocaleString()} L`);
+  add("1日に減る原液", `${FertilizerCalc.round(scale.stockLPerDay, 1)} L（タンク1本あたり）`);
+  add("このタンクの持ち", `${FertilizerCalc.round(scale.daysPerBatch, 1)} 日`);
+  add("肥料代", `${Math.round(scale.yenPerDay).toLocaleString()} 円/日`);
+  if (scale.yenPerYear > 0) {
+    add("年間の肥料代", `${Math.round(scale.yenPerYear).toLocaleString()} 円`);
+  }
+  box.appendChild(st);
 }
 
 // ---------- 逆算（目標組成 → 配合） ----------
@@ -1051,6 +1217,19 @@ function bindInputs() {
   });
 
   $("solve").addEventListener("click", runSolve);
+  $("build-target").addEventListener("click", runBuildTarget);
+
+  // --- 規模の入力 ---
+  [["scale-plants", "plants"], ["scale-ml", "ml"], ["scale-days", "days"]].forEach((pair) => {
+    const elm = $(pair[0]);
+    elm.value = state.scale[pair[1]];
+    elm.addEventListener("focus", () => elm.select());
+    elm.addEventListener("input", () => {
+      state.scale[pair[1]] = elm.value;
+      saveState();
+      renderCost();
+    });
+  });
 
   // --- 原水 ---
   $("water-select").addEventListener("change", (e) => {
@@ -1075,6 +1254,10 @@ function initRender() {
   renderTanks();
   renderWater();
   renderTargetInputs();
+  renderLockInputs();
+  $("scale-plants").value = state.scale.plants;
+  $("scale-ml").value = state.scale.ml;
+  $("scale-days").value = state.scale.days;
   recalc();
 }
 

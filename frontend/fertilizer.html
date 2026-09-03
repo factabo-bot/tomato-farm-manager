@@ -166,9 +166,18 @@
     </div>
   </section>
 
+  <!-- ============ 元素を指定して組成を作る ============ -->
+  <section>
+    <h2>⑥ 元素を指定して組成を作る</h2>
+    <p class="hint">「カルシウムを増やしたい」のように<strong>動かしたい元素だけを決める</strong>と、残りを基準の範囲内で調整して電荷が釣り合う組成を作ります。作った組成はそのまま下の逆算に入ります</p>
+    <div id="lock-inputs" class="fert-water-grid"></div>
+    <button id="build-target" class="btn-primary" type="button">残りを自動で釣り合わせる</button>
+    <div id="build-result"></div>
+  </section>
+
   <!-- ============ 逆算 ============ -->
   <section>
-    <h2>⑥ 逆算（目標の組成から配合を出す）</h2>
+    <h2>⑦ 逆算（目標の組成から配合を出す）</h2>
     <p class="hint">作りたい組成を入れると、必要な単肥の量を計算します。<strong>塩は中性なので、目標の電荷が釣り合っていないと作れません</strong>（差は酸で埋めることになります）</p>
 
     <select id="target-preset">
@@ -189,9 +198,32 @@
     <div id="solve-result"></div>
   </section>
 
+  <!-- ============ コストと規模 ============ -->
+  <section>
+    <h2>⑧ 肥料コストと調製の頻度</h2>
+    <p class="hint">株数と給液量を入れると、タンクが何日持つか・年間いくらかかるかを出します。<strong>価格は通販の掲載価格から換算した概算</strong>で、処方どうしの差を見る用途に留めてください</p>
+    <div class="num-row">
+      <label class="num-label" for="scale-plants">株数</label>
+      <input class="num-input" type="number" id="scale-plants" inputmode="numeric" placeholder="例: 3000">
+      <span class="num-unit">株</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="scale-ml">1株1日</label>
+      <input class="num-input" type="number" id="scale-ml" inputmode="numeric" placeholder="例: 1200">
+      <span class="num-unit">mL</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="scale-days">年間の給液日数</label>
+      <input class="num-input" type="number" id="scale-days" inputmode="numeric" placeholder="例: 270">
+      <span class="num-unit">日</span>
+    </div>
+    <p class="hint">給液量の目安：愛知県農総試の夏秋ミニトマト（ヤシガラ）で1回100〜120mL/株を8〜19回/日、月別の最大吸水量は737〜1696mL/日/株</p>
+    <div id="cost-result"></div>
+  </section>
+
   <!-- ============ 書き出し ============ -->
   <section>
-    <h2>⑦ 書き出し</h2>
+    <h2>⑨ 書き出し</h2>
     <button id="copy-result" class="btn-secondary" type="button">📋 計算結果をコピー</button>
     <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
     <p class="hint">処方の保存（マスタ登録）は次の段階で実装します。いまはコピーして貼り付けてください</p>

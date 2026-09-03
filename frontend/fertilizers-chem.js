@@ -159,6 +159,24 @@ const FERTILIZER_PRODUCTS = {
   },
 };
 
+// ---------- 参考価格 ----------
+// 単位は 円/kg（税別）。2026-09時点の通販掲載価格から換算した概算。
+// 銘柄・荷姿・仕入れ先で大きく変わるので、処方どうしのコスト差を見る用途に留める。
+// 就農後は実際の仕入れ価格を スプレッドシートの銘柄マスタ に入れて差し替える。
+//
+// 出典: たまごや商店の掲載価格（vault「養液肥料設計機能_計画」§9-D）
+const FERTILIZER_PRICE_REF = {
+  calcium_nitrate_4h: { yenPerKg: 245, note: "硝酸カルシウム2水塩 20〜25kg 5,520円" },
+  potassium_nitrate: { yenPerKg: 675, note: "粒状13-0-45 20kg 13,500円" },
+  potassium_sulfate: { yenPerKg: 551, note: "水溶性 20〜25kg 12,400円" },
+  mono_ammonium_phosphate: { yenPerKg: 1100, note: "800g 880円。小袋価格なので大袋ならもっと安い" },
+  magnesium_sulfate_7h: { yenPerKg: 445, note: "硫酸マグネシウム16 800g 356円。小袋価格" },
+  // 以下は価格を確認できていない。表示では「未設定」として除外し、合計に含めない
+  // mono_potassium_phosphate（第一リン酸カリ単体の掲載価格が見つからず）
+  // magnesium_nitrate_6h / phosphoric_acid / nitric_acid / sulfuric_acid
+  // orient_mix / chelated_iron_dtpa_11 / chelated_iron_edta_13
+};
+
 // ---------- 原液タンクを分ける理由 ----------
 // 同じタンクに入れてはいけない組み合わせ。
 // 役割（role）は肥料ごとに手で書かず、ions と stockPh から導出する

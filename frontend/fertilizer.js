@@ -530,6 +530,149 @@ function tankStockPh(tank, dilution) {
   };
 }
 
+// ---------- 肥料コスト ----------
+// 原液を1回作るのにいくらか、給液1000Lあたりいくらかを出す。
+// 処方どうしの差を見るのが目的なので、価格の分からない資材は合計から外し、
+// 「何が未設定か」を返して黙って安く見せないようにする
+function recipeCost(tanks, dilution) {
+  const d = Number(dilution) || 1;
+  let batchTotal = 0;      // 原液を1回作るのにかかる金額
+  let feedVolumeL = 0;     // その原液で作れる給液の量
+  const rows = [];
+  const unpriced = [];
+
+  (tanks || []).forEach((t) => {
+    const tankL = Number(t.tankL) || 0;
+    if (tankL > 0) feedVolumeL += tankL * d;
+    (t.items || []).forEach((it) => {
+      const kg = Number(it.kg) || 0;
+      if (!(kg > 0)) return;
+      const chem = lookupFertilizer(it.id);
+      const name = chem ? chem.name : it.id;
+      const p = FERTILIZER_PRICE_REF[it.id];
+      if (!p) {
+        unpriced.push({ id: it.id, name: name, kg: kg });
+        return;
+      }
+      const yen = kg * p.yenPerKg;
+      batchTotal += yen;
+      rows.push({ id: it.id, name: name, tank: t.name, kg: kg, yenPerKg: p.yenPerKg, yen: yen });
+    });
+  });
+
+  // タンクが複数あると、それぞれが同じ希釈倍率で同じ給液に入る。
+  // 給液量は「1本ぶん × 倍率」なので、本数で割って重複を消す
+  const tankCount = (tanks || []).filter((t) => Number(t.tankL) > 0).length || 1;
+  feedVolumeL = feedVolumeL / tankCount;
+
+  return {
+    batchTotal: batchTotal,
+    feedVolumeL: feedVolumeL,
+    yenPer1000L: feedVolumeL > 0 ? (batchTotal / feedVolumeL) * 1000 : 0,
+    rows: rows,
+    unpriced: unpriced,
+  };
+}
+
+// ---------- 給液量から見た規模 ----------
+// 「1000L作るのに何kg」だけでは、タンクが何日持つか・年間いくらかかるかが分からない。
+// 株数と1株あたりの給液量を入れて、調製の頻度と年間の肥料費を出す。
+//
+// 給液量の目安（愛知県農業総合試験場・夏秋ミニトマトのヤシガラ培地耕）:
+//   1回 100〜120 mL/株（高温期8月は150）、8〜19回/日
+//   月別の最大吸水量 737.5〜1695.6 mL/日/株
+function scaleEstimate(cost, dilution, opts) {
+  const plants = Number(opts.plants) || 0;
+  const mlPerPlantDay = Number(opts.mlPerPlantDay) || 0;
+  const daysPerYear = Number(opts.daysPerYear) || 0;
+  const d = Number(dilution) || 1;
+  if (!(plants > 0) || !(mlPerPlantDay > 0)) return null;
+
+  const feedLPerDay = (plants * mlPerPlantDay) / 1000;   // 1日に作る給液
+  const stockLPerDay = feedLPerDay / d;                   // 1日に減る原液（タンク1本あたり）
+
+  return {
+    feedLPerDay: feedLPerDay,
+    stockLPerDay: stockLPerDay,
+    // cost.feedVolumeL は「タンク1本ぶんの原液で作れる給液量」＝1回の調製でまかなえる量
+    daysPerBatch: feedLPerDay > 0 ? cost.feedVolumeL / feedLPerDay : 0,
+    yenPerDay: (cost.yenPer1000L * feedLPerDay) / 1000,
+    yenPerYear: daysPerYear > 0 ? (cost.yenPer1000L * feedLPerDay * daysPerYear) / 1000 : 0,
+    feedLPerYear: daysPerYear > 0 ? feedLPerDay * daysPerYear : 0,
+  };
+}
+
+// ---------- 制約付きの組成づくり ----------
+// 「カルシウムを6.0にしたい。他は基準内なら何でもよい」という組み方をする。
+// Caを増やすと硝酸カルシウムからNO3も増えるので、他の元素で帳尻を合わせないと
+// 電荷が釣り合わず、塩だけでは作れない組成になってしまう。
+//
+// 動かす順番は「基準の幅が広いもの」から。幅が狭い元素を無理に振ると
+// すぐ範囲外になるため。NH4は尻腐れ対策で低く保つものなので調整には使わない
+const BALANCE_PRIORITY = [
+  { ion: "NO3", charge: -1 },
+  { ion: "K", charge: 1 },
+  { ion: "SO4", charge: -2 },
+  { ion: "Mg", charge: 2 },
+  { ion: "H2PO4", charge: -1 },
+];
+
+function buildBalancedTarget(fixed, opts) {
+  const ranges = REFERENCE_RANGES.ions;
+  const lock = fixed || {};
+  const options = opts || {};
+  const target = {};
+  const moved = {};
+
+  // 固定されていない元素は基準の中央から始める。
+  // NH4だけは下限寄り（0.5）にする。増やす方向に動かしたくないため
+  Object.keys(ranges).forEach((k) => {
+    if (lock[k] !== undefined && lock[k] !== "") {
+      target[k] = Number(lock[k]) || 0;
+    } else if (k === "NH4") {
+      target[k] = options.nh4 === undefined ? 0.5 : Number(options.nh4);
+    } else if (k === "Cl") {
+      target[k] = 0; // 塩化物は入れない（原水由来のみ）
+    } else {
+      target[k] = (ranges[k].min + ranges[k].max) / 2;
+    }
+  });
+
+  // 電荷の差を、動かせる元素で埋めていく。
+  //   diff = 陽 − 陰。イオンを Δ 動かすと diff は Δ×charge だけ動く
+  //   → diff を消すには Δ = −diff / charge
+  let diff = chargeBalance(target).diff;
+  const notes = [];
+
+  BALANCE_PRIORITY.forEach((a) => {
+    if (Math.abs(diff) < 0.005) return;
+    if (lock[a.ion] !== undefined && lock[a.ion] !== "") return; // 固定されている
+    const r = ranges[a.ion];
+    if (!r) return;
+    const before = target[a.ion];
+    const want = before + (-diff / a.charge);
+    const clamped = Math.max(r.min, Math.min(r.max, want));
+    const actual = clamped - before;
+    if (Math.abs(actual) < 0.0001) return;
+    target[a.ion] = clamped;
+    moved[a.ion] = round(actual, 2);
+    diff += actual * a.charge;
+    notes.push(`${a.ion} を ${round(before, 2)} → ${round(clamped, 2)}`);
+  });
+
+  const feasible = Math.abs(diff) < 0.05;
+  return {
+    target: target,
+    moved: moved,
+    notes: notes,
+    remaining: round(diff, 3),
+    feasible: feasible,
+    message: feasible
+      ? `固定した元素を保ったまま、電荷が釣り合う組成にできました（${notes.join("・")}）`
+      : `基準の範囲内では電荷が ${round(Math.abs(diff), 2)} meq/L 合いません。固定する値を見直すか、基準の外に出す必要があります`,
+  };
+}
+
 // ---------- 逆算（目標組成 → 単肥の量） ----------
 // 連立方程式を一発で解くのではなく、実務者の手計算と同じ順に割り当てる。
 // 単肥は1つで複数のイオンを出すので、順番を決めないと解が定まらない。
@@ -677,6 +820,7 @@ if (typeof window !== "undefined") {
     deriveEcCoefficient, stockPhRange, ionMeq, round,
     solveRecipe, mmolToKg, estimatePhBand, tankStockPh,
     fertilizerTankRoles, tankRoles, conflictsWithTank, tankConflicts, splitIntoTwoTanks,
+    recipeCost, scaleEstimate, buildBalancedTarget,
     EC_COEFFICIENT,
   };
 }
