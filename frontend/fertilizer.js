@@ -186,17 +186,30 @@ function stockPhRange(tank) {
   return { min, max, sources, impossible: min !== null && max !== null && min > max };
 }
 
-function checkStockPh(tanks) {
+function checkStockPh(tanks, dilution) {
   const warnings = [];
   tanks.forEach((t) => {
     const range = stockPhRange(t);
+    const est = tankStockPh(t, dilution);
+
     if (range.impossible) {
       warnings.push({
         level: "danger",
         tank: t.name,
         message: `${t.name}の資材どうしで原液pHの許容範囲が重なりません（下限${range.min} > 上限${range.max}）。同じタンクに入れられない組み合わせです`,
       });
-    } else if (range.min !== null && range.min >= STOCK_PH_FLOOR) {
+      return;
+    }
+
+    // 制約のある資材（キレート剤など）が入っていて、かつ酸も入っている場合だけ突き合わせる。
+    // 酸とキレート剤を別タンクに分けてあれば、ここは何も出ない
+    if (range.min !== null && est !== null && est.ph < range.min) {
+      warnings.push({
+        level: "danger",
+        tank: t.name,
+        message: `${t.name}は酸を入れると原液pHが ${round(est.ph, 1)} 相当になり、${range.sources.map((s) => s.name).join("・")}の下限 ${range.min} を割ります。酸は別のタンクに入れてください`,
+      });
+    } else if (range.min !== null) {
       warnings.push({
         level: "info",
         tank: t.name,
@@ -291,7 +304,7 @@ function calcSolution(input) {
 
   const warnings = []
     .concat(checkPrecipitation(tanks))
-    .concat(checkStockPh(tanks));
+    .concat(checkStockPh(tanks, dilution));
 
   // 実測ECが渡されていれば、推定とのズレを見て係数の補正を促す
   const measured = Number(input.ecMeasured);
@@ -326,7 +339,8 @@ function calcSolution(input) {
     balanceErrorPct: balance.errorPct,
     ecEstimate: ec,
     phBand: estimatePhBand(ions),
-    stockPhEstimate: estimateStockPh(ions.H, dilution),
+    // タンクごとの原液pH（酸を入れていないタンクは null）
+    tankStockPh: tanks.map((t) => ({ name: t.name, est: tankStockPh(t, dilution) })),
     ecCoefficient: coefficient,
     ecCoefficientIsDefault: coefficient === EC_COEFFICIENT,
     ecMeasured: measured > 0 ? measured : null,
@@ -399,14 +413,39 @@ function estimatePhBand(ions) {
   };
 }
 
-// 原液タンクのpH。給液と違い、酸が希釈倍率のぶん濃縮される。
-// キレート鉄が壊れる下限（3.0〜3.5）を割りやすいので別に見る
-function estimateStockPh(freeHInFeed, dilution) {
-  const h = Number(freeHInFeed) || 0;
+// 原液タンクのpH。**タンクごとに**見る。
+// 酸とキレート剤は別のタンクに分けるのが普通で（達子ファームは酸がA液・キレート鉄がB液、
+// CFの画面も原液pH A 4.2 / B 7.2）、酸を入れていないタンクは低くならない。
+//
+// リン酸で酸性にする場合、第一リン酸カリが共存すると H3PO4 / H2PO4⁻ の緩衝系になり、
+// 強酸として計算するより高いpHで落ち着く（pKa1 = 2.12）。
+//   強酸として計算 → pH 1.8 ／ 緩衝を考慮 → pH 3.5（CFの実測4.2に近い）
+const PHOSPHATE_PKA1 = 2.12;
+
+function tankStockPh(tank, dilution) {
   const d = Number(dilution) || 1;
-  if (!(h > 0)) return null;
-  const conc = (h * d) / 1000; // mol/L
-  return -Math.log10(conc);
+  const r = calcTank(tank, d);
+  const hFeed = r.ions.H || 0;        // 給液換算の遊離酸
+  const pFeed = r.ions.H2PO4 || 0;    // 給液換算のリン酸イオン
+  if (!(hFeed > 0)) return null;      // 酸を入れていないタンク
+
+  // タンクの中は希釈倍率のぶん濃い（mol/L に直す）
+  const hConc = (hFeed * d) / 1000;
+  const pConc = (pFeed * d) / 1000;
+
+  // リン酸塩が遊離酸より十分多ければ緩衝系として扱う
+  if (pConc > hConc * 2) {
+    return {
+      ph: PHOSPHATE_PKA1 + Math.log10(pConc / hConc),
+      buffered: true,
+      note: "第一リン酸カリとの緩衝系として計算",
+    };
+  }
+  return {
+    ph: -Math.log10(hConc),
+    buffered: false,
+    note: "強酸が完全解離すると仮定した下限値",
+  };
 }
 
 // ---------- 逆算（目標組成 → 単肥の量） ----------
@@ -554,7 +593,7 @@ if (typeof window !== "undefined") {
   window.FertilizerCalc = {
     calcSolution, dissolveItem, calcTank, chargeBalance, estimateEC,
     deriveEcCoefficient, stockPhRange, ionMeq, round,
-    solveRecipe, mmolToKg, estimatePhBand, estimateStockPh,
+    solveRecipe, mmolToKg, estimatePhBand, tankStockPh,
     EC_COEFFICIENT,
   };
 }

@@ -340,11 +340,11 @@ function recalc() {
   phEl.className = "fert-stat-value fert-ph-value fert-ph-" + ph.level;
   const phNote = [ph.message];
   if (ph.buffered) phNote.push("リン酸1mmol/L以上あり緩衝が効く");
-  if (result.stockPhEstimate !== null) {
-    // 給液で余っている酸は、原液タンクでは希釈倍率のぶん濃い。
-    // キレート鉄の下限（3.0前後）を割りやすいので、酸を原液に入れてよいかの判断に使う
-    phNote.push(`酸を原液に入れると原液pHは ${FertilizerCalc.round(result.stockPhEstimate, 1)} 相当（${num(state.dilution)}倍濃いため）`);
-  }
+  // 原液pHはタンクごと。酸を入れたタンクだけ低くなる（キレート剤と分けてあれば問題ない）
+  (result.tankStockPh || []).forEach((t) => {
+    if (!t.est) return;
+    phNote.push(`${t.name}の原液pHは ${FertilizerCalc.round(t.est.ph, 1)} 相当（${t.est.note}）`);
+  });
   $("res-ph-note").textContent = phNote.join(" / ");
 
   // 警告
