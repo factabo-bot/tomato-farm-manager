@@ -60,6 +60,10 @@ var SHEET_RECIPE_ITEMS = "マスタ_散布レシピ明細";
 var SHEET_GROWTH = "生育調査";
 var SHEET_GROWTH_ITEMS = "生育調査明細";
 var SHEET_WEATHER = "気象データ";
+// 養液設計（原水の水質と、原液タンクの配合処方）
+var SHEET_MASTER_WATER = "マスタ_原水";
+var SHEET_FEED_RECIPE = "マスタ_養液処方";
+var SHEET_FEED_RECIPE_ITEMS = "マスタ_養液処方明細";
 
 // 目的タグを1つの列にまとめるときの区切り文字。マスタの目的名にこの文字は使わない
 var PURPOSE_SEPARATOR = "、";
@@ -140,6 +144,22 @@ var GROWTH_ITEM_HEADERS = [
 ];
 
 var WEATHER_HEADERS = ["日付", "取得区分", "最高気温", "最低気温", "天気概況", "天気コード", "降水確率", "取得日時", "更新日時"];
+
+// 原水の水質分析値。単位は mmol/L（pH・ECを除く）。
+// Na と HCO3 を必ず持つ。この2つを落とすと電荷収支が合わなくなる
+var MASTER_WATER_HEADERS = [
+  "原水ID", "原水名", "Ca", "Mg", "K", "Na", "NO3", "SO4", "Cl", "HCO3",
+  "pH", "EC", "採水日", "備考", "有効フラグ",
+];
+// EC係数は実測ECから逆算した、その処方に固有の値。
+// イオン組成で変わるので処方ごとに持つ（既定0.10のままでも動く）
+var FEED_RECIPE_HEADERS = [
+  "処方ID", "処方名", "生育ステージ", "希釈倍率", "原水ID",
+  "EC係数", "実測EC", "実測日", "備考", "有効フラグ", "更新日時",
+];
+var FEED_RECIPE_ITEM_HEADERS = [
+  "処方ID", "表示順", "タンク名", "タンク容量L", "肥料ID", "肥料名", "量kg",
+];
 
 // 散布区分の判定に使う区分の分類。
 // 展着剤は農薬登録があっても「防除をした」根拠にはしない（他の資材の効きを助けるだけのため）
@@ -228,6 +248,9 @@ function setup() {
   ensureSheet_(ss, SHEET_GROWTH, GROWTH_HEADERS);
   ensureSheet_(ss, SHEET_GROWTH_ITEMS, GROWTH_ITEM_HEADERS);
   ensureSheet_(ss, SHEET_WEATHER, WEATHER_HEADERS);
+  ensureSheet_(ss, SHEET_MASTER_WATER, MASTER_WATER_HEADERS);
+  ensureSheet_(ss, SHEET_FEED_RECIPE, FEED_RECIPE_HEADERS);
+  ensureSheet_(ss, SHEET_FEED_RECIPE_ITEMS, FEED_RECIPE_ITEM_HEADERS);
   seedMastersIfEmpty_(ss);
 }
 
@@ -403,6 +426,8 @@ function doPost(e) {
     if (data.type === "growth") return saveGrowth_(data);
     if (data.type === "cancelGrowth") return cancelGrowth_(data);
     if (data.type === "upsertMaster") return upsertMaster_(data);
+    if (data.type === "feedRecipe") return saveFeedRecipe_(data);
+    if (data.type === "deleteFeedRecipe") return deleteFeedRecipe_(data);
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -702,10 +727,113 @@ function cancelGrowth_(data) {
 // 資材やレシピを手入力せずに登録できるようにするための窓口で、記録系シートは対象外。
 // data = { sheet: "マスタ_資材", key: "薬剤ID"（複数列で照合するなら配列）, rows: [{列名: 値, ...}, ...] }
 // key が一致する行があれば渡された列だけ上書きし、なければ新しい行として追加する。
+// ---------- 養液処方 ----------
+// 親（処方）と子（明細）をまとめて受け取る。
+// 明細は「この処方IDの行を全部消してから入れ直す」方式。
+// upsertMaster_ の汎用upsertだと、肥料を減らしたときに古い行が残ってしまうため
+function saveFeedRecipe_(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_FEED_RECIPE);
+  var itemSheet = ss.getSheetByName(SHEET_FEED_RECIPE_ITEMS);
+  if (!sheet || !itemSheet) {
+    return json_({ ok: false, error: "養液処方のシートがありません。setup() を実行してください" });
+  }
+
+  var name = String(data.name || "").trim();
+  if (!name) return json_({ ok: false, error: "処方名を入力してください" });
+  var items = data.items || [];
+  if (items.length === 0) return json_({ ok: false, error: "肥料が1件も入っていません" });
+
+  var hm = headerMap_(sheet);
+  var idCol = hm["処方ID"];
+  var id = String(data.recipeId || "").trim();
+  var rowIndex = -1;
+  var last = sheet.getLastRow();
+  var values = last >= 2 ? sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues() : [];
+
+  if (id) {
+    for (var i = 0; i < values.length; i++) {
+      if (String(values[i][idCol]) === id) { rowIndex = i + 2; break; }
+    }
+  } else {
+    var max = 0;
+    values.forEach(function (r) {
+      var m = String(r[idCol]).match(/^V(\d+)$/);
+      if (m) max = Math.max(max, Number(m[1]));
+    });
+    id = "V" + ("0" + (max + 1)).slice(-2);
+  }
+
+  var nowStr = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
+  var row = objectToRowBySheet_(sheet, {
+    "処方ID": id,
+    "処方名": name,
+    "生育ステージ": data.stage || "",
+    "希釈倍率": data.dilution || "",
+    "原水ID": data.waterId || "",
+    "EC係数": data.ecCoefficient || "",
+    "実測EC": data.ecMeasured || "",
+    "実測日": data.ecMeasuredAt || "",
+    "備考": data.note || "",
+    "有効フラグ": "TRUE",
+    "更新日時": nowStr,
+  });
+  if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  else sheet.appendRow(row);
+
+  // 明細を入れ直す。後ろから消さないと行番号がずれる
+  var ihm = headerMap_(itemSheet);
+  var iIdCol = ihm["処方ID"];
+  var ilast = itemSheet.getLastRow();
+  if (ilast >= 2) {
+    var ivalues = itemSheet.getRange(2, 1, ilast - 1, itemSheet.getLastColumn()).getValues();
+    for (var j = ivalues.length - 1; j >= 0; j--) {
+      if (String(ivalues[j][iIdCol]) === id) itemSheet.deleteRow(j + 2);
+    }
+  }
+  var rows = items.map(function (it, idx) {
+    return objectToRowBySheet_(itemSheet, {
+      "処方ID": id,
+      "表示順": idx + 1,
+      "タンク名": it.tank || "",
+      "タンク容量L": it.tankL || "",
+      "肥料ID": it.id || "",
+      "肥料名": it.name || "",
+      "量kg": it.kg || "",
+    });
+  });
+  if (rows.length > 0) {
+    itemSheet.getRange(itemSheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
+
+  return json_({ ok: true, id: id });
+}
+
+// 行は消さずに無効にする（散布記録の取消と同じ流儀）
+function deleteFeedRecipe_(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_FEED_RECIPE);
+  if (!sheet) return json_({ ok: false, error: "養液処方のシートがありません" });
+  var id = String(data.recipeId || "").trim();
+  if (!id) return json_({ ok: false, error: "処方IDがありません" });
+  var last = sheet.getLastRow();
+  if (last < 2) return json_({ ok: false, error: "処方が見つかりません" });
+
+  var hm = headerMap_(sheet);
+  var values = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][hm["処方ID"]]) === id) {
+      sheet.getRange(i + 2, hm["有効フラグ"] + 1).setValue("FALSE");
+      return json_({ ok: true });
+    }
+  }
+  return json_({ ok: false, error: "処方が見つかりません" });
+}
+
 function upsertMaster_(data) {
   var allowed = [
     SHEET_MASTER_BASE, SHEET_MASTER_WORKTYPE, SHEET_MASTER_MATERIAL,
     SHEET_MASTER_CROP, SHEET_MASTER_PURPOSE, SHEET_RECIPE, SHEET_RECIPE_ITEMS,
+    SHEET_MASTER_WATER,
   ];
   if (allowed.indexOf(data.sheet) < 0) {
     return json_({ ok: false, error: "このシートは書き換えられません: " + data.sheet });
@@ -924,6 +1052,9 @@ function getMasters_() {
     sprayMethods: sheetToObjects_(ss, SHEET_MASTER_SPRAY_METHOD),
     recipes: sheetToObjects_(ss, SHEET_RECIPE),
     recipeItems: sheetToObjects_(ss, SHEET_RECIPE_ITEMS),
+    waters: sheetToObjects_(ss, SHEET_MASTER_WATER),
+    feedRecipes: sheetToObjects_(ss, SHEET_FEED_RECIPE),
+    feedRecipeItems: sheetToObjects_(ss, SHEET_FEED_RECIPE_ITEMS),
   });
 }
 

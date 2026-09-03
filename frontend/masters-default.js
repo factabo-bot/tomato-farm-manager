@@ -117,6 +117,12 @@ const MASTERS_DEFAULT = {
     { レシピID: "R03", 表示順: 3, 薬剤名: "ドライバー", 希釈倍数: "1000倍", 使用量: "", 使用量単位: "" },
     { レシピID: "R03", 表示順: 4, 薬剤名: "クロロゲン（青）", 希釈倍数: "500倍", 使用量: "", 使用量単位: "" },
   ],
+  // 養液設計（GAS側 SHEET_MASTER_WATER / SHEET_FEED_RECIPE / SHEET_FEED_RECIPE_ITEMS と対応）。
+  // 原水は実際に水質分析をしてから入れる。推測値は入れない。
+  // お試しモードで保存した処方は localStorage（tfm_fert_recipes_local）に入る
+  waters: [],
+  feedRecipes: [],
+  feedRecipeItems: [],
 };
 
 // 旧フロント互換

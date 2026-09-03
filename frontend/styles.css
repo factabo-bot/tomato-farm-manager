@@ -558,19 +558,24 @@ textarea {
 
 .mode-nav {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin-top: 10px;
 }
+/* 6項目に増やしたので min-width: 0 が要る。
+   これが無いとリンクの中身が縮まず、ナビがページ全体を横に押し広げる */
 .mode-nav a {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   text-align: center;
-  padding: 10px 0;
+  padding: 10px 2px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
   text-decoration: none;
   font-weight: bold;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .mode-nav a.current {
   background: #fff;

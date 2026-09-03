@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>養液設計 - トマト栽培管理</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2e7d32">
+<link rel="stylesheet" href="styles.css?v=20260903a">
+<link rel="stylesheet" href="fertilizer.css?v=20260903a">
+</head>
+<body>
+<header>
+  <h1>🍅 トマト栽培管理</h1>
+  <div class="header-sub">
+    <span id="date-display"></span>
+    <span id="user-info"></span>
+  </div>
+  <nav class="mode-nav">
+    <a href="index.html">🏠 ホーム</a>
+    <a href="work.html">📝 作業</a>
+    <a href="pesticide.html">🧪 散布</a>
+    <a href="growth.html">📏 生育</a>
+    <a href="fertilizer.html" class="current">🧫 養液</a>
+    <a href="history.html">📋 履歴</a>
+  </nav>
+</header>
+
+<main>
+  <div id="queue-badge" class="queue-badge" hidden></div>
+
+  <p class="hint">原液タンクの配合を入れると、給液の組成・EC・電荷バランスを計算します。入力はこの端末に自動保存されます。</p>
+
+  <!-- ============ 結果（入力の上に置く。数値を見ながら配合をいじるため） ============ -->
+  <section id="result-panel" class="mix-sheet">
+    <h2>計算結果</h2>
+
+    <div class="fert-summary">
+      <div class="fert-stat">
+        <span class="fert-stat-label">EC推定</span>
+        <span class="fert-stat-value" id="res-ec">—</span>
+        <span class="fert-stat-unit">mS/cm</span>
+        <span class="fert-stat-note" id="res-ec-note"></span>
+      </div>
+      <div class="fert-stat">
+        <span class="fert-stat-label">電荷バランス</span>
+        <span class="fert-stat-value" id="res-balance">—</span>
+        <span class="fert-stat-unit">%</span>
+        <span class="fert-stat-note" id="res-balance-note"></span>
+      </div>
+    </div>
+
+    <div id="res-warnings"></div>
+
+    <div class="fert-h3-row">
+      <h3>主要イオン</h3>
+      <label class="fert-toggle"><input type="checkbox" id="show-meq"> me/L も出す</label>
+    </div>
+    <div id="res-ions" class="fert-table-wrap"></div>
+
+    <h3>微量要素</h3>
+    <div id="res-micro" class="fert-table-wrap"></div>
+  </section>
+
+  <!-- ============ 処方の呼び出し・保存 ============ -->
+  <section>
+    <h2>保存した処方</h2>
+    <select id="recipe-select"><option value="">（読み込み中…）</option></select>
+    <p class="hint" id="recipe-hint">選ぶとタンクの配合・希釈倍率・原水がまとめて入ります</p>
+    <div class="num-row">
+      <label class="num-label" for="recipe-name">処方名</label>
+      <input class="num-input fert-name-input" type="text" id="recipe-name" placeholder="例: 厳寒期・生殖成長型">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="recipe-stage">生育ステージ</label>
+      <select class="unit-select" id="recipe-stage">
+        <option value="">（未設定）</option>
+        <option value="定植〜生育期">定植〜生育期</option>
+        <option value="第1〜2花房開花">第1〜2花房開花</option>
+        <option value="第3〜4花房開花">第3〜4花房開花</option>
+        <option value="収穫開始">収穫開始</option>
+        <option value="厳寒期">厳寒期</option>
+        <option value="春以降">春以降</option>
+        <option value="摘心後">摘心後</option>
+      </select>
+    </div>
+    <button id="save-recipe" class="btn-primary" type="button">この処方を保存する</button>
+    <button id="new-recipe" class="btn-secondary" type="button">新しい処方として保存</button>
+    <button id="delete-recipe" class="btn-secondary" type="button" hidden>この処方を削除</button>
+  </section>
+
+  <!-- ============ 希釈倍率 ============ -->
+  <section>
+    <h2>① 希釈倍率</h2>
+    <div class="num-row">
+      <label class="num-label" for="dilution">原液を</label>
+      <input class="num-input" type="number" id="dilution" inputmode="decimal" value="120">
+      <span class="num-unit">倍に薄める</span>
+    </div>
+    <p class="hint">液肥混入機の設定値。原液1に対して水を何倍入れるか</p>
+  </section>
+
+  <!-- ============ タンク ============ -->
+  <section>
+    <h2>② 原液タンク</h2>
+    <p class="hint">カルシウムと硫酸／リン酸は同じタンクに入れると沈殿します。分けてください</p>
+    <div id="tank-list"></div>
+    <button id="add-tank" class="btn-secondary" type="button">＋ タンクを増やす</button>
+  </section>
+
+  <!-- ============ 原水 ============ -->
+  <section>
+    <h2>③ 原水（井戸水・水道水）</h2>
+    <select id="water-select"><option value="">（手入力）</option></select>
+    <p class="hint">水質分析値を入れると計算に加算します。<strong>電荷バランスがゼロにならない場合、分析値に抜けがあります</strong>（HCO3やNaが未測定など）</p>
+    <div id="water-inputs" class="fert-water-grid"></div>
+    <div class="total-line">
+      原水だけの電荷: 陽 <span id="water-cation">0</span> / 陰 <span id="water-anion">0</span> meq/L
+      <span id="water-balance-note"></span>
+    </div>
+  </section>
+
+  <!-- ============ 中和酸 ============ -->
+  <section>
+    <h2>④ アルカリ度の中和（任意）</h2>
+    <p class="hint">原水のHCO3を酸で中和する場合に入れます。酸のイオンとH⁺を加え、同じ分のHCO3を引きます</p>
+    <div class="num-row">
+      <label class="num-label" for="acid-anion">使う酸</label>
+      <select class="unit-select" id="acid-anion">
+        <option value="">（使わない）</option>
+        <option value="NO3">硝酸</option>
+        <option value="H2PO4">リン酸</option>
+        <option value="SO4">硫酸</option>
+      </select>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="acid-meq">中和量</label>
+      <input class="num-input" type="number" id="acid-meq" inputmode="decimal" step="0.1" placeholder="例: 1.8">
+      <span class="num-unit">meq/L</span>
+    </div>
+    <p class="hint">目安は「原水のアルカリ度 − 残したい量（1.0前後）」</p>
+  </section>
+
+  <!-- ============ 実測EC ============ -->
+  <section>
+    <h2>⑤ 実測EC（任意）</h2>
+    <p class="hint">EC計で測った給液の値を入れると、<strong>この処方に固有の係数</strong>を逆算します。係数はイオン組成で変わるので、測るほど精度が上がります</p>
+    <div class="num-row">
+      <label class="num-label" for="ec-measured">実測EC</label>
+      <input class="num-input" type="number" id="ec-measured" inputmode="decimal" step="0.01" placeholder="例: 1.77">
+      <span class="num-unit">mS/cm</span>
+    </div>
+    <div id="ec-coef-box" hidden>
+      <div class="num-row">
+        <label class="num-label" for="ec-coef">使う係数</label>
+        <input class="num-input" type="number" id="ec-coef" inputmode="decimal" step="0.0001">
+        <span class="num-unit">（既定 0.10）</span>
+      </div>
+      <button id="apply-coef" class="btn-secondary" type="button">実測から係数を補正する</button>
+    </div>
+  </section>
+
+  <!-- ============ 書き出し ============ -->
+  <section>
+    <h2>⑥ 書き出し</h2>
+    <button id="copy-result" class="btn-secondary" type="button">📋 計算結果をコピー</button>
+    <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
+    <p class="hint">処方の保存（マスタ登録）は次の段階で実装します。いまはコピーして貼り付けてください</p>
+  </section>
+</main>
+
+<div id="toast" hidden></div>
+
+<script src="config.js?v=20260903a"></script>
+<script src="masters-default.js?v=20260903a"></script>
+<script src="common.js?v=20260903a"></script>
+<script src="fertilizers-chem.js?v=20260903a"></script>
+<script src="fertilizer.js?v=20260903a"></script>
+<script src="fertilizer-ui.js?v=20260903a"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>
