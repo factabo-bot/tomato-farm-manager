@@ -151,6 +151,7 @@ function renderTanks() {
     volInput.type = "number";
     volInput.inputMode = "decimal";
     volInput.value = tank.tankL;
+    volInput.addEventListener("focus", () => volInput.select());
     volInput.addEventListener("input", () => {
       tank.tankL = num(volInput.value);
       saveState();
@@ -183,9 +184,13 @@ function renderTanks() {
       kgInput.type = "number";
       kgInput.inputMode = "decimal";
       kgInput.step = "0.1";
-      kgInput.value = item.kg;
+      // 0 を表示すると、入力のたびに消してから打ち直すことになるので空欄にする
+      kgInput.value = (item.kg === 0 || item.kg === "" || item.kg === null || item.kg === undefined) ? "" : item.kg;
+      kgInput.placeholder = "0";
+      kgInput.addEventListener("focus", () => kgInput.select());
       kgInput.addEventListener("input", () => {
-        item.kg = num(kgInput.value);
+        // 空欄のまま持たせる（0を書き戻すと同じ問題が起きる）
+        item.kg = kgInput.value === "" ? "" : num(kgInput.value);
         saveState();
         recalc();
       });
@@ -225,7 +230,7 @@ function renderTanks() {
     });
     sel.addEventListener("change", () => {
       if (!sel.value) return;
-      tank.items = (tank.items || []).concat([{ id: sel.value, kg: 0 }]);
+      tank.items = (tank.items || []).concat([{ id: sel.value, kg: "" }]);
       sel.value = "";
       saveState();
       renderTanks();
@@ -250,6 +255,8 @@ function renderWater() {
     input.inputMode = "decimal";
     input.step = "0.01";
     input.value = state.water[f.key];
+    input.placeholder = "0";
+    input.addEventListener("focus", () => input.select());
     input.addEventListener("input", () => {
       state.water[f.key] = input.value;
       saveState();
@@ -665,6 +672,7 @@ async function deleteRecipe() {
 function bindInputs() {
   const dil = $("dilution");
   dil.value = state.dilution;
+  dil.addEventListener("focus", () => dil.select());
   dil.addEventListener("input", () => {
     state.dilution = num(dil.value);
     saveState();
