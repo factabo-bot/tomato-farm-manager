@@ -177,9 +177,9 @@ const FERTILIZER_PRICE_REF = {
   phosphoric_acid: { yenPerKg: 742, note: "りん酸液85% 35kg 25,980円（税込表示のみ）。20kgだと870円/kg" },
   chelated_iron_dtpa_11: { yenPerKg: 1872, note: "DTPAキレート鉄11% 25kg 46,800円。500g小袋だと2,700円/kg" },
   chelated_iron_edta_13: { yenPerKg: 2088, note: "EDTA鉄13% 800g 1,670円（小口価格のみ）" },
-  // 第一リン酸カリは農業用単肥としての掲載価格が見つからず、
-  // 食品添加物グレード25kgで1,687円/kg。用途が違うため参考にせず未設定のままにする。
-  // mono_potassium_phosphate
+  // 農業用（養液栽培用）の単肥。食品添加物グレードだと1,687円/kgになるので、
+  // グレードを間違えると倍以上ずれる
+  mono_potassium_phosphate: { yenPerKg: 638, note: "第一リン酸カリ（旭化学工業・養液栽培用）25kg 17,545円(税込)" },
   //
   // オリエントミックスの単独価格は確認できず。同等品の「微量要素8」は約1,000円/kg
   // だが、成分が違うので当てはめない。
