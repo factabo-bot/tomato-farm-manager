@@ -148,7 +148,29 @@
   <!-- ============ 処方をつくる ============ -->
   <p class="hint" data-mode="design">原液タンクの配合を入れると、給液の組成・EC・電荷バランスを計算します。入力はこの端末に自動保存されます。</p>
 
-  <!-- 結果（入力の上に置く。数値を見ながら配合をいじるため） -->
+  <!-- 希釈倍率 -->
+  <section id="sec-dilution" data-mode="design">
+    <h2>希釈倍率</h2>
+    <div class="num-row">
+      <label class="num-label" for="dilution">原液を</label>
+      <input class="num-input" type="number" id="dilution" inputmode="decimal" value="120">
+      <span class="num-unit">倍に薄める</span>
+    </div>
+    <p class="hint">液肥混入機の設定値。原液1に対して水を何倍入れるか</p>
+  </section>
+
+  <!-- タンク -->
+  <section id="sec-tank" data-mode="design">
+    <h2>原液タンク</h2>
+    <p class="hint">カルシウムと硫酸／リン酸は同じタンクに入れると沈殿します。分けてください</p>
+    <div id="tank-list"></div>
+    <button id="auto-split" class="btn-secondary" type="button">🔀 タンクを自動で分ける</button>
+    <button id="add-tank" class="btn-secondary" type="button">＋ タンクを増やす</button>
+  </section>
+
+  <!-- 結果はタンクのすぐ下に置く。
+       いちばん頻繁にいじるのはタンクの配合なので、変えた結果がその場で見える。
+       原水や中和はここより下でよい（一度決めたらあまり動かさないため） -->
   <section id="sec-result" class="mix-sheet" data-mode="design">
     <h2>計算結果</h2>
 
@@ -182,51 +204,6 @@
 
     <h3>微量要素</h3>
     <div id="res-micro" class="fert-table-wrap"></div>
-  </section>
-
-  <!-- 処方の保存 -->
-  <section id="sec-recipe" data-mode="design">
-    <h2>処方の保存</h2>
-    <div class="num-row">
-      <label class="num-label" for="recipe-name">処方名</label>
-      <input class="num-input fert-name-input" type="text" id="recipe-name" placeholder="例: 厳寒期・生殖成長型">
-    </div>
-    <div class="num-row">
-      <label class="num-label" for="recipe-stage">生育ステージ</label>
-      <select class="unit-select" id="recipe-stage">
-        <option value="">（未設定）</option>
-        <option value="定植〜生育期">定植〜生育期</option>
-        <option value="第1〜2花房開花">第1〜2花房開花</option>
-        <option value="第3〜4花房開花">第3〜4花房開花</option>
-        <option value="収穫開始">収穫開始</option>
-        <option value="厳寒期">厳寒期</option>
-        <option value="春以降">春以降</option>
-        <option value="摘心後">摘心後</option>
-      </select>
-    </div>
-    <button id="save-recipe" class="btn-primary" type="button">この処方を保存する</button>
-    <button id="new-recipe" class="btn-secondary" type="button">新しい処方として保存</button>
-    <button id="delete-recipe" class="btn-secondary" type="button" hidden>この処方を削除</button>
-  </section>
-
-  <!-- 希釈倍率 -->
-  <section id="sec-dilution" data-mode="design">
-    <h2>希釈倍率</h2>
-    <div class="num-row">
-      <label class="num-label" for="dilution">原液を</label>
-      <input class="num-input" type="number" id="dilution" inputmode="decimal" value="120">
-      <span class="num-unit">倍に薄める</span>
-    </div>
-    <p class="hint">液肥混入機の設定値。原液1に対して水を何倍入れるか</p>
-  </section>
-
-  <!-- タンク -->
-  <section id="sec-tank" data-mode="design">
-    <h2>原液タンク</h2>
-    <p class="hint">カルシウムと硫酸／リン酸は同じタンクに入れると沈殿します。分けてください</p>
-    <div id="tank-list"></div>
-    <button id="auto-split" class="btn-secondary" type="button">🔀 タンクを自動で分ける</button>
-    <button id="add-tank" class="btn-secondary" type="button">＋ タンクを増やす</button>
   </section>
 
   <!-- 原水 -->
@@ -318,6 +295,31 @@
 
     <button id="solve" class="btn-primary" type="button">この組成にする配合を出す</button>
     <div id="solve-result"></div>
+  </section>
+
+  <!-- 処方の保存。組み終わってから名前を付けて残す流れなので、入力より後に置く -->
+  <section id="sec-recipe" data-mode="design">
+    <h2>処方の保存</h2>
+    <div class="num-row">
+      <label class="num-label" for="recipe-name">処方名</label>
+      <input class="num-input fert-name-input" type="text" id="recipe-name" placeholder="例: 厳寒期・生殖成長型">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="recipe-stage">生育ステージ</label>
+      <select class="unit-select" id="recipe-stage">
+        <option value="">（未設定）</option>
+        <option value="定植〜生育期">定植〜生育期</option>
+        <option value="第1〜2花房開花">第1〜2花房開花</option>
+        <option value="第3〜4花房開花">第3〜4花房開花</option>
+        <option value="収穫開始">収穫開始</option>
+        <option value="厳寒期">厳寒期</option>
+        <option value="春以降">春以降</option>
+        <option value="摘心後">摘心後</option>
+      </select>
+    </div>
+    <button id="save-recipe" class="btn-primary" type="button">この処方を保存する</button>
+    <button id="new-recipe" class="btn-secondary" type="button">新しい処方として保存</button>
+    <button id="delete-recipe" class="btn-secondary" type="button" hidden>この処方を削除</button>
   </section>
 
   <!-- ============ コストを見る ============ -->

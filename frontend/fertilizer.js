@@ -485,6 +485,18 @@ function estimatePhBand(ions) {
   const freeH = Number(ions.H) || 0;     // 中和しきれずに残った酸
   const phosphate = Number(ions.H2PO4) || 0;
 
+  // 何も入っていない状態で「5.5未満になりやすい」と出すと、
+  // 入力前から警告が出ているように見える。判定しないことを明示する
+  const total = Object.keys(ions).reduce((s, k) => s + (Number(ions[k]) || 0), 0);
+  if (total <= 0) {
+    return {
+      level: "none",
+      label: "—",
+      message: "肥料も原水も入っていないので、まだ判定できません",
+      buffered: false,
+    };
+  }
+
   // リン酸が1 mmol/L以上あれば、pKa2=7.21 の緩衝が効いて振れが小さくなる
   const buffered = phosphate >= 1.0;
 

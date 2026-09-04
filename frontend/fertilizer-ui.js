@@ -385,6 +385,9 @@ function switchMode(mode) {
   state.mode = mode;
   saveState();
   applyMode();
+  // 処方サマリーの案内文はモードによって変わる（design では「処方をつくるへ」を出さない）。
+  // applyMode は hidden しか触らず、recalc も走らないので、ここで描き直す
+  renderRecipeSummary();
   // 表示の出し分けは applyMode の仕事。データの取り込みはこちらで分ける
   if (mode === "daily") pullFeedLogs();
 }
@@ -697,8 +700,16 @@ function renderRecipeSummary() {
   const R = FertilizerCalc.round;
 
   if (collectRecipeItems().length === 0) {
+    // design モードは処方を組んでいる最中の画面。
+    // そこで「処方をつくるへ」と案内するのは、いま居る場所を指して行けと言うのと同じ
+    if (state.mode === "design") {
+      box.appendChild(el("p", "hint", "下の原液タンクに肥料を入れると、ここに組成の要約が出ます"));
+      return;
+    }
     box.appendChild(el("p", "hint warn",
-      "⚠️ 処方が空です。EC推定と窒素施用量は出ません（排液率と排液ECの判定は動きます）"));
+      state.mode === "daily"
+        ? "⚠️ 処方が空です。窒素施用量は出ませんが、排液率と排液ECの判定は動きます"
+        : "⚠️ 処方が空です。肥料を入れないとコストは計算できません"));
     const btn = el("button", "btn-secondary", "処方をつくるへ");
     btn.type = "button";
     btn.addEventListener("click", () => switchMode("design"));

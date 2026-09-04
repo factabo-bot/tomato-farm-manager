@@ -59,6 +59,8 @@
 .fert-ph-ok   { color: #2e7d32; }
 .fert-ph-high { color: #ef6c00; }
 .fert-ph-low  { color: #1565c0; }
+/* まだ何も入っていないとき。予測が出ているように見せない */
+.fert-ph-none { color: #999; }
 
 .fert-inline-warn { color: #c62828; font-weight: 600; }
 .fert-inline-ok   { color: #2e7d32; }
