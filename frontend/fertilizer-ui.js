@@ -385,6 +385,8 @@ function switchMode(mode) {
   state.mode = mode;
   saveState();
   applyMode();
+  // 表示の出し分けは applyMode の仕事。データの取り込みはこちらで分ける
+  if (mode === "daily") pullFeedLogs();
 }
 
 let lastResult = null;
@@ -932,6 +934,45 @@ async function sendFeedLog(row) {
   } catch (err) {
     console.warn("給液記録を送れませんでした", err);
   }
+}
+
+// サーバーの記録を手元に取り込む。端末を替えても記録が見えるようにするため。
+// マージの作法は pullRecords（common.js）に倣い、
+// 「サーバー分で置き換え、まだ送れていない手元の行だけ足し戻す」。
+// 手元にしか無い行を消さないことと、同じ給液日が二重に並ばないことの両立が目的
+async function pullFeedLogs() {
+  if (isMock) return;
+  const to = feedToday();
+  const d = new Date();
+  d.setDate(d.getDate() - 60);
+  const p = (n) => String(n).padStart(2, "0");
+  const from = d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+
+  const res = await apiGet("feedLogs", { from: from, to: to });
+  if (!res || !res.ok || !Array.isArray(res.logs)) return;
+
+  const local = feedLogs();
+  // 記録IDが無い＝まだサーバーに載っていない行
+  const pending = local.filter((r) => !r["記録ID"]);
+  const seen = {};
+  const merged = [];
+  res.logs.concat(pending).forEach((r) => {
+    const key = String(r["給液日"] || "");
+    if (!key || seen[key]) return;   // 同じ給液日はサーバー側を優先（1日1行）
+    seen[key] = true;
+    merged.push(r);
+  });
+  // 期間外の手元の行（60日より前）は残す
+  local.forEach((r) => {
+    const key = String(r["給液日"] || "");
+    if (!key || seen[key]) return;
+    if (key >= from && key <= to) return;   // 期間内なのに無い＝サーバーで取消された
+    seen[key] = true;
+    merged.push(r);
+  });
+  merged.sort((a, b) => (String(a["給液日"]) < String(b["給液日"]) ? 1 : -1));
+  writeLocal(FERT_LOG_KEY, merged);
+  renderFeedLogList();
 }
 
 // 一覧。グラフは作らず、平均1行＋表で推移を読ませる
@@ -1848,6 +1889,8 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   bindInputs();
   initRender();
+  // 記録モードで開いたときは、サーバーの記録を裏で取りに行く
+  if (state.mode === "daily") pullFeedLogs();
 
   // マスタは遅い（実測8〜11秒）ので画面を描いてから取りに行く。
   // キャッシュがあれば loadMasters がすぐ返す
