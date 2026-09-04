@@ -1,0 +1,246 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>mode ui test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:375px;height:700px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function head(s) { out.push(""); out.push("=== " + s + " ==="); }
+function show() { document.getElementById("debug").textContent = out.join("\n") + "\n\n  PASS " + pass + " / FAIL " + fail; }
+const f = document.getElementById("f");
+
+function D() { return f.contentDocument; }
+function W() { return f.contentWindow; }
+function visible(id) { const e = D().getElementById(id); return !!(e && e.offsetParent); }
+function mode() { try { return JSON.parse(W().localStorage.getItem("tfm_fert_state") || "{}").mode; } catch (e) { return "?"; } }
+function click(id) { D().getElementById(id).click(); }
+
+// そのモードで見えているセクションのはみ出しを測る。
+// hidden 要素は getBoundingClientRect が全ゼロを返すので、可視のものだけを対象にする
+function overflow() {
+  const over = [];
+  D().querySelectorAll("main [data-mode], main [data-mode] *").forEach(function (e) {
+    if (!e.offsetParent) return;
+    const r = e.getBoundingClientRect();
+    if (r.right > 376) over.push((e.id || e.className || e.tagName) + "(" + Math.round(r.right) + ")");
+  });
+  return over;
+}
+
+setTimeout(function () {
+  head("1. 最初はモード選択が出る");
+  ok("mode-menu が見えている", visible("mode-menu"));
+  ok("mode-bar は隠れている", !visible("mode-bar"));
+  const secs = D().querySelectorAll("main [data-mode]");
+  const shown = Array.prototype.filter.call(secs, function (s) { return !s.hidden; });
+  ok("data-mode のセクションが全件 hidden", shown.length === 0, "見えている=" + shown.length + "/" + secs.length);
+  ok("mode は空", mode() === "" || mode() === undefined, "mode=" + JSON.stringify(mode()));
+
+  head("2. 日々の記録を選ぶ");
+  click("mode-daily");
+  ok("mode-menu が消える", !visible("mode-menu"));
+  ok("mode-bar が出る", visible("mode-bar"));
+  ok("モード名が出る", D().getElementById("mode-title").textContent.indexOf("日々") >= 0,
+     D().getElementById("mode-title").textContent);
+  ok("評価セクションが見える", visible("sec-evaluate"));
+  ok("処方コンテキストも見える（3モード共通）", visible("fert-context"));
+  ok("計算結果パネルは隠れている", !visible("sec-result"));
+  ok("コストは隠れている", !visible("sec-cost"));
+  ok("逆算は隠れている", !visible("sec-solve"));
+
+  // 「開いた瞬間に入力欄」を担保する。fert-context を除いた最初の可視セクションが評価であること
+  const order = Array.prototype.filter.call(
+    D().querySelectorAll("main section[data-mode]"),
+    function (s) { return !s.hidden; }
+  ).map(function (s) { return s.id; });
+  ok("可視セクションの先頭は fert-context → sec-evaluate", order[0] === "fert-context" && order[1] === "sec-evaluate",
+     order.join(" > "));
+
+  head("3. 選んだモードが保存される");
+  ok("mode が daily", mode() === "daily", "mode=" + mode());
+
+  head("4. 開き直すとメニューを経ずにそのモードが出る");
+  f.onload = function () {
+    f.onload = null;
+    setTimeout(function () {
+      ok("メニューは出ない", !visible("mode-menu"));
+      ok("いきなり評価セクション", visible("sec-evaluate"));
+      ok("mode は daily のまま", mode() === "daily", "mode=" + mode());
+
+      head("5. モード選択に戻れる");
+      click("back-to-menu");
+      ok("メニューが出る", visible("mode-menu"));
+      ok("セクションは全部隠れる",
+         Array.prototype.filter.call(D().querySelectorAll("main [data-mode]"), function (s) { return !s.hidden; }).length === 0);
+      ok("mode が空に戻る", mode() === "", "mode=" + JSON.stringify(mode()));
+
+      head("6. 375px でどのモードもはみ出さない");
+      ["daily", "design", "cost"].forEach(function (m) {
+        click("mode-" + m);
+        const w = D().documentElement.scrollWidth;
+        const ov = overflow();
+        ok("[" + m + "] 横スクロールなし", w <= 375, "scrollWidth=" + w);
+        ok("[" + m + "] はみ出す要素なし", ov.length === 0, ov.slice(0, 3).join(", "));
+      });
+      // メニュー自体も測る
+      click("back-to-menu");
+      ok("[menu] 横スクロールなし", D().documentElement.scrollWidth <= 375,
+         "scrollWidth=" + D().documentElement.scrollWidth);
+
+      head("7. モードを往復しても計算結果が消えない（回帰テストの本体）");
+      // applyMode が hidden 以外を触ったり、recalc をモードで分岐させると、ここが落ちる
+      click("mode-design");
+      const ec1 = D().getElementById("res-ec").textContent;
+      const ions1 = D().querySelectorAll("#res-ions tbody tr").length;
+      ok("design で EC が出ている", ec1 !== "—" && ec1 !== "0", "EC=" + ec1);
+      ok("design でイオン表が出ている", ions1 > 0, "rows=" + ions1);
+
+      click("mode-cost");
+      const cost1 = D().getElementById("cost-result").textContent.length;
+      const ref1 = D().querySelectorAll("#scale-ref tbody tr").length;
+      ok("cost で参照表が出ている", ref1 === 10, "rows=" + ref1);
+      ok("cost の結果に中身がある", cost1 > 0, "len=" + cost1);
+
+      click("mode-daily");
+      const ev1 = D().getElementById("ev-result").textContent.length;
+      ok("daily の結果に中身がある", ev1 > 0, "len=" + ev1);
+
+      // ぐるっと往復して戻る
+      click("mode-design"); click("mode-cost"); click("mode-daily"); click("mode-design");
+      ok("往復後も EC が同じ", D().getElementById("res-ec").textContent === ec1,
+         "before=" + ec1 + " after=" + D().getElementById("res-ec").textContent);
+      ok("往復後もイオン表が残る", D().querySelectorAll("#res-ions tbody tr").length === ions1);
+      click("mode-cost");
+      ok("往復後もコストの中身が残る", D().getElementById("cost-result").textContent.length === cost1,
+         "before=" + cost1 + " after=" + D().getElementById("cost-result").textContent.length);
+      ok("往復後も参照表が残る", D().querySelectorAll("#scale-ref tbody tr").length === 10);
+      click("mode-daily");
+      ok("往復後も評価の中身が残る", D().getElementById("ev-result").textContent.length === ev1);
+
+      head("8. 処方コンテキストが3モードに出る");
+      ["daily", "design", "cost"].forEach(function (m) {
+        click("mode-" + m);
+        ok("[" + m + "] 処方サマリーが見えている", visible("recipe-summary"));
+      });
+      const sum = D().getElementById("recipe-summary").textContent;
+      out.push("       " + sum.trim());
+      ok("希釈倍率が出る", sum.indexOf("120倍") >= 0);
+      ok("EC が出る", /EC [\d.]+/.test(sum), (sum.match(/EC [\d.]+/) || ["-"])[0]);
+      ok("窒素濃度が出る", /N \d+ mg\/L/.test(sum), (sum.match(/N \d+ mg\/L/) || ["-"])[0]);
+
+      head("9. リセットしてもモードから放り出されない");
+      click("mode-design");
+      click("reset-all");   // 1回目は確認モードに入るだけ
+      click("reset-all");   // 2回目で実行
+      ok("design モードのまま", visible("sec-result") && !visible("mode-menu"), "mode=" + mode());
+      ok("mode が保持されている", mode() === "design", "mode=" + mode());
+
+      head("10. 処方が空のとき");
+      // 9でリセットしたのでタンクが空になっている
+      click("mode-daily");
+      const empty = D().getElementById("recipe-summary").textContent;
+      ok("処方が空だと警告が出る", empty.indexOf("処方が空") >= 0, empty.slice(0, 40).trim());
+      ok("処方をつくるへのボタンがある",
+         Array.prototype.some.call(D().querySelectorAll("#recipe-summary button"),
+           function (b) { return b.textContent.indexOf("処方をつくる") >= 0; }));
+      // それでも排液率の判定は動く（窒素だけ出ない）
+      const fe = D().getElementById("ev-feed");
+      fe.value = "0.5";
+      fe.dispatchEvent(new (W().Event)("input", { bubbles: true }));
+      const de = D().getElementById("ev-drain");
+      de.value = "0.05";
+      de.dispatchEvent(new (W().Event)("input", { bubbles: true }));
+      const evTxt = D().getElementById("ev-result").textContent;
+      ok("処方が空でも排液率の判定は動く", evTxt.indexOf("排液率") >= 0 && evTxt.indexOf("下回っています") >= 0);
+      ok("窒素施用量は出せないと伝える", evTxt.indexOf("肥料を入れると") >= 0);
+
+      // design モードは処方を組んでいる最中の画面。そこで「処方をつくるへ」と
+      // 案内するのは、いま居る場所を指して行けと言うのと同じ
+      click("mode-design");
+      const emptyDesign = D().getElementById("recipe-summary").textContent;
+      ok("designでは「処方をつくるへ」を出さない",
+         emptyDesign.indexOf("処方をつくるへ") < 0, emptyDesign.trim().slice(0, 30));
+      ok("designでは肥料を入れるよう促す", emptyDesign.indexOf("原液タンクに肥料を入れる") >= 0);
+      ok("肥料も原水も空ならpHは判定しない",
+         D().getElementById("res-ph").textContent === "—",
+         "res-ph=" + D().getElementById("res-ph").textContent);
+      ok("判定しない理由を書く",
+         D().getElementById("res-ph-note").textContent.indexOf("まだ判定できません") >= 0,
+         D().getElementById("res-ph-note").textContent.trim().slice(0, 30));
+
+      head("11. URLのハッシュでモードを指定できる（ホームから1タップ用）");
+      // ハッシュだけを足しても iframe はリロードされない（同一ドキュメント内の移動になる）。
+      // クエリを変えて別URLにすることで、実際の読み込みを起こす
+      f.onload = function () {
+        f.onload = null;
+        setTimeout(function () {
+          ok("#cost で開くとメニューを飛ばして cost", visible("sec-cost") && !visible("mode-menu"));
+          ok("ハッシュのモードが保存される", mode() === "cost", "mode=" + mode());
+          f.onload = function () {
+            f.onload = null;
+            setTimeout(function () {
+              // #nosuch は FERT_MODES に無いので、直前の cost が保たれる
+              ok("知らないハッシュは無視され、前回のモードのまま",
+                 mode() === "cost" && visible("sec-cost"), "mode=" + mode());
+
+              head("12. design が番号付きのグループに分かれている");
+              click("mode-design");
+              const dOrder = Array.prototype.filter.call(
+                D().querySelectorAll("main [data-mode]"),
+                function (s) { return !s.hidden; }
+              ).map(function (s) { return s.id; });
+              out.push("       " + dOrder.join(" > "));
+              const at = function (id) { return dOrder.indexOf(id); };
+              ok("① 前提 → ② 逆算 → ③ 配合 → ④ 結果 の順",
+                 at("grp-basis") >= 0 && at("grp-basis") < at("grp-reverse")
+                 && at("grp-reverse") < at("sec-tank") && at("sec-tank") < at("sec-result"));
+              ok("⑤ 実測EC は結果より後", at("sec-result") < at("grp-ec"));
+              ok("⑥ 保存は最後の方", at("grp-ec") < at("sec-recipe"));
+              ok("書き出しがいちばん後ろ", at("sec-export") === dOrder.length - 1, dOrder[dOrder.length - 1]);
+
+              head("13. よく使うものが開き、毎回触らないものが畳まれている");
+              // ⚠️ この headless Chrome（152）は details の開閉を描画に反映しない。
+              //    素の <details> でも、閉じているのに中身の高さが残る。
+              //    そのため「中身が見えない」ことは測れないので、open 属性で判定する。
+              //    実機の見え方は手で確認すること
+              ok("② 逆算は開いている（目標の組成が先にあることの方が多い）",
+                 D().getElementById("grp-reverse").open);
+              ok("① 前提は閉じている", !D().getElementById("grp-basis").open);
+              ok("⑤ 実測ECは閉じている", !D().getElementById("grp-ec").open);
+              ok("③ 配合と ④ 結果は常に見えている", visible("sec-tank") && visible("sec-result"));
+              ok("逆算の入力欄が最初から使える",
+                 !!D().getElementById("target-preset") && !!D().getElementById("solve"));
+              ok("畳まれたグループにも中身は存在する（開けば使える）",
+                 !!D().getElementById("sec-dilution") && !!D().getElementById("ec-measured"));
+
+              D().getElementById("grp-basis").open = true;
+              ok("開くと open になる", D().getElementById("grp-basis").open);
+              // 開いたまま375pxを測る（畳んだ状態だけ測っても意味がない）
+              const ov2 = overflow();
+              ok("グループを開いてもはみ出さない", ov2.length === 0, ov2.slice(0, 3).join(", "));
+
+              // toggle イベントは同期では飛ばないので、一拍おいてから保存を確かめる
+              setTimeout(function () {
+                ok("開閉が保存される", (function () {
+                  try {
+                    var st = JSON.parse(W().localStorage.getItem("tfm_fert_state") || "{}");
+                    return st.groups && st.groups["grp-basis"] === true;
+                  } catch (e) { return false; }
+                })(), JSON.stringify((JSON.parse(W().localStorage.getItem("tfm_fert_state") || "{}")).groups));
+                show();
+              }, 200);
+            }, 800);
+          };
+          f.src = "../_work/fertilizer.html?t=2#nosuch";
+        }, 800);
+      };
+      f.src = "../_work/fertilizer.html?t=1#cost";
+    }, 900);
+  };
+  f.src = f.src;   // リロード
+}, 1200);
+</script>
+</body></html>

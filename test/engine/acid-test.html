@@ -1,0 +1,148 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>acid test</title></head>
+<body><pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+window.onerror = function (m, s, l, c) {
+  document.getElementById("out").textContent = "*** JSエラー ***\n" + m + "\n" + s + ":" + l + ":" + c;
+  return true;
+};
+const L = [];
+let pass = 0, fail = 0;
+const R = FertilizerCalc.round;
+
+function eq(label, actual, expected, tol) {
+  const t = tol === undefined ? 0.001 : tol;
+  const ok = Math.abs(Number(actual) - Number(expected)) <= t;
+  if (ok) { pass++; L.push("  OK   " + label + "  = " + R(actual, 4)); }
+  else { fail++; L.push("  FAIL " + label + "  実際 " + R(actual, 4) + " / 期待 " + expected); }
+}
+function is(label, actual, expected) {
+  const ok = actual === expected;
+  if (ok) { pass++; L.push("  OK   " + label + "  = " + actual); }
+  else { fail++; L.push("  FAIL " + label + "  実際 " + actual + " / 期待 " + expected); }
+}
+function head(s) { L.push(""); L.push("== " + s + " =="); }
+
+// 中和酸の反映だけを見たいので、原水にHCO3だけ入れた最小の系を作る
+function ionsWith(hco3, na) {
+  return { K: 0, Ca: 0, Mg: 0, NH4: 0, Na: na || 0, H: 0,
+           NO3: 0, H2PO4: 0, SO4: 0, Cl: 0, HCO3: hco3 };
+}
+
+head("1. 価数の扱い（今回直したところ）");
+// HCO3 3.0 に対して 1.8 meq/L の酸を入れる
+{
+  const a = ionsWith(3.0, 3.0);
+  FertilizerCalc.applyAcidNeutralization(a, { anion: "NO3", meqPerL: 1.8 });
+  eq("硝酸1.8meq → NO3 (1価なので meq と同じ)", a.NO3, 1.8);
+  eq("硝酸1.8meq → HCO3 残り", a.HCO3, 1.2);
+  eq("硝酸1.8meq → H は全部中和されて0", a.H, 0);
+}
+{
+  const b = ionsWith(3.0, 3.0);
+  FertilizerCalc.applyAcidNeutralization(b, { anion: "SO4", meqPerL: 1.8 });
+  eq("硫酸1.8meq → SO4 (2価なので半分の0.9)", b.SO4, 0.9);
+  eq("硫酸1.8meq → HCO3 残り", b.HCO3, 1.2);
+}
+{
+  const c = ionsWith(3.0, 3.0);
+  FertilizerCalc.applyAcidNeutralization(c, { anion: "H2PO4", meqPerL: 1.8 });
+  eq("リン酸1.8meq → H2PO4 (養液pH域では1価)", c.H2PO4, 1.8);
+}
+
+head("2. 中和しても電荷収支が崩れないこと");
+[["NO3", 1.8], ["SO4", 1.8], ["H2PO4", 1.8]].forEach(function (p) {
+  const ions = ionsWith(3.0, 3.0);  // Na 3.0 と HCO3 3.0 で最初から釣り合っている
+  const before = FertilizerCalc.chargeBalance(ions);
+  eq("[" + p[0] + "] 中和前の差", before.diff, 0);
+  FertilizerCalc.applyAcidNeutralization(ions, { anion: p[0], meqPerL: p[1] });
+  const after = FertilizerCalc.chargeBalance(ions);
+  eq("[" + p[0] + "] 中和後の差", after.diff, 0);
+});
+
+head("3. アルカリ度より多く酸を入れた場合");
+{
+  const a = ionsWith(1.0, 1.0);
+  FertilizerCalc.applyAcidNeutralization(a, { anion: "NO3", meqPerL: 2.5 });
+  eq("HCO3 は使い切って0", a.HCO3, 0);
+  eq("余った酸のH⁺が残る (2.5 - 1.0)", a.H, 1.5);
+  eq("NO3 は入れた分すべて", a.NO3, 2.5);
+  const b = FertilizerCalc.chargeBalance(a);
+  eq("入れすぎても電荷は合う", b.diff, 0);
+}
+{
+  // 硫酸で入れすぎた場合、H⁺は meq のまま・SO4 は半分
+  const a = ionsWith(1.0, 1.0);
+  FertilizerCalc.applyAcidNeutralization(a, { anion: "SO4", meqPerL: 2.5 });
+  eq("硫酸: 余ったH⁺", a.H, 1.5);
+  eq("硫酸: SO4 は 2.5/2", a.SO4, 1.25);
+  eq("硫酸: 電荷", FertilizerCalc.chargeBalance(a).diff, 0);
+}
+
+head("4. 必要量の計算 acidRequirement");
+{
+  const r = FertilizerCalc.acidRequirement(3.0, { anion: "NO3", residualMeq: 1.0, fertilizerId: "nitric_acid" });
+  eq("中和量 = 3.0 - 1.0", r.meqPerL, 2.0);
+  eq("NO3 の増加 (1価)", r.anionMmolPerL, 2.0);
+  eq("原水のアルカリ度をそのまま返す", r.fullNeutralizationMeq, 3.0);
+  // 硝酸62%: HNO3 mw 63.01、H⁺1個 → 2.0 mmol/L × 63.01 / 0.62 = 203.3 g/1000L
+  eq("硝酸62%の実重量 g/1000L", r.gPer1000L, 203.26, 0.1);
+}
+{
+  const r = FertilizerCalc.acidRequirement(3.0, { anion: "SO4", residualMeq: 1.0, fertilizerId: "sulfuric_acid" });
+  eq("硫酸: 中和量は同じ", r.meqPerL, 2.0);
+  eq("硫酸: SO4 の増加は半分", r.anionMmolPerL, 1.0);
+  // H2SO4 は H⁺2個。2.0 meq / 2 = 1.0 mmol/L × 98.08 / 0.62 = 158.2 g/1000L
+  eq("硫酸62%の実重量 g/1000L", r.gPer1000L, 158.19, 0.1);
+}
+{
+  const r = FertilizerCalc.acidRequirement(3.0, { anion: "H2PO4", residualMeq: 1.0, fertilizerId: "phosphoric_acid" });
+  eq("リン酸: H2PO4 の増加", r.anionMmolPerL, 2.0);
+  // H3PO4 は ions.H = 1 で定義（養液pH域では1段階目のみ）→ 2.0 mmol × 98.00 / 0.85
+  eq("リン酸85%の実重量 g/1000L", r.gPer1000L, 230.59, 0.1);
+}
+{
+  const r = FertilizerCalc.acidRequirement(0.8, { anion: "NO3", residualMeq: 1.0 });
+  eq("残したい量が原水より多ければ中和量0", r.meqPerL, 0);
+  is("肥料IDが無ければ重量はnull", r.gPer1000L, null);
+}
+{
+  const r = FertilizerCalc.acidRequirement(3.0, { anion: "NO3", residualMeq: 0 });
+  eq("全部中和する指定", r.meqPerL, 3.0);
+}
+
+head("5. calcSolution 経由でも通ること");
+{
+  // 硝酸カリだけのタンクに、原水HCO3 2.0 と硫酸中和1.0meq
+  const out = FertilizerCalc.calcSolution({
+    tanks: [{ name: "A液", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5.0 }] }],
+    dilution: 120,
+    water: { HCO3: 2.0, Na: 2.0 },
+    acid: { anion: "SO4", meqPerL: 1.0 },
+  });
+  eq("SO4 は 1.0meq の半分", out.ions.SO4, 0.5);
+  eq("HCO3 は 2.0 - 1.0", out.ions.HCO3, 1.0);
+  eq("電荷収支の誤差率", out.balanceErrorPct, 0, 0.01);
+}
+
+head("6. 実務の順序：硫酸で中和するとSO4が処方に乗る");
+{
+  // 原水アルカリ度3.0を硫酸で1.0残して中和したとき、処方のSO4をいくつ減らすか
+  const r = FertilizerCalc.acidRequirement(3.0, { anion: "SO4", residualMeq: 1.0 });
+  const targetSO4 = 2.25;  // 愛知県改良処方のSO4
+  const adjusted = targetSO4 - r.anionMmolPerL;
+  eq("処方SO4 2.25 から差し引く量", r.anionMmolPerL, 1.0);
+  eq("肥料で入れるべきSO4", adjusted, 1.25);
+  L.push("  → 差し引かないとSO4が " + R(targetSO4 + r.anionMmolPerL, 2) + " になる（狙いの1.44倍）");
+}
+
+L.push("");
+L.push("========================================");
+L.push("  " + pass + " passed, " + fail + " failed");
+L.push("========================================");
+document.getElementById("out").textContent = L.join("\n");
+</script>
+</body></html>

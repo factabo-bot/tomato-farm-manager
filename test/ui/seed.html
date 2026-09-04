@@ -1,0 +1,33 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>seed</title></head>
+<body>
+<p id="msg">seeding...</p>
+<script>
+// 達子ファーム処方を localStorage に流し込んでから本画面へ移動する。
+// headless Chrome では localStorage を事前設定できないので、この中継ページを使う。
+const state = {
+  dilution: 120,
+  tanks: [
+    { name: "A液", tankL: 100, items: [
+      { id: "phosphoric_acid",          kg: 0.2 },
+      { id: "magnesium_nitrate_6h",     kg: 5.0 },
+      { id: "mono_potassium_phosphate", kg: 5.0 },
+      { id: "potassium_nitrate",        kg: 5.0 }
+    ]},
+    { name: "B液", tankL: 100, items: [
+      { id: "orient_mix",            kg: 0.4 },
+      { id: "chelated_iron_dtpa_11", kg: 0.4 },
+      { id: "calcium_nitrate_4h",    kg: 5.0 },
+      { id: "potassium_nitrate",     kg: 2.5 }
+    ]}
+  ],
+  water: { Ca: "1.5", Mg: "0.5", K: "", Na: "1.69", NO3: "", SO4: "0.5", Cl: "1.69", HCO3: "3.0" },
+  acid: { anion: "", meqPerL: "" },
+  ecMeasured: "1.77",
+  ecCoefficient: ""
+};
+localStorage.setItem("tfm_fert_state", JSON.stringify(state));
+localStorage.setItem("tfm_displayName", "テスト");
+document.getElementById("msg").textContent = "seeded";
+</script>
+</body></html>

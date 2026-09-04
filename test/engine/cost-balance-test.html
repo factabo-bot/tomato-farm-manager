@@ -1,0 +1,190 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>cost / balanced target test</title></head>
+<body><pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+window.onerror = function (m, s, l, c) {
+  document.getElementById("out").textContent = "*** JSエラー ***\n" + m + "\n" + s + ":" + l + ":" + c;
+  return true;
+};
+const lines = [];
+let pass = 0, fail = 0;
+const R = FertilizerCalc.round;
+function log(s) { lines.push(s); }
+function ok(l, c, x) { if (c) { pass++; log("  OK  " + l + (x ? " | " + x : "")); } else { fail++; log("  NG  " + l + (x ? " | " + x : "")); } }
+function close(l, a, b, tol) { ok(l + " (計算=" + R(a, 3) + " 期待=" + b + ")", Math.abs(a - b) <= tol); }
+
+// ============================================================
+log("=== ① 肥料コスト ===");
+// 硝酸カリ 5kg（675円/kg）＝3,375円。100Lタンク・120倍 → 給液12,000L
+const c1 = FertilizerCalc.recipeCost(
+  [{ name: "A液", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5 }] }], 120);
+close("原液1回ぶんの金額", c1.batchTotal, 3375, 1);
+close("その原液で作れる給液量", c1.feedVolumeL, 12000, 1);
+close("給液1000Lあたり", c1.yenPer1000L, 281.25, 0.5);
+log("       " + R(c1.batchTotal, 0) + "円 / " + R(c1.feedVolumeL, 0) + "L → " + R(c1.yenPer1000L, 1) + "円/1000L");
+
+// 2タンクでも給液量は倍にならない（同じ給液に両方入るため）
+const c2 = FertilizerCalc.recipeCost([
+  { name: "A液", tankL: 100, items: [{ id: "calcium_nitrate_4h", kg: 10 }] },
+  { name: "B液", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5 }] },
+], 120);
+close("2タンクでも給液量は12,000L", c2.feedVolumeL, 12000, 1);
+close("合計金額は両タンクの和", c2.batchTotal, 10 * 245 + 5 * 675, 1);
+log("       A液10kg + B液5kg = " + R(c2.batchTotal, 0) + "円 → " + R(c2.yenPer1000L, 1) + "円/1000L");
+
+// 価格未設定のものは合計に入れず、名前を返す。
+// 例に使う肥料は「まだ単価を調べていないもの」でなければならない。
+// オリエントミックスは2026-09にモノタロウの価格が判明して未設定でなくなったため、
+// 未確認のまま残っている硝酸に差し替えた（規制品で実勢価格を調べていない）
+const c3 = FertilizerCalc.recipeCost(
+  [{ name: "A", tankL: 100, items: [
+    { id: "potassium_nitrate", kg: 5 },
+    { id: "nitric_acid", kg: 0.4 }] }], 120);
+ok("価格未設定を検出", c3.unpriced.length === 1, c3.unpriced.map(function (u) { return u.name; }).join(","));
+close("未設定分は合計に含めない", c3.batchTotal, 3375, 1);
+
+// ============================================================
+log("");
+log("=== ② 給液量から見た規模（ピークと平均を分ける） ===");
+// 3,000株・ピーク1.7L・平均1.1L/株/日
+const sc = FertilizerCalc.scaleEstimate(c1, 120,
+  { plants: 3000, peakMlPerPlantDay: 1700, avgMlPerPlantDay: 1100, daysPerYear: 270 });
+close("ピークの給液量", sc.peakFeedLPerDay, 5100, 1);
+close("ピークの原液の減り", sc.peakStockLPerDay, 42.5, 0.1);
+close("タンクの持ちはピークで決まる", sc.daysPerBatch, 12000 / 5100, 0.01);
+close("平均の給液量", sc.avgFeedLPerDay, 3300, 1);
+log("       ピーク 給液 " + R(sc.peakFeedLPerDay, 0) + " L/日 → タンク " + R(sc.daysPerBatch, 1) + " 日");
+log("       平均   給液 " + R(sc.avgFeedLPerDay, 0) + " L/日 → 年間 " + R(sc.yenPerYear, 0) + " 円");
+
+// ピークの値で年間を計算すると過大になることの確認
+const scPeakOnly = FertilizerCalc.scaleEstimate(c1, 120,
+  { plants: 3000, peakMlPerPlantDay: 1700, avgMlPerPlantDay: 1700, daysPerYear: 270 });
+const over = scPeakOnly.yenPerYear / sc.yenPerYear;
+close("ピーク値で年間を出すと約1.55倍になる", over, 1700 / 1100, 0.01);
+log("       ピーク値をそのまま年間に掛けると " + R(over, 2) + " 倍の見積もりになる");
+
+// 平均を入れなければ年間コストは出さない
+const scNoAvg = FertilizerCalc.scaleEstimate(c1, 120, { plants: 3000, peakMlPerPlantDay: 1700 });
+ok("平均が無ければ年間コストはnull", scNoAvg.yenPerYear === null);
+ok("平均が無くてもタンクの持ちは出る", scNoAvg.daysPerBatch > 0, R(scNoAvg.daysPerBatch, 2) + " 日");
+
+// 500Lタンクなら
+const c4 = FertilizerCalc.recipeCost(
+  [{ name: "A液", tankL: 500, items: [{ id: "potassium_nitrate", kg: 25 }] }], 120);
+const sc4 = FertilizerCalc.scaleEstimate(c4, 120,
+  { plants: 3000, peakMlPerPlantDay: 1700, avgMlPerPlantDay: 1100, daysPerYear: 270 });
+close("500Lタンクは5倍持つ", sc4.daysPerBatch, 60000 / 5100, 0.01);
+log("       500Lタンクなら " + R(sc4.daysPerBatch, 1) + " 日");
+
+// ============================================================
+log("");
+log("=== ④ 制約付きの組成づくり ===");
+
+// Caだけ6.0に固定して、残りを基準内で釣り合わせる
+const b1 = FertilizerCalc.buildBalancedTarget({ Ca: 6.0 });
+log("  [Ca=6.0 に固定]");
+["K","Ca","Mg","NH4","NO3","H2PO4","SO4"].forEach(function (k) {
+  log("       " + k + ": " + R(b1.target[k], 2));
+});
+ok("成立した", b1.feasible === true, b1.message);
+ok("Caは固定値のまま", b1.target.Ca === 6.0, String(b1.target.Ca));
+const bal1 = FertilizerCalc.chargeBalance(b1.target);
+close("電荷が釣り合う", bal1.diff, 0, 0.05);
+log("       陽 " + R(bal1.cationMeq, 2) + " / 陰 " + R(bal1.anionMeq, 2) + " meq/L");
+log("       " + b1.message);
+
+// 全部が基準内に収まっているか
+let allInRange = true;
+["K","Ca","Mg","NH4","NO3","H2PO4","SO4"].forEach(function (k) {
+  const r = REFERENCE_RANGES.ions[k];
+  if (b1.target[k] < r.min - 0.001 || b1.target[k] > r.max + 0.001) {
+    allInRange = false;
+    log("       ★範囲外: " + k + "=" + R(b1.target[k], 2) + " (基準 " + r.min + "〜" + r.max + ")");
+  }
+});
+ok("すべて基準の範囲内", allInRange);
+
+// 逆算に通して、実際に配合が出るか
+const sol = FertilizerCalc.solveRecipe(b1.target, {});
+const noWarn = sol.warnings.filter(function (w) { return w.level === "warn"; });
+ok("逆算しても警告が出ない", noWarn.length === 0,
+   noWarn.length ? noWarn[0].message.slice(0, 40) : "警告なし");
+log("  [出た配合（100L・120倍）]");
+sol.picks.forEach(function (p) {
+  log("       " + p.name + "  " + R(FertilizerCalc.mmolToKg(p.mmol, p.id, 100, 120), 2) + " kg");
+});
+
+// 2つ固定する
+log("");
+const b2 = FertilizerCalc.buildBalancedTarget({ Ca: 7.0, K: 9.0 });
+ok("2つ固定しても成立", b2.feasible === true, b2.message);
+ok("Caは7.0", b2.target.Ca === 7.0);
+ok("Kは9.0", b2.target.K === 9.0);
+close("電荷が釣り合う", FertilizerCalc.chargeBalance(b2.target).diff, 0, 0.05);
+log("  [Ca=7.0 K=9.0] " + ["NO3","SO4","Mg","H2PO4"].map(function (k) {
+  return k + " " + R(b2.target[k], 2); }).join(" / "));
+
+// 無理な固定は成立しないと返す
+log("");
+const b3 = FertilizerCalc.buildBalancedTarget({ Ca: 8, K: 10, Mg: 3 });
+log("  [Ca=8 K=10 Mg=3（陽イオンを全部上限に）]");
+log("       " + b3.message);
+ok("成立しないことを返す", b3.feasible === false, "残り " + b3.remaining + " meq/L");
+
+// 実機で「合いません」と誤って突き返されたケース。
+// Ca が調整対象から漏れていて、Ca を下げれば釣り合う組成でも失敗していた
+log("");
+log("  [実機で報告されたケース: Mg=5（基準外）・NH4=1・H2PO4=1 を固定]");
+const b4 = FertilizerCalc.buildBalancedTarget({ Mg: 5, NH4: 1, H2PO4: 1 });
+log("       " + b4.message);
+log("       " + ["K","Ca","Mg","NH4","NO3","H2PO4","SO4"].map(function (k) {
+  return k + " " + R(b4.target[k], 2); }).join(" / "));
+ok("成立する", b4.feasible === true, "残り " + b4.remaining + " meq/L");
+close("電荷が釣り合う", FertilizerCalc.chargeBalance(b4.target).diff, 0, 0.05);
+ok("固定した Mg は動かさない", b4.target.Mg === 5);
+ok("固定した NH4 は動かさない", b4.target.NH4 === 1);
+ok("固定した H2PO4 は動かさない", b4.target.H2PO4 === 1);
+ok("Ca を動かして釣り合わせた", b4.moved.Ca !== undefined, "Ca " + b4.moved.Ca);
+
+// Ca 以外を全部固定し、Ca だけで釣り合わせられるか。
+// 陽 = K6 + Mg1.5×2 + NH4 0 + Ca×2 = 9 + 2Ca、陰 = NO3 16 + H2PO4 1.5 + SO4 2×2 = 21.5
+// → Ca = 6.25（基準4〜8の中）
+log("");
+const b5 = FertilizerCalc.buildBalancedTarget({ K: 6, NO3: 16, SO4: 2, H2PO4: 1.5, Mg: 1.5, NH4: 0 });
+log("  [Ca以外を全部固定 → Ca だけで合わせる]");
+log("       " + b5.message);
+ok("Ca だけで釣り合わせられる", b5.feasible === true, "Ca=" + R(b5.target.Ca, 2));
+close("Ca は 6.25 になる", b5.target.Ca, 6.25, 0.01);
+close("電荷が釣り合う", FertilizerCalc.chargeBalance(b5.target).diff, 0, 0.05);
+
+// Ca を下げても届かないケースでは、下限で止まって「合わない」と返す
+log("");
+const b5b = FertilizerCalc.buildBalancedTarget({ K: 6, NO3: 12, SO4: 1, H2PO4: 1, Mg: 1.5, NH4: 0 });
+log("  [陰イオンを全部下限に固定 → Caを下げても届かない]");
+log("       " + b5b.message);
+ok("成立しないと返す", b5b.feasible === false, "残り " + b5b.remaining + " meq/L");
+close("Ca は基準の下限で止まる", b5b.target.Ca, 4, 0.01);
+
+// 動いた記録が「最初 → 最後」の1行にまとまること（途中経過が並ばない）
+log("");
+const b6 = FertilizerCalc.buildBalancedTarget({ Ca: 6.0 });
+const dup = {};
+let hasDup = false;
+b6.notes.forEach(function (n) {
+  const key = n.split(" ")[0];
+  if (dup[key]) hasDup = true;
+  dup[key] = true;
+});
+ok("同じイオンが2回出てこない", !hasDup, b6.notes.join(" / "));
+
+// ============================================================
+log("");
+log("============================================");
+log("  PASS " + pass + " / FAIL " + fail);
+log("============================================");
+document.getElementById("out").textContent = lines.join("\n");
+</script>
+</body></html>

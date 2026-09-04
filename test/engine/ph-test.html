@@ -1,0 +1,118 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>pH band test</title></head>
+<body><pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+window.onerror = function (m, s, l, c, e) {
+  document.getElementById("out").textContent = "*** JSエラー ***\n" + m + "\n" + s + ":" + l + ":" + c;
+  return true;
+};
+
+const lines = [];
+let pass = 0, fail = 0;
+function log(s) { lines.push(s); }
+function ok(label, cond, extra) {
+  if (cond) { pass++; log("  OK  " + label + (extra ? " | " + extra : "")); }
+  else { fail++; log("  NG  " + label + (extra ? " | " + extra : "")); }
+}
+
+log("=== pHの目安（帯で返す） ===");
+
+// 残留アルカリ度ごとの判定
+const cases = [
+  { hco3: 0,   H: 0,    expect: "low",  desc: "アルカリ度ゼロ" },
+  { hco3: 1.0, H: 0,    expect: "ok",   desc: "残留1.0（実務の目安）" },
+  { hco3: 1.5, H: 0,    expect: "ok",   desc: "残留1.5（上限）" },
+  { hco3: 2.0, H: 0,    expect: "high", desc: "残留2.0（やや多い）" },
+  { hco3: 3.0, H: 0,    expect: "high", desc: "残留3.0（多すぎ）" },
+  { hco3: 0,   H: 0.1,  expect: "low",  desc: "酸が0.1余る" },
+];
+cases.forEach(function (c) {
+  const b = FertilizerCalc.estimatePhBand({ HCO3: c.hco3, H: c.H, H2PO4: 1.5 });
+  ok(c.desc + " → " + b.level, b.level === c.expect, b.label);
+});
+
+log("");
+log("=== メッセージの中身 ===");
+const b1 = FertilizerCalc.estimatePhBand({ HCO3: 1.0, H: 0, H2PO4: 1.5 });
+log("  [残留1.0] " + b1.label);
+log("       " + b1.message);
+ok("リン酸1.5で緩衝ありと判定", b1.buffered === true);
+
+const b2 = FertilizerCalc.estimatePhBand({ HCO3: 1.0, H: 0, H2PO4: 0.5 });
+ok("リン酸0.5では緩衝なしと判定", b2.buffered === false);
+
+const b3 = FertilizerCalc.estimatePhBand({ HCO3: 0, H: 0.1, H2PO4: 1.5 });
+log("  [酸0.1余り] " + b3.label);
+log("       " + b3.message);
+
+log("");
+log("=== 原液pH：タンクごとに見る ===");
+
+// A液（酸あり・キレート剤なし）
+const tankA = { name: "A液", tankL: 100, items: [
+  { id: "phosphoric_acid", kg: 0.2 }, { id: "magnesium_nitrate_6h", kg: 5.0 },
+  { id: "mono_potassium_phosphate", kg: 5.0 }, { id: "potassium_nitrate", kg: 5.0 }] };
+const spA = FertilizerCalc.tankStockPh(tankA, 120);
+log("  [A液] pH " + FertilizerCalc.round(spA.ph, 2) + "（" + spA.note + "）");
+ok("A液は緩衝系として計算される", spA.buffered === true);
+ok("強酸計算(1.8)より高く出る", spA.ph > 3.0, String(FertilizerCalc.round(spA.ph, 2)));
+
+// B液（酸なし・キレート剤あり）
+const tankB = { name: "B液", tankL: 100, items: [
+  { id: "orient_mix", kg: 0.4 }, { id: "chelated_iron_dtpa_11", kg: 0.4 },
+  { id: "calcium_nitrate_4h", kg: 5.0 }, { id: "potassium_nitrate", kg: 2.5 }] };
+const spB = FertilizerCalc.tankStockPh(tankB, 120);
+ok("B液は酸がないのでpH推定なし", spB === null, String(spB));
+log("       酸とキレート剤を別タンクに分けてあるので、B液の下限3.0は問題にならない");
+
+// 酸とキレート鉄を同じタンクに入れた場合は警告が出るか
+const mixed = FertilizerCalc.calcSolution({
+  dilution: 120,
+  tanks: [{ name: "まぜたタンク", tankL: 100, items: [
+    { id: "phosphoric_acid", kg: 0.5 },
+    { id: "chelated_iron_dtpa_11", kg: 0.4 }] }],
+});
+const dangerWarn = mixed.warnings.filter(function (w) { return w.level === "danger" && w.message.indexOf("下限") >= 0; });
+ok("酸とキレート鉄の同居を検出する", dangerWarn.length > 0,
+   dangerWarn.length ? dangerWarn[0].message.slice(0, 50) : "検出なし");
+if (dangerWarn.length) log("       " + dangerWarn[0].message);
+
+log("");
+log("=== 実処方での表示 ===");
+// 達子ファーム処方（原水なし）＝リン酸85%由来のH+が0.1446残る
+const r = FertilizerCalc.calcSolution({
+  dilution: 120,
+  tanks: [
+    { name: "A", tankL: 100, items: [
+      { id: "phosphoric_acid", kg: 0.2 }, { id: "magnesium_nitrate_6h", kg: 5.0 },
+      { id: "mono_potassium_phosphate", kg: 5.0 }, { id: "potassium_nitrate", kg: 5.0 }]},
+    { name: "B", tankL: 100, items: [
+      { id: "orient_mix", kg: 0.4 }, { id: "chelated_iron_dtpa_11", kg: 0.4 },
+      { id: "calcium_nitrate_4h", kg: 5.0 }, { id: "potassium_nitrate", kg: 2.5 }]},
+  ],
+});
+log("  [原水なし] pH: " + r.phBand.label + "（" + r.phBand.level + "）");
+log("       " + r.phBand.message);
+ok("原水なしでは酸が余る判定になる", r.phBand.level === "low");
+
+// 原水にアルカリ度がある場合
+const r2 = FertilizerCalc.calcSolution({
+  dilution: 120,
+  tanks: [{ name: "A", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5.0 }] }],
+  water: { Ca: 1.5, Na: 1.69, Cl: 1.69, HCO3: 2.8 },
+  acid: { anion: "NO3", meqPerL: 1.8 },
+});
+log("  [原水HCO3 2.8を1.8中和] pH: " + r2.phBand.label + "（" + r2.phBand.level + "）");
+log("       " + r2.phBand.message);
+ok("残留1.0で目標範囲の判定になる", r2.phBand.level === "ok", "HCO3=" + FertilizerCalc.round(r2.ions.HCO3, 2));
+
+log("");
+log("============================================");
+log("  PASS " + pass + " / FAIL " + fail);
+log("============================================");
+document.getElementById("out").textContent = lines.join("\n");
+</script>
+</body></html>

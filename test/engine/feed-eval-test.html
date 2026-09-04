@@ -1,0 +1,144 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>feed eval test</title></head>
+<body><pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+window.onerror = function (m, s, l, c) {
+  document.getElementById("out").textContent = "*** JSエラー ***\n" + m + "\n" + s + ":" + l + ":" + c;
+  return true;
+};
+const L = [];
+let pass = 0, fail = 0;
+const R = FertilizerCalc.round;
+const FC = FertilizerCalc;
+
+function eq(label, actual, expected, tol) {
+  const t = tol === undefined ? 0.001 : tol;
+  const ok = actual !== null && actual !== undefined && Math.abs(Number(actual) - Number(expected)) <= t;
+  if (ok) { pass++; L.push("  OK   " + label + " = " + R(actual, 4)); }
+  else { fail++; L.push("  FAIL " + label + " 実際 " + R(actual, 4) + " / 期待 " + expected); }
+}
+function has(label, arr, topic, level) {
+  const f = arr.filter(function (a) { return a.topic === topic && (!level || a.level === level); });
+  if (f.length) { pass++; L.push("  OK   " + label); f.forEach(function (a) { L.push("         [" + a.level + "] " + a.message); L.push("         → " + a.action); }); }
+  else { fail++; L.push("  FAIL " + label + " （出たのは: " + arr.map(function (a) { return a.topic + "/" + a.level; }).join(", ") + "）"); }
+}
+function head(s) { L.push(""); L.push("== " + s + " =="); }
+
+head("1. 伊藤ら2022の実測を再現できるか（吸収率の式の検証）");
+{
+  // 低濃度区: 給液EC1.4・排液率30%。論文の窒素利用率は84.5%
+  // 排液ECは図1から「給液を下回る」＝ 0.7 と置く
+  const e = FC.evaluateFeed({ feedLPerPlant: 0.55, drainLPerPlant: 0.165, feedEc: 1.4, drainEc: 0.7 });
+  eq("排液率", e.drainPct, 30, 0.01);
+  eq("吸収率（論文の窒素利用率84.5%に対応）", e.uptakeRatio, 0.85, 0.01);
+  eq("排液EC/給液EC", e.drainRatio, 0.5, 0.01);
+  eq("吸水量（蒸散量）", e.uptakeLPerPlant, 0.385, 0.001);
+  L.push("       → 論文の窒素利用率 84.5% に対し、式からは " + R(e.uptakeRatio * 100, 1) + "%");
+}
+{
+  // 対照区: 給液EC2.5・排液率30%。論文の窒素利用率は59.4%
+  // 逆に「利用率59.4%なら排液ECはいくつか」を解いて図1と照合する
+  //   0.594 = 1 − (drainEc × 0.30) / 2.5  →  drainEc = 3.383
+  const e = FC.evaluateFeed({ feedLPerPlant: 0.55, drainLPerPlant: 0.165, feedEc: 2.5, drainEc: 3.383 });
+  eq("対照区の吸収率（論文59.4%）", e.uptakeRatio, 0.594, 0.005);
+  eq("対照区は排液ECが給液を上回る", e.drainRatio > 1.0 ? 1 : 0, 1);
+  L.push("       → 利用率59.4%から逆算した排液ECは 3.38。図1の「給液ECを上回る」と整合");
+}
+
+head("2. 石原ら2000（ロックウール）の排液率と濃縮");
+[[8.3, 8.4], [16.3, 8.4], [39.5, 3.0]].forEach(function (p) {
+  const feedL = 1.0;
+  const e = FC.evaluateFeed({
+    feedLPerPlant: feedL, drainLPerPlant: feedL * p[0] / 100,
+    feedEc: 1.8, drainEc: p[1],
+  });
+  L.push("  排液率 " + p[0] + "% / 排液EC " + p[1] + " → 吸収率 " + R(e.uptakeRatio * 100, 1)
+         + "% ・ 排液/給液 " + R(e.drainRatio, 2) + "倍");
+  pass++;
+});
+L.push("       → 排液率が低いほど排液ECが給液の何倍にもなる、という関係が式で出る");
+
+head("3. 排液率が足りないとき、必要な給液量を出す");
+{
+  const rec = { feedLPerPlant: 0.50, drainLPerPlant: 0.05, feedEc: 1.8, drainEc: 3.0 };
+  const e = FC.evaluateFeed(rec);
+  eq("排液率", e.drainPct, 10, 0.01);
+  eq("吸水量", e.uptakeLPerPlant, 0.45, 0.001);
+  const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35 });
+  has("排液率の不足を検知して必要量を出す", adv, "排液率", "warn");
+  // 吸水0.45 を排液率25%で満たすには 0.45/0.75 = 0.60 L
+  const a = adv.filter(function (x) { return x.topic === "排液率"; })[0];
+  eq("提案された給液量が0.60Lを含む", a.action.indexOf("0.6") >= 0 ? 1 : 0, 1);
+}
+
+head("4. 排液率が多すぎるとき");
+{
+  const rec = { feedLPerPlant: 1.0, drainLPerPlant: 0.5, feedEc: 1.5, drainEc: 1.2 };
+  const e = FC.evaluateFeed(rec);
+  eq("排液率", e.drainPct, 50, 0.01);
+  const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35 });
+  has("流しすぎを知らせる", adv, "排液率", "info");
+}
+
+head("5. 排液ECが上限を超えたら最優先で警告");
+{
+  const rec = { feedLPerPlant: 0.6, drainLPerPlant: 0.12, feedEc: 2.0, drainEc: 6.5 };
+  const e = FC.evaluateFeed(rec);
+  const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35, drainEcMax: 5.0 });
+  has("排液EC超過をdangerで出す", adv, "排液EC", "danger");
+  eq("dangerが先頭に来る", adv[0].level === "danger" ? 1 : 0, 1);
+}
+
+head("6. 窒素施用量の判定（ECではなくこちらが本体）");
+{
+  // 伊藤ら2022の培養液: NO3 16.8 + NH4 0.5 mmol/L
+  const nPerL = FC.nitrogenMgPerL({ NO3: 16.8, NH4: 0.5 });
+  eq("窒素濃度 mg/L（EC2.3相当の原液）", nPerL, 242.4, 0.5);
+  // EC1.4 に薄めたときの濃度
+  const nAt14 = nPerL * (1.4 / 2.3);
+  eq("EC1.4での窒素濃度", nAt14, 147.5, 0.5);
+
+  // 給液0.55L → 81 mg/株/日。冬の目標100には足りない
+  const rec = { feedLPerPlant: 0.55, drainLPerPlant: 0.165, feedEc: 1.4, drainEc: 0.7, nitrogenMgPerL: nAt14 };
+  const e = FC.evaluateFeed(rec);
+  eq("窒素施用量 mg/株/日", e.nitrogenMgPerPlant, 81.1, 0.5);
+  const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35, nitrogenMin: 100, nitrogenMax: 150 });
+  has("窒素不足を検知し、必要なECを出す", adv, "窒素施用量", "warn");
+  const a = adv.filter(function (x) { return x.topic === "窒素施用量"; })[0];
+  // 100mg を 0.55L で満たすには 181.8 mg/L → EC 1.4 × (181.8/147.5) = 1.73
+  eq("提案ECが1.73付近", a.action.indexOf("1.73") >= 0 ? 1 : 0, 1);
+  L.push("       → 「EC1.4」をそのまま使うと、給液量が少ない圃場では窒素が足りない");
+  L.push("         この場合の答えは EC1.73。借りてきた数字ではなく自分の給液量から出る");
+}
+
+head("7. すべて範囲内なら、その旨を返す");
+{
+  const nPerL = FC.nitrogenMgPerL({ NO3: 16.8, NH4: 0.5 }) * (1.73 / 2.3);
+  const rec = { feedLPerPlant: 0.55, drainLPerPlant: 0.165, feedEc: 1.73, drainEc: 1.0, nitrogenMgPerL: nPerL };
+  const e = FC.evaluateFeed(rec);
+  const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35, nitrogenMin: 100, nitrogenMax: 150 });
+  has("問題なしを返す", adv, "総合", "ok");
+  eq("窒素は目標内", e.nitrogenMgPerPlant >= 100 && e.nitrogenMgPerPlant <= 150 ? 1 : 0, 1);
+}
+
+head("8. 入力が欠けているとき壊れないこと");
+{
+  const e = FC.evaluateFeed({});
+  eq("排液率はnull", e.drainPct === null ? 1 : 0, 1);
+  eq("吸収率はnull", e.uptakeRatio === null ? 1 : 0, 1);
+  const adv = FC.feedAdvice({}, e, {});
+  eq("助言は落ちずに返る", adv.length > 0 ? 1 : 0, 1);
+  const e2 = FC.evaluateFeed({ feedLPerPlant: 0.5, drainLPerPlant: 0.15, feedEc: 1.5 });
+  eq("排液ECが無くても排液率は出る", e2.drainPct, 30, 0.01);
+}
+
+L.push("");
+L.push("========================================");
+L.push("  " + pass + " passed, " + fail + " failed");
+L.push("========================================");
+document.getElementById("out").textContent = L.join("\n");
+</script>
+</body></html>

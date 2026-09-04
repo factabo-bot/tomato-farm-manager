@@ -1,0 +1,358 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>property test</title></head>
+<body><pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+window.onerror = function (m, s, l, c) {
+  document.getElementById("out").textContent = "*** JSエラー ***\n" + m + "\n" + s + ":" + l + ":" + c;
+  return true;
+};
+const L = [];
+let pass = 0, fail = 0;
+const R = FertilizerCalc.round;
+const FC = FertilizerCalc;
+
+function ok(label, cond, extra) {
+  if (cond) { pass++; }
+  else { fail++; L.push("  FAIL " + label + (extra ? " | " + extra : "")); }
+}
+function head(s) { L.push(""); L.push("== " + s + " =="); }
+function note(s) { L.push("  " + s); }
+
+// 再現できる乱数（失敗したケースを後から追える）
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+const IONS = ["K", "Ca", "Mg", "NH4", "NO3", "H2PO4", "SO4"];
+
+// ============================================================
+// A. 組成づくり：アルゴリズムとは別の方法で「解があるか」を判定して突き合わせる
+// ============================================================
+// 電荷は各イオンの一次和なので、可動域の端だけ見れば解の有無が分かる。
+// 陽イオン合計の取りうる区間と、陰イオン合計の取りうる区間が重なれば解がある。
+// buildBalancedTarget の探索とは独立した判定なので、食い違えばどちらかがバグ
+function rangeFeasible(fixed) {
+  const ranges = REFERENCE_RANGES.ions;
+  const movable = {};
+  BALANCE_PRIORITY.forEach(function (a) { movable[a.ion] = true; });
+  let cMin = 0, cMax = 0, aMin = 0, aMax = 0;
+  Object.keys(ranges).forEach(function (k) {
+    const ch = ION_CHARGE[k];
+    if (ch === undefined) return;
+    const w = Math.abs(ch);
+    let lo, hi;
+    if (fixed[k] !== undefined && fixed[k] !== "") {
+      lo = hi = Number(fixed[k]);
+    } else if (k === "NH4") {
+      lo = hi = 0.5;                       // buildBalancedTarget の既定値
+    } else if (k === "Cl") {
+      lo = hi = 0;                         // 塩化物は入れない
+    } else if (movable[k]) {
+      lo = ranges[k].min; hi = ranges[k].max;
+    } else {
+      lo = hi = (ranges[k].min + ranges[k].max) / 2;   // 動かせない＝中央で固定
+    }
+    if (ch > 0) { cMin += lo * w; cMax += hi * w; }
+    else { aMin += lo * w; aMax += hi * w; }
+  });
+  return { ok: cMin <= aMax + 1e-6 && aMin <= cMax + 1e-6, cMin: cMin, cMax: cMax, aMin: aMin, aMax: aMax };
+}
+
+function randomFixed(rng) {
+  const f = {};
+  IONS.forEach(function (k) {
+    if (rng() >= 0.45) return;             // 45%の確率で固定する
+    const r = REFERENCE_RANGES.ions[k];
+    const span = Math.max(0.5, r.max - r.min);
+    let v;
+    const dice = rng();
+    if (dice < 0.75) v = r.min + rng() * span;                    // 範囲内
+    else if (dice < 0.88) v = Math.max(0, r.min - rng() * span);  // 下に外す
+    else v = r.max + rng() * span;                                // 上に外す
+    f[k] = Math.round(v * 100) / 100;
+  });
+  return f;
+}
+
+head("A. 組成づくり（buildBalancedTarget）を 400 パターンで検証");
+{
+  const rng = makeRng(20260904);
+  let mismatchFalseNeg = 0;   // 解があるのに「合わない」と返した
+  let mismatchFalsePos = 0;   // 解が無いのに「できた」と返した
+  let checkedFeasible = 0;
+  const samples = [];
+
+  for (let i = 0; i < 400; i++) {
+    const fixed = randomFixed(rng);
+    const got = FC.buildBalancedTarget(fixed);
+    const want = rangeFeasible(fixed);
+
+    if (want.ok && !got.feasible) {
+      mismatchFalseNeg++;
+      if (samples.length < 3) samples.push("解あり→合わないと返した: " + JSON.stringify(fixed)
+        + " 陽[" + R(want.cMin, 2) + "," + R(want.cMax, 2) + "] 陰[" + R(want.aMin, 2) + "," + R(want.aMax, 2) + "]");
+    }
+    if (!want.ok && got.feasible) {
+      mismatchFalsePos++;
+      if (samples.length < 3) samples.push("解なし→できたと返した: " + JSON.stringify(fixed));
+    }
+
+    if (got.feasible) {
+      checkedFeasible++;
+      // 成立したと言うからには、本当に電荷が釣り合っていること
+      const bal = FC.chargeBalance(got.target);
+      if (Math.abs(bal.diff) > 0.05) {
+        fail++;
+        L.push("  FAIL 成立と言ったのに電荷が合っていない | " + JSON.stringify(fixed) + " diff=" + R(bal.diff, 3));
+      }
+      // 固定した値は必ず保たれること
+      Object.keys(fixed).forEach(function (k) {
+        if (Math.abs(got.target[k] - fixed[k]) > 1e-6) {
+          fail++;
+          L.push("  FAIL 固定値が動いた | " + k + " " + fixed[k] + " → " + got.target[k]);
+        }
+      });
+    }
+    // 固定していない元素は、基準の範囲を出ないこと（解の有無によらず）
+    IONS.forEach(function (k) {
+      if (fixed[k] !== undefined) return;
+      if (k === "NH4") return;             // 既定0.5で固定扱い
+      const r = REFERENCE_RANGES.ions[k];
+      const v = got.target[k];
+      if (v < r.min - 1e-6 || v > r.max + 1e-6) {
+        fail++;
+        L.push("  FAIL 自動調整が基準を越えた | " + k + "=" + R(v, 2) + " 基準" + r.min + "〜" + r.max);
+      }
+    });
+  }
+
+  note("成立と判定されたのは 400 件中 " + checkedFeasible + " 件");
+  ok("解があるのに「合わない」と返さない", mismatchFalseNeg === 0, mismatchFalseNeg + " 件");
+  ok("解が無いのに「できた」と返さない", mismatchFalsePos === 0, mismatchFalsePos + " 件");
+  samples.forEach(function (s) { L.push("       " + s); });
+  if (mismatchFalseNeg === 0 && mismatchFalsePos === 0) {
+    pass += 2;
+    note("区間法による独立判定と 400 件すべて一致");
+  }
+}
+
+head("B. 逆算（solveRecipe）の往復：出した配合を組み立て直すと目標に戻るか");
+{
+  // 単肥の組み合わせでは作れない目標もある（Caを入れるとNO3が必ず付いてくる等）。
+  // その場合は逆算が警告を返す仕様なので、警告の有無で分けて検証する。
+  //   警告なし → 往復で必ず一致するはず
+  //   警告あり → ずれてよいが、ずれた元素について警告が出ていること
+  const rng = makeRng(777);
+  let clean = 0, warned = 0, worst = 0, worstCase = "";
+  let silentGap = 0;
+  for (let i = 0; i < 300; i++) {
+    const built = FC.buildBalancedTarget(randomFixed(rng));
+    if (!built.feasible) continue;
+    const target = built.target;
+    const sol = FC.solveRecipe(target, {});
+    if (!sol.picks || sol.picks.length === 0) continue;
+
+    const recon = {};
+    sol.picks.forEach(function (p) {
+      const chem = FERTILIZER_CHEM[p.id];
+      if (!chem || !chem.ions) return;
+      Object.keys(chem.ions).forEach(function (ion) {
+        recon[ion] = (recon[ion] || 0) + chem.ions[ion] * p.mmol;
+      });
+    });
+
+    let maxGap = 0, gapIon = "";
+    IONS.forEach(function (k) {
+      const d = Math.abs((Number(recon[k]) || 0) - (Number(target[k]) || 0));
+      if (d > maxGap) { maxGap = d; gapIon = k; }
+    });
+
+    const hasWarn = (sol.warnings || []).some(function (w) { return w.level === "warn"; });
+    if (hasWarn) {
+      warned++;
+    } else {
+      clean++;
+      if (maxGap > worst) { worst = maxGap; worstCase = gapIon + " " + R(maxGap, 4); }
+      if (maxGap > 0.02) {
+        fail++;
+        L.push("  FAIL 警告なしなのに往復がずれた | " + gapIon + " ずれ" + R(maxGap, 3)
+               + " / " + JSON.stringify(target));
+      }
+    }
+    // ずれているのに何も言わない、が最も危ない
+    if (maxGap > 0.02 && (sol.warnings || []).length === 0) {
+      silentGap++;
+      if (silentGap <= 2) L.push("  FAIL 目標に届かないのに警告が無い | " + gapIon
+        + " ずれ" + R(maxGap, 3) + " / " + JSON.stringify(target));
+    }
+  }
+  note("警告なし " + clean + " 件 / 警告あり " + warned + " 件");
+  note("警告なしのケースでの最大ずれ " + R(worst, 4) + " mmol/L（" + worstCase + "）");
+  ok("警告が無ければ往復で必ず目標に戻る", worst <= 0.02, "最大 " + R(worst, 4));
+  ok("目標に届かないときは黙って済ませない", silentGap === 0, silentGap + " 件");
+  if (worst <= 0.02) pass++;
+  if (silentGap === 0) pass++;
+}
+
+head("C. 配合→組成（calcSolution）の不変条件");
+{
+  const rng = makeRng(31415);
+  const FERT_IDS = Object.keys(FERTILIZER_CHEM).filter(function (id) {
+    return !FERTILIZER_CHEM[id].isAcid;   // 酸はタンク内pHの話が絡むので別扱い
+  });
+  let checked = 0, worstBal = 0;
+  for (let i = 0; i < 150; i++) {
+    // ランダムな配合を2タンクに入れる
+    const pick = function () {
+      const items = [];
+      const n = 1 + Math.floor(rng() * 4);
+      for (let j = 0; j < n; j++) {
+        const id = FERT_IDS[Math.floor(rng() * FERT_IDS.length)];
+        items.push({ id: id, kg: Math.round(rng() * 800) / 100 });
+      }
+      return items;
+    };
+    // 原水も電荷が釣り合った形で入れる。
+    // 実際の分析値も陽陰が揃うはずで、揃わないのは測り漏れ（HCO3やNaの欠測）。
+    // ここで片側だけ入れるとテスト側の入力ミスになる
+    const water = {};
+    if (rng() < 0.5) {
+      const cl = Math.round(rng() * 300) / 100;
+      const hco3 = Math.round(rng() * 400) / 100;
+      const ca = Math.round(rng() * 200) / 100;
+      water.Cl = cl;
+      water.HCO3 = hco3;
+      water.Ca = ca;
+      water.SO4 = ca;                    // Ca(2+) と SO4(2-) で相殺
+      water.Na = cl + hco3;              // Cl(-) と HCO3(-) を Na(+) で受ける
+    }
+    const out = FC.calcSolution({
+      tanks: [{ name: "A", tankL: 100, items: pick() }, { name: "B", tankL: 100, items: pick() }],
+      dilution: 100 + Math.floor(rng() * 100),
+      water: water,
+    });
+    checked++;
+    // 肥料塩も原水も中性なので、電荷は必ず釣り合う
+    if (out.balanceErrorPct > worstBal) worstBal = out.balanceErrorPct;
+    if (out.balanceErrorPct > 0.01) {
+      fail++;
+      L.push("  FAIL 電荷が釣り合わない | 誤差 " + R(out.balanceErrorPct, 3) + "%");
+    }
+    // ECは陽イオン合計に比例する。負にならない
+    if (out.ecEstimate < 0) { fail++; L.push("  FAIL ECが負になった"); }
+    // 濃度は負にならない
+    Object.keys(out.ions).forEach(function (k) {
+      if (out.ions[k] < -1e-9 && k !== "H") {
+        fail++; L.push("  FAIL 濃度が負 | " + k + "=" + out.ions[k]);
+      }
+    });
+  }
+  note(checked + " 件のランダム配合。電荷誤差の最大 " + R(worstBal, 4) + "%");
+  ok("肥料塩と原水だけなら電荷は必ず釣り合う", worstBal <= 0.01, R(worstBal, 4) + "%");
+  if (worstBal <= 0.01) pass++;
+}
+
+head("D. 中和酸を入れても電荷は釣り合う");
+{
+  const rng = makeRng(2718);
+  let worst = 0;
+  for (let i = 0; i < 120; i++) {
+    const anion = ["NO3", "H2PO4", "SO4"][Math.floor(rng() * 3)];
+    const hco3 = Math.round(rng() * 500) / 100;
+    const meq = Math.round(rng() * 600) / 100;
+    const out = FC.calcSolution({
+      tanks: [{ name: "A", tankL: 100, items: [{ id: "potassium_nitrate", kg: 1 + rng() * 5 }] }],
+      dilution: 120,
+      water: { HCO3: hco3, Na: hco3 },      // アルカリ度と対になる陽イオンを入れる
+      acid: { anion: anion, meqPerL: meq },
+    });
+    if (out.balanceErrorPct > worst) worst = out.balanceErrorPct;
+    if (out.balanceErrorPct > 0.01) {
+      fail++;
+      L.push("  FAIL 中和後に電荷が崩れた | " + anion + " " + meq + "meq HCO3=" + hco3
+             + " 誤差" + R(out.balanceErrorPct, 3) + "%");
+    }
+  }
+  note("120 件。電荷誤差の最大 " + R(worst, 4) + "%");
+  ok("酸を入れても電荷は釣り合う", worst <= 0.01, R(worst, 4) + "%");
+  if (worst <= 0.01) pass++;
+}
+
+head("E. 実測評価（evaluateFeed）の不変条件");
+{
+  const rng = makeRng(161803);
+  let bad = 0;
+  for (let i = 0; i < 300; i++) {
+    const feedL = 0.1 + rng() * 3;
+    const drainPct = rng() * 0.6;
+    const rec = {
+      feedLPerPlant: feedL,
+      drainLPerPlant: feedL * drainPct,
+      feedEc: 0.3 + rng() * 3,
+      drainEc: 0.3 + rng() * 8,
+      nitrogenMgPerL: rng() * 300,
+    };
+    const e = FC.evaluateFeed(rec);
+    // 排液率は入力どおり
+    if (Math.abs(e.drainPct - drainPct * 100) > 0.01) { bad++; L.push("  FAIL 排液率がずれる"); }
+    // 吸水量 = 給液 − 排液
+    if (Math.abs(e.uptakeLPerPlant - (rec.feedLPerPlant - rec.drainLPerPlant)) > 1e-9) {
+      bad++; L.push("  FAIL 吸水量がずれる");
+    }
+    // 吸収率の定義どおり
+    const wantRatio = 1 - (rec.drainEc * drainPct) / rec.feedEc;
+    if (Math.abs(e.uptakeRatio - wantRatio) > 1e-9) { bad++; L.push("  FAIL 吸収率の式がずれる"); }
+    // 窒素施用量 = 給液量 × 濃度
+    if (Math.abs(e.nitrogenMgPerPlant - feedL * rec.nitrogenMgPerL) > 1e-6) {
+      bad++; L.push("  FAIL 窒素施用量がずれる");
+    }
+    // 助言は必ず1件以上返る（無言で終わらない）
+    const adv = FC.feedAdvice(rec, e, { drainPctMin: 25, drainPctMax: 35, nitrogenMin: 100, nitrogenMax: 150, drainEcMax: 5 });
+    if (!adv || adv.length === 0) { bad++; L.push("  FAIL 助言が空"); }
+    // 排液ECが上限超えなら必ず danger が出る
+    if (rec.drainEc > 5 && !adv.some(function (a) { return a.level === "danger"; })) {
+      bad++; L.push("  FAIL 排液EC超過を見逃した | " + R(rec.drainEc, 2));
+    }
+  }
+  note("300 件のランダム入力");
+  ok("評価の式と助言が定義どおりに動く", bad === 0, bad + " 件の逸脱");
+  if (bad === 0) pass++;
+}
+
+head("F. 中和酸の価数：どの酸でも meq と mmol の関係が保たれる");
+{
+  let bad = 0;
+  [["NO3", 1], ["H2PO4", 1], ["SO4", 2]].forEach(function (p) {
+    for (let meq = 0.1; meq <= 6; meq += 0.1) {
+      const ions = { K: 0, Ca: 0, Mg: 0, NH4: 0, Na: 5, H: 0,
+                     NO3: 0, H2PO4: 0, SO4: 0, Cl: 0, HCO3: 5 };
+      FC.applyAcidNeutralization(ions, { anion: p[0], meqPerL: meq });
+      const want = meq / p[1];
+      if (Math.abs(ions[p[0]] - want) > 1e-9) {
+        bad++;
+        if (bad <= 2) L.push("  FAIL " + p[0] + " " + R(meq, 2) + "meq → " + R(ions[p[0]], 4) + "（期待 " + R(want, 4) + "）");
+      }
+      if (Math.abs(FC.chargeBalance(ions).diff) > 1e-9) {
+        bad++;
+        if (bad <= 4) L.push("  FAIL 中和後の電荷が崩れた | " + p[0] + " " + R(meq, 2) + "meq");
+      }
+    }
+  });
+  ok("価数の換算と電荷収支が全域で正しい", bad === 0, bad + " 件");
+  if (bad === 0) pass++;
+}
+
+L.push("");
+L.push("========================================");
+L.push("  " + pass + " passed, " + fail + " failed");
+L.push("========================================");
+document.getElementById("out").textContent = L.join("\n");
+</script>
+</body></html>

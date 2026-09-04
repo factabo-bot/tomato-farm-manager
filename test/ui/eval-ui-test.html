@@ -1,0 +1,118 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>eval ui test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:375px;height:700px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function show() { document.getElementById("debug").textContent = out.join("\n") + "\n\n  PASS " + pass + " / FAIL " + fail; }
+const f = document.getElementById("f");
+
+function set(d, id, v) {
+  const e = d.getElementById(id);
+  e.value = v;
+  e.dispatchEvent(new d.defaultView.Event("input", { bubbles: true }));
+}
+
+setTimeout(function () {
+  const d = f.contentDocument;
+  const w = f.contentWindow;
+  // モード分割後は、まずモードを選ばないと全セクションが hidden になる
+  d.getElementById("mode-daily").click();
+  // hidden 要素は getBoundingClientRect が全ゼロを返す。
+  // レイアウト検査が「中身を見ずに合格」しないよう、可視性を先に確かめる
+  const visible = function (id) { const e = d.getElementById(id); return !!(e && e.offsetParent); };
+
+  out.push("=== 1. 画面が出ているか ===");
+  ok("入力欄がある", !!d.getElementById("ev-feed") && !!d.getElementById("ev-drain-ec"));
+  ok("目標値の折りたたみがある", !!d.getElementById("ev-drain-min"));
+  ok("既定の排液率が25〜35", d.getElementById("ev-drain-min").value === "25" && d.getElementById("ev-drain-max").value === "35");
+  ok("既定の窒素が100〜150", d.getElementById("ev-n-min").value === "100" && d.getElementById("ev-n-max").value === "150");
+  ok("最初は案内文だけ", d.getElementById("ev-result").textContent.indexOf("給液量を入れると") >= 0);
+
+  out.push("");
+  out.push("=== 2. 伊藤ら低濃度区の状態を入れる ===");
+  // タンクに肥料を入れて処方を作る（窒素濃度を出すため）
+  // seed で入れてある前提。無ければ窒素判定はスキップされる
+  set(d, "ev-feed", "0.55");
+  set(d, "ev-drain", "0.165");
+  set(d, "ev-feed-ec", "1.4");
+  set(d, "ev-drain-ec", "0.7");
+
+  setTimeout(function () {
+    const box = d.getElementById("ev-result");
+    const t = box.textContent;
+    const cells = box.querySelectorAll(".fert-ev-cell");
+    ok("数字のセルが4つ出る", cells.length === 4, "cells=" + cells.length);
+    const vals = [];
+    cells.forEach(function (c) {
+      vals.push(c.querySelector(".fert-ev-label").textContent + "=" + c.querySelector(".fert-ev-value").textContent);
+    });
+    out.push("       " + vals.join(" / "));
+    ok("排液率30%が出る", t.indexOf("30") >= 0);
+    ok("吸収率85%が出る", t.indexOf("85") >= 0);
+    ok("排液EC/給液ECの倍率が出る", t.indexOf("0.5 倍") >= 0 || t.indexOf("0.50 倍") >= 0, t.match(/給液EC の [\d.]+ 倍/) ? t.match(/給液EC の [\d.]+ 倍/)[0] : "-");
+    ok("「樹が吸えている」と出る", t.indexOf("樹が吸えている") >= 0);
+
+    out.push("");
+    out.push("=== 3. 排液率が足りない状態 ===");
+    set(d, "ev-drain", "0.055");   // 10%
+    setTimeout(function () {
+      const t2 = d.getElementById("ev-result").textContent;
+      ok("排液率の警告が出る", t2.indexOf("排液率") >= 0 && t2.indexOf("下回っています") >= 0);
+      ok("必要な給液量が数字で出る", /給液量を [\d.]+ → [\d.]+ L\/株\/日 に増やす/.test(t2),
+         (t2.match(/給液量を [\d.]+ → [\d.]+ L\/株\/日 に増やす/) || ["-"])[0]);
+      const warns = d.querySelectorAll(".fert-advice-warn, .fert-advice-danger");
+      ok("警告のスタイルが当たっている", warns.length > 0, "warn=" + warns.length);
+
+      out.push("");
+      out.push("=== 4. 排液ECが上限超え ===");
+      set(d, "ev-drain", "0.165");
+      set(d, "ev-drain-ec", "6.5");
+      setTimeout(function () {
+        const t3 = d.getElementById("ev-result").textContent;
+        ok("dangerが出る", d.querySelectorAll(".fert-advice-danger").length === 1);
+        ok("リーチングを促す", t3.indexOf("リーチング") >= 0);
+        const first = d.querySelector(".fert-advice");
+        ok("dangerが先頭", first && first.className.indexOf("danger") >= 0);
+
+        out.push("");
+        out.push("=== 5. 目標値を自分の圃場に合わせて変えられる ===");
+        set(d, "ev-drain-ec", "0.7");
+        set(d, "ev-drain", "0.055");  // 10%
+        set(d, "ev-drain-min", "8");  // ロックウール想定に変更
+        set(d, "ev-drain-max", "20");
+        setTimeout(function () {
+          const t4 = d.getElementById("ev-result").textContent;
+          ok("目標を変えると排液率10%が範囲内になる", t4.indexOf("下回っています") < 0, "10%が8〜20%に収まる");
+
+          out.push("");
+          out.push("=== 6. 375px幅ではみ出さない ===");
+          // hidden 要素は getBoundingClientRect が全ゼロを返す。
+          // 可視を先に確かめないと、この検査は「中身を見ずに合格」する
+          ok("検査対象が見えている", visible("ev-result") && visible("sec-evaluate"));
+          ok("designのセクションは隠れている", !visible("sec-result") && !visible("sec-cost"));
+          const docW = d.documentElement.scrollWidth;
+          ok("横スクロールが出ない", docW <= 375, "scrollWidth=" + docW);
+          const over = [];
+          d.querySelectorAll("#ev-result *, .fert-ev-grid, .fert-advice").forEach(function (elm) {
+            const r = elm.getBoundingClientRect();
+            if (r.right > 376) over.push(elm.className + "(" + Math.round(r.right) + ")");
+          });
+          ok("評価まわりの要素がはみ出さない", over.length === 0, over.slice(0, 3).join(", "));
+
+          out.push("");
+          out.push("=== 7. 保存される ===");
+          const st = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}");
+          ok("evaluate が保存されている", st.evaluate && st.evaluate.feedL === "0.55", JSON.stringify(st.evaluate));
+          show();
+        }, 150);
+      }, 150);
+    }, 150);
+  }, 250);
+}, 1200);
+</script>
+</body></html>

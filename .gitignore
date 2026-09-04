@@ -1,2 +1,5 @@
-.DS_Store
+﻿.DS_Store
 Thumbs.db
+
+# テスト実行時に frontend をコピーする先（毎回作り直す）
+test/_work/

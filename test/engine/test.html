@@ -1,0 +1,339 @@
+﻿<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>fertilizer calc test</title></head>
+<body>
+<pre id="out">running...</pre>
+<script src="../_work/fertilizers-chem.js"></script>
+<script src="../_work/fertilizer.js"></script>
+<script>
+"use strict";
+
+window.onerror = function (msg, src, line, col, err) {
+  document.getElementById("out").textContent =
+    "*** JSエラー ***\n" + msg + "\n" + src + " : " + line + ":" + col +
+    "\n\n" + (err && err.stack ? err.stack : "");
+  return true;
+};
+
+const lines = [];
+let pass = 0, fail = 0;
+
+function log(s) { lines.push(s); }
+
+function assertClose(label, actual, expected, tol) {
+  const diff = Math.abs(actual - expected);
+  const ok = diff <= tol;
+  if (ok) pass++; else fail++;
+  log((ok ? "  OK  " : "  NG  ") + label
+    + " | 計算=" + FertilizerCalc.round(actual, 4)
+    + " 期待=" + expected
+    + " 差=" + FertilizerCalc.round(diff, 4));
+}
+
+// ============================================================
+// テスト1: 達子ファーム処方（研修先の実運用処方）
+// 100Lタンク・120倍希釈。処方の成分表と照合する。
+// ============================================================
+log("=== テスト1: 達子ファーム処方 (100Lタンク・120倍) ===");
+
+const tatsuko = {
+  dilution: 120,
+  tanks: [
+    { name: "A液", tankL: 100, items: [
+      { id: "phosphoric_acid",         kg: 0.2 },
+      { id: "magnesium_nitrate_6h",    kg: 5.0 },
+      { id: "mono_potassium_phosphate",kg: 5.0 },
+      { id: "potassium_nitrate",       kg: 5.0 },
+    ]},
+    { name: "B液", tankL: 100, items: [
+      { id: "orient_mix",              kg: 0.4 },
+      { id: "chelated_iron_dtpa_11",   kg: 0.4 },
+      { id: "calcium_nitrate_4h",      kg: 5.0 },
+      { id: "potassium_nitrate",       kg: 2.5 },
+    ]},
+  ],
+};
+
+const r = FertilizerCalc.calcSolution(tatsuko);
+const meq = (n) => FertilizerCalc.ionMeq(r.ions, n);
+
+log("[主要要素 me/L] 処方表の記載値と照合");
+assertClose("硝酸窒素",       meq("NO3"),       13.0, 0.15);
+assertClose("アンモニア窒素", meq("NH4"),        0.0, 0.001);
+assertClose("リン酸(3価換算)", r.phosphateMeq3,   9.7, 0.15);
+assertClose("カリウム",       meq("K"),          9.3, 0.15);
+assertClose("カルシウム",     meq("Ca"),         3.5, 0.10);
+assertClose("マグネシウム",   meq("Mg"),         3.3, 0.10);
+
+log("[微量要素 mg/L] 処方表の記載値と照合");
+assertClose("ホウ素",       r.micro.B,  1.09, 0.02);
+assertClose("銅",           r.micro.Cu, 0.25, 0.02);
+assertClose("鉄",           r.micro.Fe, 3.67, 0.02);
+assertClose("マンガン",     r.micro.Mn, 2.12, 0.02);
+assertClose("モリブデン",   r.micro.Mo, 0.21, 0.02);
+assertClose("亜鉛",         r.micro.Zn, 1.15, 0.02);
+
+log("[電荷バランス] 肥料塩と酸は中性なので誤差ゼロになるはず");
+assertClose("電荷バランス誤差%", r.balanceErrorPct, 0.0, 0.001);
+log("       陽 " + FertilizerCalc.round(r.cationMeq, 3)
+  + " / 陰 " + FertilizerCalc.round(r.anionMeq, 3) + " meq/L");
+log("       ※H⁺ " + FertilizerCalc.round(r.ions.H, 4) + " mmol/L（リン酸由来）を陽イオンに算入");
+
+log("[EC推定]");
+log("       計算 " + FertilizerCalc.round(r.ecEstimate, 3) + " mS/cm ／ 処方表 1.77");
+log("       実効係数 " + FertilizerCalc.round(1.77 / r.cationMeq, 4) + "（既定は " + 0.10 + "）");
+
+log("[mmol/L]");
+["K","Ca","Mg","NH4","NO3","H2PO4","SO4","Cl"].forEach((k) => {
+  log("       " + k + ": " + FertilizerCalc.round(r.ions[k], 3));
+});
+
+log("[警告]");
+if (r.warnings.length === 0) log("       なし");
+r.warnings.forEach((w) => log("       [" + w.level + "] " + w.message));
+
+// ============================================================
+// テスト2: 沈殿チェック（CaとSO4を同じタンクに入れる）
+// ============================================================
+log("");
+log("=== テスト2: 沈殿チェック ===");
+const bad = FertilizerCalc.calcSolution({
+  dilution: 100,
+  tanks: [{ name: "単一タンク", tankL: 100, items: [
+    { id: "calcium_nitrate_4h",   kg: 5.0 },
+    { id: "magnesium_sulfate_7h", kg: 5.0 },
+  ]}],
+});
+const hasPrecipWarn = bad.warnings.some((w) => w.message.indexOf("石膏") >= 0);
+if (hasPrecipWarn) { pass++; log("  OK   CaとSO4の同居を検出した"); }
+else { fail++; log("  NG   CaとSO4の同居を検出できていない"); }
+
+const bad2 = FertilizerCalc.calcSolution({
+  dilution: 100,
+  tanks: [{ name: "単一タンク", tankL: 100, items: [
+    { id: "calcium_nitrate_4h",       kg: 5.0 },
+    { id: "mono_potassium_phosphate", kg: 5.0 },
+  ]}],
+});
+const hasPWarn = bad2.warnings.some((w) => w.message.indexOf("リン酸カルシウム") >= 0);
+if (hasPWarn) { pass++; log("  OK   CaとH2PO4の同居を検出した"); }
+else { fail++; log("  NG   CaとH2PO4の同居を検出できていない"); }
+
+// ============================================================
+// テスト3: 原水を入れたときの電荷バランス
+// NaClを含む原水。Naを数えないと収支が崩れることの確認
+// ============================================================
+log("");
+log("=== テスト3: 原水込みの電荷バランス ===");
+// 原水の分析値そのものが電荷的に成立していること（陽=陰）が前提。
+// 陽 Ca1.5×2 + Mg0.5×2 + Na1.69 = 5.69 ／ 陰 Cl1.69 + SO4 0.5×2 + HCO3 3.0 = 5.69
+const validWater = { Ca: 1.5, Mg: 0.5, Na: 1.69, Cl: 1.69, SO4: 0.5, HCO3: 3.0 };
+const withWater = FertilizerCalc.calcSolution({
+  dilution: 120, tanks: tatsuko.tanks, water: validWater,
+});
+log("       陽 " + FertilizerCalc.round(withWater.cationMeq, 3)
+  + " / 陰 " + FertilizerCalc.round(withWater.anionMeq, 3) + " meq/L");
+assertClose("原水込みでも誤差ゼロ", withWater.balanceErrorPct, 0.0, 0.001);
+log("       Ca " + FertilizerCalc.round(withWater.ions.Ca, 3) + " mmol/L（原水1.5を足した）");
+log("       EC " + FertilizerCalc.round(withWater.ecEstimate, 3) + " mS/cm");
+
+// --- 原水の分析値に抜けがある場合を検出できるか ---
+// Cl⁻ を数えて対の Na⁺ を数えていない ＝ CFアプリの誤差7.77%と同じ状況
+log("");
+log("  [検証] 原水のNa⁺を数え忘れた場合、エンジンが気づけるか");
+const noNa = FertilizerCalc.calcSolution({
+  dilution: 120, tanks: tatsuko.tanks,
+  water: { Ca: 1.5, Mg: 0.5, Cl: 1.69, SO4: 0.5, HCO3: 3.0 },
+});
+const naWarn = noNa.warnings.some((w) => w.message.indexOf("電荷バランス") >= 0);
+if (naWarn && noNa.balanceErrorPct > 1) {
+  pass++;
+  log("  OK   誤差 " + FertilizerCalc.round(noNa.balanceErrorPct, 2) + "% を検出して警告を出した");
+} else {
+  fail++;
+  log("  NG   Na⁺の数え忘れを検出できていない");
+}
+
+// --- そもそも原水の分析値が電荷的に成立していない場合 ---
+log("  [検証] 電荷が合わない原水（実在しない水）を弾けるか");
+const badWater = FertilizerCalc.calcSolution({
+  dilution: 120, tanks: tatsuko.tanks,
+  water: { Ca: 1.5, Mg: 0.5, Na: 1.69, Cl: 1.69, SO4: 0.5, HCO3: 1.0 },
+});
+if (badWater.balanceErrorPct > 5) {
+  pass++;
+  log("  OK   誤差 " + FertilizerCalc.round(badWater.balanceErrorPct, 2) + "% を検出（HCO3が2.0meq/L不足している水）");
+} else {
+  fail++;
+  log("  NG   成立しない原水を検出できていない");
+}
+
+// ============================================================
+// テスト4: 中和酸（HCO3を引く処理）
+// ============================================================
+log("");
+log("=== テスト4: 中和酸 ===");
+// 陽 Ca1.4×2 + Na1.69 = 4.49 ／ 陰 Cl1.69 + HCO3 2.8 = 4.49 で成立させる
+const acid = FertilizerCalc.calcSolution({
+  dilution: 120,
+  tanks: tatsuko.tanks,
+  water: { Ca: 1.4, Na: 1.69, Cl: 1.69, HCO3: 2.8 },
+  acid: { anion: "NO3", meqPerL: 1.8 },
+});
+log("       原水HCO3 2.8 → 硝酸1.8meq/Lで中和");
+log("       残留HCO3 " + FertilizerCalc.round(acid.ions.HCO3, 3) + " mmol/L（期待 1.0）");
+assertClose("残留アルカリ度", acid.ions.HCO3, 1.0, 0.001);
+assertClose("中和後も電荷バランスはゼロ", acid.balanceErrorPct, 0.0, 0.001);
+
+// ============================================================
+// テスト5: 原液pHの許容範囲
+// ============================================================
+log("");
+log("=== テスト5: 原液pHの許容範囲 ===");
+const bTank = FertilizerCalc.calcSolution(tatsuko).tanks[1];
+const range = FertilizerCalc.stockPhRange({ items: tatsuko.tanks[1].items });
+log("       B液の許容範囲: pH " + range.min + " 〜 " + range.max);
+log("       根拠: " + range.sources.map((s) => s.name + "(" + s.min + "-" + s.max + ")").join(" / "));
+if (range.min === 3.0 && range.max === 6.5) { pass++; log("  OK   オリエントミックスとキレート鉄の範囲が正しく重なった"); }
+else { fail++; log("  NG   許容範囲の計算が想定と違う"); }
+
+// ============================================================
+// テスト6: EC係数の実測補正
+// ============================================================
+log("");
+log("=== テスト6: EC係数の実測補正 ===");
+
+// 既定係数のまま
+log("  [既定係数] " + FertilizerCalc.round(r.ecCoefficient, 4)
+  + " → EC " + FertilizerCalc.round(r.ecEstimate, 3)
+  + "（実測1.77に対し " + FertilizerCalc.round((r.ecEstimate - 1.77) / 1.77 * 100, 1) + "%）");
+if (r.ecCoefficientIsDefault) { pass++; log("  OK   既定係数を使ったことが出力に出る"); }
+else { fail++; log("  NG   既定係数フラグが立っていない"); }
+
+// 実測値を渡して、補正を促す警告が出るか
+const withMeasured = FertilizerCalc.calcSolution(
+  Object.assign({}, tatsuko, { ecMeasured: 1.77 })
+);
+const ecWarn = withMeasured.warnings.some((w) => w.message.indexOf("補正") >= 0);
+if (ecWarn) {
+  pass++;
+  log("  OK   実測とのズレを検出して補正値を提示した");
+  withMeasured.warnings.filter((w) => w.message.indexOf("補正") >= 0)
+    .forEach((w) => log("         " + w.message));
+} else { fail++; log("  NG   実測とのズレを検出できていない"); }
+
+// 1.77 ÷ 16.167 = 0.1095。分母の陽イオン合計にはリン酸由来のH⁺ 0.1446 を含む
+// （H⁺を除いた16.02で割ると0.1105になるが、それは数え漏れ）
+assertClose("逆算した係数", withMeasured.ecCoefficientDerived, 0.1095, 0.0005);
+
+// 補正した係数を使うと実測に一致するか
+const corrected = FertilizerCalc.calcSolution(
+  Object.assign({}, tatsuko, { ecCoefficient: withMeasured.ecCoefficientDerived })
+);
+assertClose("補正後のEC推定が実測に一致", corrected.ecEstimate, 1.77, 0.005);
+if (!corrected.ecCoefficientIsDefault) { pass++; log("  OK   補正済みであることが出力に出る"); }
+else { fail++; log("  NG   補正済みフラグが立っていない"); }
+log("  [補正後] 係数 " + FertilizerCalc.round(corrected.ecCoefficient, 4)
+  + " → EC " + FertilizerCalc.round(corrected.ecEstimate, 3) + "（実測 1.77）");
+
+// 補正しても組成そのものは変わらないこと（係数はEC表示だけに効く）
+assertClose("補正で組成は変わらない(K)", corrected.ions.K, r.ions.K, 0.0001);
+assertClose("補正で電荷バランスも変わらない", corrected.balanceErrorPct, 0.0, 0.001);
+
+// ============================================================
+// テスト7: 逆算（目標組成 → 単肥量）と往復検証
+// ============================================================
+log("");
+log("=== テスト7: 逆算 ===");
+
+// 電荷が釣り合う目標を作る。塩だけで組むには 陽=陰 でなければならない。
+//   陽 K9.5 + Ca5.4×2 + Mg2.4×2 = 25.1 meq/L
+//   陰 NO3 + P1.5 + SO4 4.4×2 = 25.1  →  NO3 = 14.8
+const target = { K: 9.5, Ca: 5.4, Mg: 2.4, NH4: 0, NO3: 14.8, H2PO4: 1.5, SO4: 4.4 };
+const sol = FertilizerCalc.solveRecipe(target, {});
+
+log("  [目標] K9.5 Ca5.4 Mg2.4 NH4:0 NO3:14.8 P1.5 SO4:4.4 mmol/L（電荷が釣り合う組成）");
+log("  [目標の電荷] 陽 " + FertilizerCalc.round(sol.targetBalance.cationMeq, 2)
+  + " / 陰 " + FertilizerCalc.round(sol.targetBalance.anionMeq, 2)
+  + " meq/L（誤差 " + FertilizerCalc.round(sol.targetBalance.errorPct, 2) + "%）");
+log("  [割り当て] " + sol.note);
+sol.picks.forEach((p) => {
+  log("       " + p.name + "  " + FertilizerCalc.round(p.mmol, 3) + " mmol/L"
+    + "  → " + FertilizerCalc.round(FertilizerCalc.mmolToKg(p.mmol, p.id, 100, 120), 2) + " kg（100L・120倍）");
+});
+
+log("  [目標との差]");
+["K","Ca","Mg","NH4","NO3","H2PO4","SO4"].forEach((k) => {
+  assertClose("  " + k, sol.supplied[k], target[k], 0.01);
+});
+
+if (sol.warnings.length === 0) { pass++; log("  OK   警告なし（目標が成立している）"); }
+else { sol.warnings.forEach((w) => log("       [" + w.level + "] " + w.message)); }
+
+// --- 往復検証: 逆算で出したkgを順方向の計算に戻す ---
+log("");
+log("  [往復検証] 逆算したkgを calcSolution に入れ直す");
+const backItems = sol.picks.map((p) => ({
+  id: p.id,
+  kg: FertilizerCalc.mmolToKg(p.mmol, p.id, 100, 120),
+}));
+const back = FertilizerCalc.calcSolution({
+  dilution: 120,
+  tanks: [{ name: "全部入り", tankL: 100, items: backItems }],
+});
+["K","Ca","Mg","NH4","NO3","H2PO4","SO4"].forEach((k) => {
+  assertClose("  往復 " + k, back.ions[k], target[k], 0.02);
+
+});
+log("       EC " + FertilizerCalc.round(back.ecEstimate, 3)
+  + " / 電荷誤差 " + FertilizerCalc.round(back.balanceErrorPct, 3) + "%");
+assertClose("  往復後も電荷バランスはゼロ", back.balanceErrorPct, 0, 0.001);
+
+// 沈殿の警告が出るはず（Caと硫酸・リン酸を1タンクに入れているため）
+const backPrecip = back.warnings.filter((w) => w.level === "danger").length;
+if (backPrecip >= 1) { pass++; log("  OK   1タンクに全部入れたので沈殿警告が出た（" + backPrecip + "件）"); }
+else { fail++; log("  NG   沈殿警告が出ていない"); }
+
+// --- 電荷が合わない目標を入口で弾けるか ---
+log("");
+log("  [電荷が合わない目標] オランダ標準の公表値をそのまま入れる");
+const dutch = FertilizerCalc.solveRecipe(
+  { K: 9.5, Ca: 5.4, Mg: 2.4, NH4: 1.2, NO3: 15, H2PO4: 1.5, SO4: 4.4 }, {});
+const balWarn = dutch.warnings.some((w) => w.message.indexOf("目標組成の電荷") >= 0);
+if (balWarn) {
+  pass++;
+  log("  OK   目標の電荷ズレを入口で検出した");
+  dutch.warnings.filter((w) => w.message.indexOf("目標組成の電荷") >= 0)
+    .forEach((w) => log("       " + w.message));
+} else { fail++; log("  NG   目標の電荷ズレを検出できていない"); }
+
+// --- 達成不能なケース ---
+log("");
+log("  [達成不能な目標] NO3を低く設定する");
+const badTarget = FertilizerCalc.solveRecipe(
+  { K: 9.5, Ca: 5.4, Mg: 2.4, NH4: 0, NO3: 8.0, H2PO4: 1.5, SO4: 4.4 }, {});
+const no3Warn = badTarget.warnings.some((w) => w.message.indexOf("硝酸が目標を") >= 0);
+if (no3Warn) {
+  pass++;
+  log("  OK   硝酸の超過を検出した");
+  badTarget.warnings.filter((w) => w.level === "warn").forEach((w) => log("       " + w.message));
+} else { fail++; log("  NG   硝酸の超過を検出できていない"); }
+
+// --- 原水を差し引くか ---
+log("");
+log("  [原水込み] Ca2.0・Mg0.5・SO4 1.0 を含む原水");
+const withW = FertilizerCalc.solveRecipe(target, { Ca: 2.0, Mg: 0.5, SO4: 1.0 });
+const caPick = withW.picks.find((p) => p.id === "calcium_nitrate_4h");
+assertClose("  硝酸Caは原水を引いた3.4になる", caPick ? caPick.mmol : 0, 3.4, 0.01);
+log("       原水にCaがあるぶん硝酸カルシウムが減る");
+
+// ============================================================
+log("");
+log("============================================");
+log("  PASS " + pass + " / FAIL " + fail);
+log("============================================");
+
+document.getElementById("out").textContent = lines.join("\n");
+</script>
+</body>
+</html>

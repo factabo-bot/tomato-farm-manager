@@ -1,0 +1,140 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>cost ui test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:390px;height:600px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function show() { document.getElementById("debug").textContent = out.join("\n"); }
+const f = document.getElementById("f");
+
+setTimeout(function () {
+  const d = f.contentDocument;
+  const w = f.contentWindow;
+  // モード分割後は、まずモードを選ばないと全セクションが hidden になる
+  d.getElementById("mode-cost").click();
+  // hidden 要素は getBoundingClientRect が全ゼロを返す。
+  // レイアウト検査が「中身を見ずに合格」しないよう、可視性を先に確かめる
+  const visible = function (id) { const e = d.getElementById(id); return !!(e && e.offsetParent); };
+
+  // ---- ⑧ 規模の入力 ----
+  out.push("=== ⑧ 規模を入れると持ち日数と年間コストが出る ===");
+  const set = function (id, v) {
+    const e = d.getElementById(id);
+    e.value = v;
+    e.dispatchEvent(new Event("input"));
+  };
+  set("scale-plants", "3000");
+  set("scale-peak", "2500");
+  set("scale-avg", "1100");
+  set("scale-days", "270");
+
+  setTimeout(function () {
+    const rows = d.querySelectorAll("#cost-result .fert-scale-row");
+    ok("規模の行が出た", rows.length >= 6, "rows=" + rows.length);
+    const txt = [];
+    rows.forEach(function (r) {
+      const l = r.querySelector(".fert-scale-label").textContent;
+      const v = r.querySelector(".fert-scale-value").textContent;
+      txt.push(l + "|" + v);
+      out.push("       " + l + (v ? " : " + v : ""));
+    });
+    const joined = txt.join("\n");
+    // ピーク2500mL × 3000株 = 7,500L/日、平均1100mL → 3,300L/日
+    ok("ピークの給液量が7,500L", joined.indexOf("7,500") >= 0);
+    ok("平均の給液量が3,300L", joined.indexOf("3,300") >= 0);
+    ok("ピークと平均が分かれて表示される",
+       joined.indexOf("設備の設計") >= 0 && joined.indexOf("費用の見積もり") >= 0);
+    ok("年間コストが出る", joined.indexOf("年間の肥料代") >= 0);
+
+    // 参照表が出ているか。
+    // 2026-09-04に、夏秋作ミニトマトの4か月ぶん（研報53号）から
+    // 促成長期どりの10か月ぶん（伊藤ら2022・研報54号）に差し替えた
+    const refRows = d.querySelectorAll("#scale-ref tbody tr");
+    ok("月別の参照表が出ている", refRows.length === 10, "rows=" + refRows.length);
+
+    // 保存されているか（再読込しても残る）
+    const st = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}");
+    ok("規模の入力が保存される",
+       st.scale && st.scale.plants === "3000" && st.scale.peak === "2500" && st.scale.avg === "1100",
+       JSON.stringify(st.scale));
+
+    // ---- ⑥ 元素を固定して組成を作る ----
+    // ここから先は design モードのセクション。切り替えないと hidden のまま操作することになり、
+    // 「動いているように見えて実は見えていない」状態を検査してしまう
+    d.getElementById("mode-design").click();
+    // ④逆算グループは既定で畳まれている。開かないと可視判定が通らない
+    if (d.getElementById("grp-reverse")) d.getElementById("grp-reverse").open = true;
+    out.push("");
+    out.push("=== ⑥ Caを固定して残りを釣り合わせる ===");
+    ok("designモードに切り替わり、対象が見えている", visible("lock-inputs") && !visible("cost-result"));
+    const lockInputs = d.querySelectorAll("#lock-inputs input");
+    ok("固定用の入力欄が7つ", lockInputs.length === 7, "n=" + lockInputs.length);
+
+    // Ca の欄を探して 6.0 を入れる
+    let caInput = null;
+    d.querySelectorAll("#lock-inputs .fert-water-row").forEach(function (row) {
+      if (row.querySelector("label").textContent.indexOf("Ca") === 0) caInput = row.querySelector("input");
+    });
+    ok("Caの欄を特定できた", !!caInput);
+    caInput.value = "6";
+    caInput.dispatchEvent(new Event("input"));
+    d.getElementById("build-target").click();
+
+    setTimeout(function () {
+      const box = d.getElementById("build-result");
+      const warn = box.querySelector(".fert-warn");
+      ok("結果メッセージが出た", !!warn, warn ? warn.textContent.slice(0, 46) : "-");
+      const trs = box.querySelectorAll("tbody tr");
+      ok("組成の表が出た", trs.length === 7, "rows=" + trs.length);
+      const vals = {};
+      trs.forEach(function (tr) {
+        const td = tr.querySelectorAll("td");
+        const key = td[0].textContent.replace("🔒 ", "").split(" ")[0];
+        vals[key] = td[1].textContent;
+      });
+      out.push("       " + Object.keys(vals).map(function (k) { return k + "=" + vals[k]; }).join(" "));
+      ok("Caは固定値6のまま", vals.Ca === "6", vals.Ca);
+      ok("固定した行に鍵マークが付く",
+         trs[1].textContent.indexOf("🔒") >= 0 || Array.prototype.some.call(trs, function (t) { return t.textContent.indexOf("🔒") >= 0; }));
+
+      // 逆算に流す
+      const applyBtn = Array.prototype.slice.call(box.querySelectorAll("button"))
+        .filter(function (b) { return b.textContent.indexOf("逆算に入れる") >= 0; })[0];
+      ok("逆算に入れるボタンがある", !!applyBtn);
+      if (applyBtn) {
+        applyBtn.click();
+        setTimeout(function () {
+          const st2 = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}");
+          ok("目標組成に入った(Ca)", Number(st2.target.Ca) === 6, "Ca=" + st2.target.Ca);
+          const cat = d.getElementById("target-cation").textContent;
+          const ani = d.getElementById("target-anion").textContent;
+          const note = d.getElementById("target-balance-note").textContent;
+          out.push("       逆算側の電荷: 陽 " + cat + " / 陰 " + ani + " " + note);
+          ok("逆算側でも電荷が釣り合う", note.indexOf("釣り合") >= 0, note.trim());
+
+          // 実際に配合まで出せるか
+          d.getElementById("solve").click();
+          setTimeout(function () {
+            const solveRows = d.querySelectorAll("#solve-result tbody tr");
+            ok("配合が出た", solveRows.length >= 4, "肥料 " + solveRows.length + " 種");
+            const warns = d.querySelectorAll("#solve-result .fert-warn-warn");
+            ok("警告なしで配合できた", warns.length === 0,
+               warns.length ? warns[0].textContent.slice(0, 40) : "警告なし");
+
+            out.push("");
+            out.push("============================");
+            out.push("  PASS " + pass + " / FAIL " + fail);
+            out.push("============================");
+            show();
+          }, 400);
+        }, 400);
+      } else { show(); }
+    }, 400);
+  }, 500);
+}, 1000);
+</script>
+</body></html>

@@ -1,0 +1,113 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>recipe save test</title>
+<style>
+ body{margin:0;font-family:monospace}
+ #debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}
+ iframe{width:390px;height:600px;border:1px solid #ccc}
+</style></head>
+<body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(label, cond, extra) {
+  if (cond) { pass++; out.push("  OK  " + label + (extra ? " | " + extra : "")); }
+  else { fail++; out.push("  NG  " + label + (extra ? " | " + extra : "")); }
+}
+function show() { document.getElementById("debug").textContent = out.join("\n"); }
+
+const f = document.getElementById("f");
+
+// 手順1: 処方名を入れて保存する
+setTimeout(function () {
+  const d = f.contentDocument;
+  const w = f.contentWindow;
+  // モード分割後は、まずモードを選ばないと全セクションが hidden になる
+  d.getElementById("mode-design").click();
+  // hidden 要素は getBoundingClientRect が全ゼロを返す。
+  // レイアウト検査が「中身を見ずに合格」しないよう、可視性を先に確かめる
+  const visible = function (id) { const e = d.getElementById(id); return !!(e && e.offsetParent); };
+
+  out.push("=== 処方の保存 ===");
+  const tanks = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}").tanks || [];
+  out.push("  入力中のタンク数: " + tanks.length);
+
+  const nameInput = d.getElementById("recipe-name");
+  nameInput.value = "テスト処方・厳寒期";
+  nameInput.dispatchEvent(new Event("input"));
+  d.getElementById("recipe-stage").value = "厳寒期";
+  d.getElementById("recipe-stage").dispatchEvent(new Event("change"));
+  d.getElementById("save-recipe").click();
+
+  setTimeout(function () {
+    const saved = JSON.parse(w.localStorage.getItem("tfm_fert_recipes_local") || "[]");
+    const items = JSON.parse(w.localStorage.getItem("tfm_fert_recipe_items_local") || "[]");
+    ok("処方が1件保存された", saved.length === 1, "count=" + saved.length);
+    if (saved.length) {
+      ok("処方名が入っている", saved[0]["処方名"] === "テスト処方・厳寒期", saved[0]["処方名"]);
+      ok("生育ステージが入っている", saved[0]["生育ステージ"] === "厳寒期", saved[0]["生育ステージ"]);
+      ok("希釈倍率が入っている", Number(saved[0]["希釈倍率"]) === 120, String(saved[0]["希釈倍率"]));
+      ok("IDが採番された", /^L\d+$/.test(saved[0]["処方ID"]), saved[0]["処方ID"]);
+    }
+    ok("明細が8件保存された", items.length === 8, "count=" + items.length);
+    if (items.length) {
+      const aTank = items.filter(function (x) { return x["タンク名"] === "A液"; });
+      const bTank = items.filter(function (x) { return x["タンク名"] === "B液"; });
+      ok("A液の明細が4件", aTank.length === 4, "A=" + aTank.length);
+      ok("B液の明細が4件", bTank.length === 4, "B=" + bTank.length);
+      ok("肥料IDが保存されている", !!items[0]["肥料ID"], items[0]["肥料ID"] + " / " + items[0]["肥料名"]);
+      ok("量kgが保存されている", Number(items[0]["量kg"]) > 0, String(items[0]["量kg"]));
+    }
+    ok("セレクトに選択肢が増えた", d.getElementById("recipe-select").options.length === 2,
+       "options=" + d.getElementById("recipe-select").options.length);
+
+    // 手順2: 入力をリセットしてから、保存した処方を読み直す
+    out.push("");
+    out.push("=== リセット → 読み直し ===");
+    const savedId = saved.length ? saved[0]["処方ID"] : "";
+    w.localStorage.setItem("tfm_fert_state", JSON.stringify({
+      dilution: 999, tanks: [{ name: "空", tankL: 1, items: [] }],
+      water: {}, acid: { anion: "", meqPerL: "" }, ecMeasured: "", ecCoefficient: "",
+      recipeId: "", recipeName: "", recipeStage: "", waterId: ""
+    }));
+    f.src = "../_work/fertilizer.html";
+
+    f.onload = function () {
+      setTimeout(function () {
+        const d2 = f.contentDocument;
+        const w2 = f.contentWindow;
+        const st0 = JSON.parse(w2.localStorage.getItem("tfm_fert_state") || "{}");
+        ok("リセット状態で開いた", Number(st0.dilution) === 999, "dilution=" + st0.dilution);
+
+        const sel = d2.getElementById("recipe-select");
+        sel.value = savedId;
+        sel.dispatchEvent(new Event("change"));
+
+        setTimeout(function () {
+          const st = JSON.parse(w2.localStorage.getItem("tfm_fert_state") || "{}");
+          ok("希釈倍率が戻った", Number(st.dilution) === 120, "dilution=" + st.dilution);
+          ok("タンクが2本戻った", (st.tanks || []).length === 2, "tanks=" + (st.tanks || []).length);
+          if ((st.tanks || []).length === 2) {
+            ok("A液の肥料が4件", st.tanks[0].items.length === 4, "n=" + st.tanks[0].items.length);
+            ok("タンク容量が戻った", Number(st.tanks[0].tankL) === 100, "L=" + st.tanks[0].tankL);
+          }
+          ok("処方名が戻った", st.recipeName === "テスト処方・厳寒期", st.recipeName);
+
+          // 計算結果が元に戻っているか（EC推定で確認）
+          const ec = d2.getElementById("res-ec").textContent;
+          ok("組成が再計算された", Math.abs(Number(ec) - 2.19) < 0.02 || Math.abs(Number(ec) - 1.62) < 0.02, "EC=" + ec);
+
+          out.push("");
+          out.push("============================");
+          out.push("  PASS " + pass + " / FAIL " + fail);
+          out.push("============================");
+          show();
+        }, 600);
+      }, 900);
+    };
+    show();
+  }, 700);
+}, 1000);
+</script>
+</body></html>

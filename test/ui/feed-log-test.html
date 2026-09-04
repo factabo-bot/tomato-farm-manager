@@ -1,0 +1,139 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>feed log test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:375px;height:700px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function head(s) { out.push(""); out.push("=== " + s + " ==="); }
+function show() { document.getElementById("debug").textContent = out.join("\n") + "\n\n  PASS " + pass + " / FAIL " + fail; }
+const f = document.getElementById("f");
+function D() { return f.contentDocument; }
+function W() { return f.contentWindow; }
+function visible(id) { const e = D().getElementById(id); return !!(e && e.offsetParent); }
+function click(id) { D().getElementById(id).click(); }
+function set(id, v) {
+  const e = D().getElementById(id);
+  e.value = v;
+  e.dispatchEvent(new (W().Event)("input", { bubbles: true }));
+}
+function logs() { try { return JSON.parse(W().localStorage.getItem("tfm_feed_logs") || "[]"); } catch (e) { return []; } }
+function rows() { return D().querySelectorAll("#feed-log-list tbody tr"); }
+
+setTimeout(function () {
+  D().getElementById("mode-daily").click();
+
+  head("1. 記録の画面が出ている");
+  ok("給液日の欄がある", visible("ev-date"));
+  const today = new Date();
+  const p = function (n) { return String(n).padStart(2, "0"); };
+  const todayStr = today.getFullYear() + "-" + p(today.getMonth() + 1) + "-" + p(today.getDate());
+  ok("既定は今日", D().getElementById("ev-date").value === todayStr, D().getElementById("ev-date").value);
+  ok("保存ボタンがある", visible("ev-save"));
+  ok("一覧セクションが見える", visible("sec-feed-log"));
+  ok("最初は「まだ記録がありません」",
+     D().getElementById("feed-log-list").textContent.indexOf("まだ記録がありません") >= 0);
+
+  head("2. 記録する");
+  set("ev-feed", "0.55");
+  set("ev-drain", "0.165");
+  set("ev-feed-ec", "1.8");
+  set("ev-drain-ec", "1.5");
+  set("ev-feed-ph", "5.8");
+  set("ev-drain-ph", "6.2");
+  set("ev-note", "テスト記録");
+  click("ev-save");
+
+  setTimeout(function () {
+    const L = logs();
+    ok("1件保存された", L.length === 1, "n=" + L.length);
+    const r = L[0];
+    if (r) {
+      out.push("       " + JSON.stringify({ 日: r["給液日"], 排液率: r["排液率"], 吸収率: r["養分吸収率"], N: r["窒素施用量"] }));
+      ok("給液日が今日", r["給液日"] === todayStr, r["給液日"]);
+      ok("排液率30%が計算されている", Number(r["排液率"]) === 30, r["排液率"]);
+      ok("吸水量が0.385", Math.abs(Number(r["吸水量"]) - 0.385) < 0.001, r["吸水量"]);
+      ok("pHが残る", Number(r["給液pH"]) === 5.8 && Number(r["排液pH"]) === 6.2);
+      ok("メモが残る", r["メモ"] === "テスト記録");
+      ok("給液EC実測フラグがTRUE", r["給液EC実測"] === "TRUE");
+      ok("処方のスナップショットが入る（希釈倍率）", Number(r["希釈倍率"]) === 120, r["希釈倍率"]);
+      ok("窒素濃度のスナップショットが入る", Number(r["窒素濃度"]) > 0, r["窒素濃度"]);
+      ok("判定目標が残る", String(r["判定目標"]).indexOf("排液25-35") === 0, r["判定目標"]);
+      ok("clientIdがある", !!r["clientId"]);
+      ok("お試しモードなので状態はお試し", r["状態"] === "お試し", r["状態"]);
+    }
+    ok("一覧に1行出る", rows().length === 1, "rows=" + rows().length);
+    ok("直近平均が出る", D().getElementById("feed-log-summary").textContent.indexOf("直近1件の平均") >= 0,
+       D().getElementById("feed-log-summary").textContent.trim());
+
+    head("3. 同じ日に押しても、1回では上書きしない");
+    set("ev-drain", "0.22");
+    click("ev-save");
+    const btnText = D().getElementById("ev-save").textContent;
+    ok("1回目は確認に変わる", btnText.indexOf("上書き") >= 0, btnText);
+    ok("まだ上書きされていない", Number(logs()[0]["排液量"]) === 0.165, logs()[0]["排液量"]);
+    click("ev-save");
+    setTimeout(function () {
+      ok("2回目で上書きされる", Number(logs()[0]["排液量"]) === 0.22, logs()[0]["排液量"]);
+      ok("件数は増えない", logs().length === 1, "n=" + logs().length);
+      ok("ボタンが元に戻る", D().getElementById("ev-save").textContent === "この内容で記録する");
+
+      head("4. 別の日は別の行になる");
+      set("ev-date", "2026-09-01");
+      set("ev-drain", "0.10");
+      set("ev-feed-ec", "");     // 実測を空にして推定値が使われることを見る
+      click("ev-save");
+      setTimeout(function () {
+        const L2 = logs();
+        ok("2件になる", L2.length === 2, "n=" + L2.length);
+        ok("新しい順に並ぶ", L2[0]["給液日"] > L2[1]["給液日"], L2[0]["給液日"] + " > " + L2[1]["給液日"]);
+        const older = L2[1];
+        ok("給液EC未入力の行はフラグがFALSE", older["給液EC実測"] === "FALSE", older["給液EC実測"]);
+        ok("給液ECには推定値が入る", Number(older["給液EC"]) > 0, older["給液EC"]);
+        ok("一覧が2行", rows().length === 2, "rows=" + rows().length);
+        ok("推定の行は薄字クラスが付く",
+           D().querySelectorAll("#feed-log-list tbody tr.fert-row-sub").length === 1,
+           "sub=" + D().querySelectorAll("#feed-log-list tbody tr.fert-row-sub").length);
+
+        head("5. 前の記録との比較で矢印が付く");
+        const html = D().getElementById("feed-log-list").innerHTML;
+        ok("↑か↓が出る", html.indexOf("↑") >= 0 || html.indexOf("↓") >= 0);
+        ok("比較のクラスが当たる",
+           D().querySelectorAll("#feed-log-list .fert-above, #feed-log-list .fert-below").length > 0,
+           "n=" + D().querySelectorAll("#feed-log-list .fert-above, #feed-log-list .fert-below").length);
+
+        head("6. 給液量が空だと保存しない");
+        set("ev-date", "2026-08-20");
+        set("ev-feed", "");
+        click("ev-save");
+        setTimeout(function () {
+          ok("件数が増えない", logs().length === 2, "n=" + logs().length);
+
+          head("7. 375pxではみ出さない");
+          ok("横スクロールなし", D().documentElement.scrollWidth <= 375,
+             "scrollWidth=" + D().documentElement.scrollWidth);
+          const over = [];
+          D().querySelectorAll("#sec-feed-log, #sec-feed-log *").forEach(function (e) {
+            if (!e.offsetParent) return;
+            const rc = e.getBoundingClientRect();
+            if (rc.right > 376) over.push((e.id || e.className || e.tagName) + "(" + Math.round(rc.right) + ")");
+          });
+          ok("記録セクションがはみ出さない", over.length === 0, over.slice(0, 3).join(", "));
+
+          head("8. 記録は他の画面の記録ストアを汚さない");
+          // mockPost は未知の type を作業記録に落とす。給液記録がそこに混ざっていないこと
+          const mockWork = W().localStorage.getItem("tfm_mock_work");
+          ok("お試しの作業記録が作られていない", !mockWork || JSON.parse(mockWork).length === 0,
+             mockWork ? "len=" + JSON.parse(mockWork).length : "キーなし");
+
+          show();
+        }, 200);
+      }, 200);
+    }, 200);
+  }, 300);
+}, 1200);
+</script>
+</body></html>

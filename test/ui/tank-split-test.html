@@ -1,0 +1,154 @@
+﻿<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>tank split test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:390px;height:600px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function show() { document.getElementById("debug").textContent = out.join("\n"); }
+
+const f = document.getElementById("f");
+
+setTimeout(function () {
+  const d = f.contentDocument;
+  const w = f.contentWindow;
+  // モード分割後は、まずモードを選ばないと全セクションが hidden になる
+  d.getElementById("mode-design").click();
+  // hidden 要素は getBoundingClientRect が全ゼロを返す。
+  // レイアウト検査が「中身を見ずに合格」しないよう、可視性を先に確かめる
+  const visible = function (id) { const e = d.getElementById(id); return !!(e && e.offsetParent); };
+  const FC = w.FertilizerCalc;
+
+  // ---- 1. 研修先の処方（正しく分かれている）に誤警告が出ないこと ----
+  out.push("=== 1. 正しく分かれた処方に誤警告を出さない ===");
+  const tankBoxes = d.querySelectorAll(".fert-tank");
+  ok("タンクが2本表示されている", tankBoxes.length === 2, "boxes=" + tankBoxes.length);
+  const warnsInTanks = d.querySelectorAll(".fert-tank-warn");
+  ok("タンク内に警告が出ていない", warnsInTanks.length === 0, "warn=" + warnsInTanks.length);
+
+  // ---- 2. 役割の導出 ----
+  out.push("");
+  out.push("=== 2. 役割の導出（ionsから自動判定） ===");
+  const roleCases = [
+    ["calcium_nitrate_4h", "calcium"],
+    ["magnesium_sulfate_7h", "sulfate"],
+    ["mono_potassium_phosphate", "phosphate"],
+    ["phosphoric_acid", "acid"],
+    ["chelated_iron_dtpa_11", "chelate"],
+    ["orient_mix", "chelate"],
+  ];
+  roleCases.forEach(function (c) {
+    const roles = FC.fertilizerTankRoles(c[0]);
+    ok(c[0] + " → " + c[1], roles.indexOf(c[1]) >= 0, roles.join(","));
+  });
+  ok("硝酸カリは制約なし", FC.fertilizerTankRoles("potassium_nitrate").length === 0);
+
+  // ---- 3. 選択肢が disabled になるか ----
+  out.push("");
+  out.push("=== 3. 入れられない肥料は選べない ===");
+  // 研修先の処方は B液（2本目）に硝酸石灰が入っている
+  const sels = d.querySelectorAll(".fert-tank select");
+  let caTankSel = null, otherSel = null;
+  for (let i = 0; i < tankBoxes.length; i++) {
+    const st = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}");
+    const hasCa = (st.tanks[i].items || []).some(function (it) { return it.id.indexOf("calcium") >= 0; });
+    if (hasCa) caTankSel = sels[i]; else otherSel = sels[i];
+  }
+  ok("カルシウムの入ったタンクを特定できた", !!caTankSel);
+  if (caTankSel) {
+    const opts = Array.prototype.slice.call(caTankSel.querySelectorAll("option"));
+    const mgSul = opts.filter(function (o) { return o.value === "magnesium_sulfate_7h"; })[0];
+    const kPhos = opts.filter(function (o) { return o.value === "mono_potassium_phosphate"; })[0];
+    const kNit  = opts.filter(function (o) { return o.value === "potassium_nitrate"; })[0];
+    ok("硫酸マグネシウムが選べない", mgSul && mgSul.disabled, mgSul ? mgSul.textContent : "-");
+    ok("第一リン酸カリが選べない", kPhos && kPhos.disabled, kPhos ? kPhos.textContent : "-");
+    ok("硝酸カリは選べる", kNit && !kNit.disabled, kNit ? kNit.textContent : "-");
+  }
+  if (otherSel) {
+    const opts2 = Array.prototype.slice.call(otherSel.querySelectorAll("option"));
+    const caNit = opts2.filter(function (o) { return o.value === "calcium_nitrate_4h"; })[0];
+    ok("酸・リン酸側では硝酸石灰が選べない", caNit && caNit.disabled, caNit ? caNit.textContent : "-");
+    const badge = opts2.filter(function (o) { return o.value === "magnesium_sulfate_7h"; })[0];
+    ok("入れられるものには役割バッジが付く", badge && badge.textContent.indexOf("硫酸側") >= 0,
+       badge ? badge.textContent : "-");
+  }
+
+  // ---- 4. わざと同居させたら、その場で警告 ----
+  out.push("");
+  out.push("=== 4. 同居させたらタンクの箱に警告 ===");
+  const st = JSON.parse(w.localStorage.getItem("tfm_fert_state") || "{}");
+  st.tanks[0].items.push({ id: "calcium_nitrate_4h", kg: 5 });
+  w.localStorage.setItem("tfm_fert_state", JSON.stringify(st));
+  f.src = "../_work/fertilizer.html";
+
+  f.onload = function () {
+    setTimeout(function () {
+      const d2 = f.contentDocument;
+      const w2 = f.contentWindow;
+      const FC2 = w2.FertilizerCalc;
+
+      const warns = d2.querySelectorAll(".fert-tank-warn");
+      ok("タンクの箱に警告が出た", warns.length > 0, "warn=" + warns.length);
+      if (warns.length) out.push("       " + warns[0].textContent);
+
+      // 計算結果パネル側にも danger が出ているか（既存の警告と二重化）
+      const danger = d2.querySelectorAll("#res-warnings .fert-warn-danger");
+      ok("結果パネルにも警告が出る", danger.length > 0, "danger=" + danger.length);
+
+      // ---- 5. 自動振り分け ----
+      out.push("");
+      out.push("=== 5. 自動で分け直す ===");
+      d2.getElementById("auto-split").click();
+
+      setTimeout(function () {
+        const st2 = JSON.parse(w2.localStorage.getItem("tfm_fert_state") || "{}");
+        ok("2本になった", st2.tanks.length === 2, "tanks=" + st2.tanks.length);
+
+        const t0 = st2.tanks[0], t1 = st2.tanks[1];
+        out.push("  [" + t0.name + "] " + t0.items.map(function (i) { return i.id; }).join(" / "));
+        out.push("  [" + t1.name + "] " + t1.items.map(function (i) { return i.id; }).join(" / "));
+
+        const roleIn = function (t, r) {
+          return (t.items || []).some(function (it) { return FC2.fertilizerTankRoles(it.id).indexOf(r) >= 0; });
+        };
+        // カルシウムと硫酸/リン酸が別々になっていること
+        const caT = roleIn(t0, "calcium") ? t0 : t1;
+        const spT = roleIn(t0, "calcium") ? t1 : t0;
+        ok("カルシウム側に硫酸が無い", !roleIn(caT, "sulfate"));
+        ok("カルシウム側にリン酸が無い", !roleIn(caT, "phosphate"));
+        ok("酸とキレートが別タンク", !(roleIn(spT, "acid") && roleIn(spT, "chelate")));
+        ok("キレートはカルシウム側に来た", roleIn(caT, "chelate"));
+
+        // 分け直した結果、警告が消えていること
+        const warns2 = d2.querySelectorAll(".fert-tank-warn");
+        ok("分け直したら警告が消えた", warns2.length === 0, "warn=" + warns2.length);
+        const danger2 = d2.querySelectorAll("#res-warnings .fert-warn-danger");
+        ok("結果パネルの警告も消えた", danger2.length === 0, "danger=" + danger2.length);
+
+        // ---- 6. 酸とキレートの同居も検出するか ----
+        out.push("");
+        out.push("=== 6. 酸とキレート鉄の同居 ===");
+        const mixed = FC2.calcSolution({
+          dilution: 120,
+          tanks: [{ name: "混ぜたタンク", tankL: 100, items: [
+            { id: "phosphoric_acid", kg: 0.5 },
+            { id: "chelated_iron_dtpa_11", kg: 0.4 }] }],
+        });
+        const hit = mixed.warnings.filter(function (x) { return x.level === "danger"; });
+        ok("酸とキレートの同居を検出", hit.length > 0, hit.length ? hit[0].message.slice(0, 44) : "なし");
+
+        out.push("");
+        out.push("============================");
+        out.push("  PASS " + pass + " / FAIL " + fail);
+        out.push("============================");
+        show();
+      }, 600);
+    }, 900);
+  };
+  show();
+}, 1000);
+</script>
+</body></html>
