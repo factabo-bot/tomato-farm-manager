@@ -76,6 +76,7 @@ if ($Only -eq "all" -or $Only -eq "ui") {
     @{ seed = "seedC.html"; test = "cost-ui-test.html" },
     @{ seed = "seed.html";  test = "eval-ui-test.html" },
     @{ seed = "seed.html";  test = "mode-ui-test.html" },
+    @{ seed = "seed.html";  test = "dilution-test.html" },
     @{ seed = "seed.html";  test = "feed-log-test.html" }
   )
   $n = 0

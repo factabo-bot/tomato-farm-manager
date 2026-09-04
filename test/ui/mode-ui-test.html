@@ -230,6 +230,9 @@ setTimeout(function () {
                     return st.groups && st.groups["grp-basis"] === true;
                   } catch (e) { return false; }
                 })(), JSON.stringify((JSON.parse(W().localStorage.getItem("tfm_fert_state") || "{}")).groups));
+
+                // 希釈倍率まわりは dilution-test.html で見る
+                // （ここは9でリセットを踏んでいてタンクが空のため、ECが出ない）
                 show();
               }, 200);
             }, 800);

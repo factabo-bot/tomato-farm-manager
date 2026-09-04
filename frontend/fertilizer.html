@@ -161,12 +161,16 @@
     <div class="fert-group-body">
       <section id="sec-dilution">
         <h3>希釈倍率</h3>
+        <p class="hint"><strong>どちらか一方を入れます。</strong>倍率を入れれば④にECが出て、目標ECを入れれば必要な倍率が出ます</p>
+
         <div class="num-row">
           <label class="num-label" for="dilution">原液を</label>
           <input class="num-input" type="number" id="dilution" inputmode="decimal" value="120">
           <span class="num-unit">倍に薄める</span>
         </div>
         <p class="hint">液肥混入機の設定値。原液1に対して水を何倍入れるか</p>
+
+        <div class="fert-or">または</div>
 
         <div class="num-row">
           <label class="num-label" for="dilution-target-ec">目標EC</label>
@@ -191,7 +195,9 @@
 
       <section id="sec-acid">
         <h3>アルカリ度の中和（任意）</h3>
-        <p class="hint">原水のHCO3を酸で中和する場合に入れます。酸のイオンとH⁺を加え、同じ分のHCO3を引きます</p>
+        <p class="hint"><strong>原水の HCO3⁻（重炭酸イオン）は弱い塩基で、pHを上げる方向に働きます。</strong>「炭酸＝酸」と紛らわしいですが、水に溶けている形が違います（CO2 ⇌ H2CO3 ⇌ H⁺ + HCO3⁻。pH 6.4〜10.3 では HCO3⁻ が主）</p>
+        <p class="hint">pHが7を超えると<strong>鉄・マンガンが沈殿して効かなくなり</strong>、リン酸もカルシウムと結んで不溶化します。そこで酸を入れて HCO3⁻ を壊します（HCO3⁻ + H⁺ → H2O + CO2↑。CO2は気体で抜けます）</p>
+        <p class="hint">計算上は、酸のイオンとH⁺を加え、同じ meq だけ HCO3 を引きます</p>
         <div class="num-row">
           <label class="num-label" for="acid-anion">使う酸</label>
           <select class="unit-select" id="acid-anion">

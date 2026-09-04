@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>dilution test</title>
+<style>body{margin:0;font-family:monospace}#debug{font-size:12px;background:#111;color:#0f0;padding:8px;margin:0;white-space:pre-wrap}iframe{width:375px;height:700px;border:1px solid #ccc}</style>
+</head><body>
+<pre id="debug">testing...</pre>
+<iframe id="f" src="../_work/fertilizer.html"></iframe>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+function ok(l, c, x) { if (c) { pass++; out.push("  OK  " + l + (x ? " | " + x : "")); } else { fail++; out.push("  NG  " + l + (x ? " | " + x : "")); } }
+function head(s) { out.push(""); out.push("=== " + s + " ==="); }
+function show() { document.getElementById("debug").textContent = out.join("\n") + "\n\n  PASS " + pass + " / FAIL " + fail; }
+const f = document.getElementById("f");
+function D() { return f.contentDocument; }
+function W() { return f.contentWindow; }
+function visible(id) { const e = D().getElementById(id); return !!(e && e.offsetParent); }
+function set(id, v) {
+  const e = D().getElementById(id);
+  e.value = v;
+  e.dispatchEvent(new (W().Event)("input", { bubbles: true }));
+}
+function ec() { return Number(D().getElementById("res-ec").textContent); }
+
+setTimeout(function () {
+  D().getElementById("mode-design").click();
+  // ①前提は既定で畳まれている。希釈倍率はこの中
+  D().getElementById("grp-basis").open = true;
+
+  head("1. どちらを入れるのか分かるか");
+  const txt = D().getElementById("sec-dilution").textContent;
+  ok("「どちらか一方」と書いてある", txt.indexOf("どちらか一方") >= 0);
+  const or = D().querySelector("#sec-dilution .fert-or");
+  ok("「または」で区切られている", !!or, or ? or.textContent : "無い");
+  ok("倍率の欄と目標ECの欄が両方ある",
+     !!D().getElementById("dilution") && !!D().getElementById("dilution-target-ec"));
+
+  head("2. 倍率 → EC（もとからある向き）");
+  const base = ec();
+  out.push("       120倍で EC " + base);
+  ok("ECが出ている", base > 0, "EC=" + base);
+  set("dilution", "240");
+  setTimeout(function () {
+    const half = ec();
+    out.push("       240倍で EC " + half);
+    // seed の原水には Ca・Na・HCO3 が入っているので、
+    // 倍率を2倍にしてもECは半分にはならない（原水は薄まらない）
+    ok("倍率を上げるとECが下がる", half < base, base + " → " + half);
+    ok("原水があるので半分ちょうどにはならない", half > base / 2,
+       "半分なら " + (base / 2).toFixed(2) + " / 実際 " + half);
+
+    head("3. 目標EC → 倍率（今回足した向き）");
+    set("dilution", "120");
+    set("dilution-target-ec", "1.4");
+    setTimeout(function () {
+      const res = D().getElementById("dilution-result").textContent;
+      out.push("       " + res.trim().replace(/\s+/g, " ").slice(0, 80));
+      ok("倍率が出る", /EC 1\.4 にするには \d+ 倍/.test(res), res.trim().slice(0, 40));
+      ok("いまの倍率とECも添える", res.indexOf("いま 120倍") >= 0);
+      ok("原水は薄まらないことを注記する", res.indexOf("薄まらない") >= 0);
+
+      const btn = Array.prototype.slice.call(D().querySelectorAll("#dilution-result button"))
+        .filter(function (b) { return b.textContent.indexOf("この倍率にする") >= 0; })[0];
+      ok("反映ボタンがある", !!btn);
+      if (!btn) { show(); return; }
+
+      btn.click();
+      setTimeout(function () {
+        head("4. 出た倍率を当てると、本当にそのECになるか");
+        const got = ec();
+        ok("目標EC 1.4 になる", Math.abs(got - 1.4) < 0.05, "EC=" + got);
+        ok("希釈倍率の欄にも反映される", Number(D().getElementById("dilution").value) > 120,
+           D().getElementById("dilution").value);
+        ok("保存される", (function () {
+          try {
+            const st = JSON.parse(W().localStorage.getItem("tfm_fert_state") || "{}");
+            return Number(st.dilution) > 120;
+          } catch (e) { return false; }
+        })());
+
+        head("5. 極端な目標ECのとき");
+        // 濃すぎる目標 → 倍率が小さくなり、混入機の範囲を外れる
+        set("dilution-target-ec", "12");
+        setTimeout(function () {
+          const r2 = D().getElementById("dilution-result").textContent;
+          out.push("       EC12 → " + r2.trim().replace(/\s+/g, " ").slice(0, 60));
+          ok("混入機の範囲外だと警告する", r2.indexOf("可動範囲を外れて") >= 0, r2.trim().slice(0, 40));
+
+          // 原水だけで超える目標 → 解なし
+          set("dilution-target-ec", "0.05");
+          setTimeout(function () {
+            const r3 = D().getElementById("dilution-result").textContent;
+            out.push("       EC0.05 → " + r3.trim().replace(/\s+/g, " ").slice(0, 70));
+            ok("原水だけで超えるなら理由を書く",
+               r3.indexOf("原水だけで") >= 0 || r3.indexOf("可動範囲を外れて") >= 0,
+               r3.trim().slice(0, 50));
+
+            head("6. 375pxではみ出さない");
+            ok("横スクロールなし", D().documentElement.scrollWidth <= 375,
+               "scrollWidth=" + D().documentElement.scrollWidth);
+            const over = [];
+            D().querySelectorAll("#sec-dilution, #sec-dilution *").forEach(function (e) {
+              if (!e.offsetParent) return;
+              const rc = e.getBoundingClientRect();
+              if (rc.right > 376) over.push((e.id || e.className || e.tagName) + "(" + Math.round(rc.right) + ")");
+            });
+            ok("希釈倍率のセクションがはみ出さない", over.length === 0, over.slice(0, 3).join(", "));
+
+            head("7. アルカリ度の中和の説明");
+            const acidTxt = D().getElementById("sec-acid").textContent;
+            ok("HCO3が塩基だと書いてある", acidTxt.indexOf("弱い塩基") >= 0);
+            ok("炭酸と紛らわしい点に触れる", acidTxt.indexOf("紛らわしい") >= 0);
+            ok("pHが上がると何が困るか書いてある",
+               acidTxt.indexOf("鉄") >= 0 && acidTxt.indexOf("沈殿") >= 0);
+            show();
+          }, 200);
+        }, 200);
+      }, 300);
+    }, 200);
+  }, 200);
+}, 1300);
+</script>
+</body></html>

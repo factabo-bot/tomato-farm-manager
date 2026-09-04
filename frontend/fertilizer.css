@@ -394,6 +394,24 @@
   margin-bottom: 12px;
 }
 
+/* 「AかB、どちらか一方」を示す区切り。両方埋める欄だと誤解されないように */
+.fert-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+  font-size: 12px;
+  color: #8a9aa3;
+}
+
+.fert-or::before,
+.fert-or::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: #e0e4e6;
+}
+
 .fert-context-line {
   font-size: 13px;
   font-weight: 600;
