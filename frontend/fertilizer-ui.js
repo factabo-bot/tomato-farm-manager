@@ -1729,13 +1729,13 @@ function bindInputs() {
   $("back-to-menu").addEventListener("click", () => switchMode(""));
 
   // --- 処方モードの折りたたみグループ ---
-  // 既定は閉じている（毎回触るのは②配合と③結果だけなので）。
-  // 一度開いたら次も開いたままにする
+  // 既定の開閉は HTML の open 属性で決める（②逆算は開、①前提と⑤実測ECは閉）。
+  // 一度でも開閉したらその状態を覚え、次からはそちらを優先する
   if (!state.groups) state.groups = {};
   ["grp-basis", "grp-reverse", "grp-ec"].forEach((id) => {
     const box = $(id);
     if (!box) return;
-    if (state.groups[id]) box.open = true;
+    if (state.groups[id] !== undefined) box.open = !!state.groups[id];
     box.addEventListener("toggle", () => {
       state.groups[id] = box.open;
       saveState();
