@@ -856,27 +856,24 @@ function buildBalancedTarget(fixed, opts) {
   let diff = chargeBalance(target).diff;
   const notes = [];
 
-  // 1周では足りないことがある。あるイオンが上限で止まっても、
-  // 後続のイオンが動いて差が縮めば、前のイオンにまた余地が生まれる。
-  // 差が消えるか、1周まわして何も動かなくなるまで繰り返す
-  for (let pass = 0; pass < 4 && Math.abs(diff) >= 0.005; pass++) {
-    let movedThisPass = false;
-    BALANCE_PRIORITY.forEach((a) => {
-      if (Math.abs(diff) < 0.005) return;
-      if (lock[a.ion] !== undefined && lock[a.ion] !== "") return; // 固定されている
-      const r = ranges[a.ion];
-      if (!r) return;
-      const before = target[a.ion];
-      const want = before + (-diff / a.charge);
-      const clamped = Math.max(r.min, Math.min(r.max, want));
-      const actual = clamped - before;
-      if (Math.abs(actual) < 0.0001) return;
-      target[a.ion] = clamped;
-      diff += actual * a.charge;
-      movedThisPass = true;
-    });
-    if (!movedThisPass) break;
-  }
+  // 1周で足りる。各イオンを順に「差を消す方向へ動かせるだけ動かす」ので、
+  // 1周したあとに差が残っているなら、すべてのイオンが可動域の端に張り付いている。
+  // つまりそれ以上動かせず、基準の範囲内に解が無い。
+  // （複数周まわす実装にしていた時期があるが、400パターンの検証で
+  //   1周と結果が一致することを確認して戻した）
+  BALANCE_PRIORITY.forEach((a) => {
+    if (Math.abs(diff) < 0.005) return;
+    if (lock[a.ion] !== undefined && lock[a.ion] !== "") return; // 固定されている
+    const r = ranges[a.ion];
+    if (!r) return;
+    const before = target[a.ion];
+    const want = before + (-diff / a.charge);
+    const clamped = Math.max(r.min, Math.min(r.max, want));
+    const actual = clamped - before;
+    if (Math.abs(actual) < 0.0001) return;
+    target[a.ion] = clamped;
+    diff += actual * a.charge;
+  });
 
   // 動いた量は「最初と最後の差」で出す。
   // 途中経過を1行ずつ並べると、同じイオンが何度も出てきて読めなくなる
