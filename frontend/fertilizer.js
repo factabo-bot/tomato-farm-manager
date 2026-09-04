@@ -815,12 +815,17 @@ function scaleEstimate(cost, dilution, opts) {
 //
 // 動かす順番は「基準の幅が広いもの」から。幅が狭い元素を無理に振ると
 // すぐ範囲外になるため。NH4は尻腐れ対策で低く保つものなので調整には使わない
+// 動かす順序。前にあるものほど先に動かす＝栽培上いじっても影響が小さい順。
+// Ca は尻腐れに直結するので最後に置くが、対象からは外さない。
+// （外していた時期があり、Ca を下げれば釣り合う組成でも「合いません」と
+//   突き返していた。優先度を下げるのと対象外にするのは別のこと）
 const BALANCE_PRIORITY = [
   { ion: "NO3", charge: -1 },
   { ion: "K", charge: 1 },
   { ion: "SO4", charge: -2 },
   { ion: "Mg", charge: 2 },
   { ion: "H2PO4", charge: -1 },
+  { ion: "Ca", charge: 2 },
 ];
 
 function buildBalancedTarget(fixed, opts) {
@@ -847,23 +852,39 @@ function buildBalancedTarget(fixed, opts) {
   // 電荷の差を、動かせる元素で埋めていく。
   //   diff = 陽 − 陰。イオンを Δ 動かすと diff は Δ×charge だけ動く
   //   → diff を消すには Δ = −diff / charge
+  const initial = Object.assign({}, target);
   let diff = chargeBalance(target).diff;
   const notes = [];
 
+  // 1周では足りないことがある。あるイオンが上限で止まっても、
+  // 後続のイオンが動いて差が縮めば、前のイオンにまた余地が生まれる。
+  // 差が消えるか、1周まわして何も動かなくなるまで繰り返す
+  for (let pass = 0; pass < 4 && Math.abs(diff) >= 0.005; pass++) {
+    let movedThisPass = false;
+    BALANCE_PRIORITY.forEach((a) => {
+      if (Math.abs(diff) < 0.005) return;
+      if (lock[a.ion] !== undefined && lock[a.ion] !== "") return; // 固定されている
+      const r = ranges[a.ion];
+      if (!r) return;
+      const before = target[a.ion];
+      const want = before + (-diff / a.charge);
+      const clamped = Math.max(r.min, Math.min(r.max, want));
+      const actual = clamped - before;
+      if (Math.abs(actual) < 0.0001) return;
+      target[a.ion] = clamped;
+      diff += actual * a.charge;
+      movedThisPass = true;
+    });
+    if (!movedThisPass) break;
+  }
+
+  // 動いた量は「最初と最後の差」で出す。
+  // 途中経過を1行ずつ並べると、同じイオンが何度も出てきて読めなくなる
   BALANCE_PRIORITY.forEach((a) => {
-    if (Math.abs(diff) < 0.005) return;
-    if (lock[a.ion] !== undefined && lock[a.ion] !== "") return; // 固定されている
-    const r = ranges[a.ion];
-    if (!r) return;
-    const before = target[a.ion];
-    const want = before + (-diff / a.charge);
-    const clamped = Math.max(r.min, Math.min(r.max, want));
-    const actual = clamped - before;
-    if (Math.abs(actual) < 0.0001) return;
-    target[a.ion] = clamped;
-    moved[a.ion] = round(actual, 2);
-    diff += actual * a.charge;
-    notes.push(`${a.ion} を ${round(before, 2)} → ${round(clamped, 2)}`);
+    const delta = target[a.ion] - initial[a.ion];
+    if (Math.abs(delta) < 0.0001) return;
+    moved[a.ion] = round(delta, 2);
+    notes.push(`${a.ion} を ${round(initial[a.ion], 2)} → ${round(target[a.ion], 2)}`);
   });
 
   const feasible = Math.abs(diff) < 0.05;
