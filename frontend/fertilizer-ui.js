@@ -1771,6 +1771,8 @@ function bindInputs() {
   });
 
   // --- 目標ECから希釈倍率 ---
+  // 入力した時点で結果を出す。「計算する」ボタンは置かない
+  // （押しても同じ描画をするだけで、一手増えるだけだった）
   const tec = $("dilution-target-ec");
   if (tec) {
     tec.value = state.targetEc || "";
@@ -1781,10 +1783,6 @@ function bindInputs() {
       renderDilutionSolve();
     });
   }
-  $("dilution-solve").addEventListener("click", () => {
-    if (!(num(state.targetEc) > 0)) { toast("目標ECを入れてください"); return; }
-    renderDilutionSolve();
-  });
 
   // --- モード ---
   Object.keys(FERT_MODES).forEach((m) => {
