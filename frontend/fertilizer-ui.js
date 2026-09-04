@@ -27,17 +27,35 @@ const MICRO_LABEL = {
   Fe: "鉄", Mn: "マンガン", Zn: "亜鉛", B: "ホウ素", Cu: "銅", Mo: "モリブデン",
 };
 
+// 画面のモード。用途もタイミングも違う機能を1画面に積むと、
+// 毎日使うものが下に埋もれる。空文字＝まだ選んでいない（モード選択画面を出す）。
+// 保存済みの状態に mode が無くても loadState の Object.assign で "" になるので、
+// 更新後の初回は自然にモード選択から始まる
+const FERT_MODES = {
+  daily: "日々の記録と評価",
+  design: "処方をつくる",
+  cost: "コストを見る",
+};
+
 function defaultState() {
   const water = {};
   WATER_FIELDS.forEach((f) => (water[f.key] = ""));
   return {
+    mode: "",
     dilution: 120,
     tanks: [
       { name: "A液", tankL: 100, items: [] },
       { name: "B液", tankL: 100, items: [] },
     ],
     water: water,
-    acid: { anion: "", meqPerL: "" },
+    acid: { anion: "", meqPerL: "", residual: "1.0" },
+    // 実測からの評価。目標値も持つ（自分の圃場に合わせて動かすため）
+    evaluate: {
+      date: "", feedL: "", drainL: "", feedEc: "", drainEc: "",
+      feedPh: "", drainPh: "", note: "",
+      drainMin: "25", drainMax: "35", nMin: "100", nMax: "150", drainEcMax: "5.0",
+    },
+    feedLogAll: false,
     ecMeasured: "",
     ecCoefficient: "",
     // 保存した処方とのひもづけ
@@ -344,6 +362,31 @@ function buildInput() {
   return input;
 }
 
+// ---------- モードの出し分け ----------
+// history.js の switchTab を属性駆動に一般化したもの。
+// 違いは「切り替えで再計算しない」こと。
+//
+// ⚠️ applyMode は hidden 以外を触ってはいけない。recalc をモードで分岐させると、
+//    コスト（②①に依存）と実測評価（lastResult.ions に依存）が壊れる。
+//    全部計算して表示だけ出し分ける、を規律として守る。
+function applyMode() {
+  const m = state.mode;
+  const chosen = Object.prototype.hasOwnProperty.call(FERT_MODES, m);
+  $("mode-menu").hidden = chosen;
+  $("mode-bar").hidden = !chosen;
+  $("mode-title").textContent = chosen ? FERT_MODES[m] : "";
+  document.querySelectorAll("main [data-mode]").forEach((sec) => {
+    sec.hidden = !chosen || sec.dataset.mode.split(" ").indexOf(m) < 0;
+  });
+  window.scrollTo(0, 0);
+}
+
+function switchMode(mode) {
+  state.mode = mode;
+  saveState();
+  applyMode();
+}
+
 let lastResult = null;
 
 function recalc() {
@@ -389,6 +432,8 @@ function recalc() {
   renderIonTable(result);
   renderMicroTable(result);
   renderCost();
+  renderEvaluate();
+  renderRecipeSummary();
 
   // 実測ECが入っていれば係数の補正ボタンを出す
   $("ec-coef-box").hidden = !(result.ecCoefficientDerived > 0);
@@ -612,6 +657,361 @@ function runBuildTarget() {
 
 // ---------- コストと規模 ----------
 
+// 中和に必要な酸の量と、その酸が持ち込むイオンを出す。
+// 「pHを直すために入れたものが、組成を動かす」ことを見えるようにするのが目的
+function renderAcidResult(req) {
+  const box = $("acid-result");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!req) return;
+  const R = FertilizerCalc.round;
+  const label = ACID_ANION_LABEL[req.anion] || req.anion;
+
+  box.appendChild(el("p", "hint",
+    "中和量 " + R(req.meqPerL, 2) + " meq/L（原水のアルカリ度 " + R(req.fullNeutralizationMeq, 2)
+    + " のうち " + R(req.residualMeq, 2) + " を残す）"));
+  box.appendChild(el("p", "fert-acid-gain",
+    label + " が " + R(req.anionMmolPerL, 2) + " mmol/L 増えます"));
+  if (req.gPer1000L !== null) {
+    box.appendChild(el("p", "hint",
+      "給液1000Lあたり " + R(req.gPer1000L, 1) + " g（市販濃度のままの実重量）"));
+  }
+  if (req.anion === "SO4") {
+    box.appendChild(el("p", "hint warn",
+      "⚠️ 硫酸は2価。H⁺ 1 meq あたり SO4 は 0.5 mmol です。Caと同じタンクに入れると石膏が沈殿します"));
+  }
+  box.appendChild(el("p", "hint",
+    "増えた分は処方から差し引いてください。差し引かないと" + label + "が狙いより多くなります"));
+}
+
+// 3モード共通の1行サマリー。
+// コストも実測評価も処方（配合・希釈倍率・原水）の計算結果に依存しているので、
+// どのモードにいても「いまどの処方の話をしているか」が見えている必要がある。
+// 表示する値はすべて計算済みのものを引くだけで、新規計算はしない
+function renderRecipeSummary() {
+  const box = $("recipe-summary");
+  if (!box) return;
+  box.innerHTML = "";
+  const R = FertilizerCalc.round;
+
+  if (collectRecipeItems().length === 0) {
+    box.appendChild(el("p", "hint warn",
+      "⚠️ 処方が空です。EC推定と窒素施用量は出ません（排液率と排液ECの判定は動きます）"));
+    const btn = el("button", "btn-secondary", "処方をつくるへ");
+    btn.type = "button";
+    btn.addEventListener("click", () => switchMode("design"));
+    box.appendChild(btn);
+    return;
+  }
+
+  const parts = [];
+  if (state.recipeName) parts.push(state.recipeName);
+  parts.push(num(state.dilution) + "倍");
+  if (lastResult) {
+    parts.push("EC " + R(lastResult.ecEstimate, 2));
+    const n = FertilizerCalc.nitrogenMgPerL(lastResult.ions);
+    if (n > 0) parts.push("N " + R(n, 0) + " mg/L");
+  }
+  box.appendChild(el("p", "fert-context-line", parts.join(" / ")));
+}
+
+// 実測から評価する。
+// 借りてきたEC値をなぞるのではなく、自分の圃場の数字で次の一手を決めるための画面。
+// 窒素濃度はいまの処方から取るので、①〜④の入力とつながっている
+function renderEvaluate() {
+  const box = $("ev-result");
+  if (!box) return;
+  box.innerHTML = "";
+  const ev = state.evaluate || {};
+  const R = FertilizerCalc.round;
+  const feedL = num(ev.feedL);
+
+  if (!(feedL > 0)) {
+    box.appendChild(el("p", "hint", "給液量を入れると計算します。排液量・排液ECも入れると判定が増えます"));
+    return;
+  }
+
+  const nPerL = lastResult ? FertilizerCalc.nitrogenMgPerL(lastResult.ions) : 0;
+  const rec = {
+    feedLPerPlant: feedL,
+    drainLPerPlant: num(ev.drainL),
+    // 給液ECの実測が無ければ、処方からの推定値で代用する
+    feedEc: num(ev.feedEc) || (lastResult ? lastResult.ecEstimate : 0),
+    drainEc: num(ev.drainEc),
+    nitrogenMgPerL: nPerL,
+  };
+  const e = FertilizerCalc.evaluateFeed(rec);
+  const adv = FertilizerCalc.feedAdvice(rec, e, {
+    drainPctMin: num(ev.drainMin), drainPctMax: num(ev.drainMax),
+    nitrogenMin: num(ev.nMin), nitrogenMax: num(ev.nMax),
+    drainEcMax: num(ev.drainEcMax),
+  });
+
+  const cell = function (label, value, unit) {
+    const d = el("div", "fert-ev-cell");
+    d.appendChild(el("div", "fert-ev-label", label));
+    const v = el("div", "fert-ev-value", value === null || value === undefined ? "—" : String(value));
+    if (unit) v.appendChild(el("span", "fert-ev-unit", unit));
+    d.appendChild(v);
+    return d;
+  };
+  const grid = el("div", "fert-ev-grid");
+  grid.appendChild(cell("排液率", e.drainPct === null ? null : R(e.drainPct, 1), "%"));
+  grid.appendChild(cell("吸水量", e.uptakeLPerPlant === null ? null : R(e.uptakeLPerPlant, 2), "L/株/日"));
+  grid.appendChild(cell("養分吸収率", e.uptakeRatio === null ? null : R(e.uptakeRatio * 100, 1), "%"));
+  grid.appendChild(cell("窒素施用量", e.nitrogenMgPerPlant === null ? null : R(e.nitrogenMgPerPlant, 0), "mg/株/日"));
+  box.appendChild(grid);
+
+  if (e.drainRatio !== null && e.drainRatio !== undefined) {
+    box.appendChild(el("p", "hint",
+      "排液EC は給液EC の " + R(e.drainRatio, 2) + " 倍"
+      + (e.drainRatio <= 1 ? "（下回っている＝樹が吸えている）" : "（上回っている＝養分が余っている）")));
+  }
+  if (nPerL > 0) {
+    box.appendChild(el("p", "hint", "窒素濃度 " + R(nPerL, 1) + " mg/L（いまの処方から算出）"));
+  } else {
+    box.appendChild(el("p", "hint warn", "②タンクに肥料を入れると、窒素施用量も判定されます"));
+  }
+  if (!num(ev.feedEc) && lastResult) {
+    box.appendChild(el("p", "hint", "給液ECの実測が空欄なので、処方からの推定値 " + R(lastResult.ecEstimate, 2) + " を使っています"));
+  }
+
+  adv.forEach(function (a) {
+    const d = el("div", "fert-advice fert-advice-" + a.level);
+    d.appendChild(el("div", "fert-advice-topic", a.topic));
+    d.appendChild(el("div", "fert-advice-msg", a.message));
+    d.appendChild(el("div", "fert-advice-action", "→ " + a.action));
+    box.appendChild(d);
+  });
+
+  box.appendChild(el("p", "hint",
+    "この数字を毎日記録すると、自分の圃場の給液量カーブと吸収率が見えてきます。他所の試験値はそれまでの仮置きです"));
+}
+
+// ---------- 日々の記録 ----------
+// 保存先はこの端末。GAS接続時も、まずここに書いてから裏で送る
+// （通信を待たずに一覧へ出すため。growth.js と同じ考え方）。
+// ⚠️ 共通の記録ストア（work/spray/growth）には載せない。あちらに4種目を足すと
+//    pullRecords / storePrune / recordDate まで波及する
+const FERT_LOG_KEY = "tfm_feed_logs";
+
+function feedToday() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+function feedLogs() {
+  const list = readLocal(FERT_LOG_KEY);
+  return Array.isArray(list) ? list : [];
+}
+
+// いまの入力と計算結果から1行分を組み立てる。
+// 判断基準は「半年後にこの行だけ見て、当時の判定を再現できるか」。
+// ⚠️ 処方は上書き保存されうるので、処方IDへの参照だけでは再現できない。
+//    窒素濃度・希釈倍率・EC推定をスナップショットとして持たせる。
+// ⚠️ 給液ECは未入力だと推定値で代用しているので、実測かどうかのフラグを残す。
+//    これが無いと、あとで推移を見たときに実測と推定が混ざる
+function buildFeedLog() {
+  const ev = state.evaluate;
+  const R = FertilizerCalc.round;
+  const nPerL = lastResult ? FertilizerCalc.nitrogenMgPerL(lastResult.ions) : 0;
+  const feedEcInput = num(ev.feedEc);
+  const rec = {
+    feedLPerPlant: num(ev.feedL),
+    drainLPerPlant: num(ev.drainL),
+    feedEc: feedEcInput || (lastResult ? lastResult.ecEstimate : 0),
+    drainEc: num(ev.drainEc),
+    nitrogenMgPerL: nPerL,
+  };
+  const e = FertilizerCalc.evaluateFeed(rec);
+  const or = (v, d) => (v === null || v === undefined ? "" : R(v, d));
+  return {
+    "記録ID": "",
+    "給液日": ev.date || feedToday(),
+    "記録日時": new Date().toISOString(),
+    "clientId": newClientId(),
+    "状態": isMock ? "お試し" : "未同期",
+    "給液量": rec.feedLPerPlant,
+    "排液量": rec.drainLPerPlant,
+    "給液EC": R(rec.feedEc, 2),
+    "排液EC": rec.drainEc,
+    "給液pH": num(ev.feedPh) || "",
+    "排液pH": num(ev.drainPh) || "",
+    "排液率": or(e.drainPct, 1),
+    "吸水量": or(e.uptakeLPerPlant, 3),
+    "養分吸収率": e.uptakeRatio === null ? "" : R(e.uptakeRatio * 100, 1),
+    "窒素施用量": or(e.nitrogenMgPerPlant, 0),
+    "処方ID": state.recipeId || "",
+    "処方名": state.recipeName || "",
+    "希釈倍率": num(state.dilution),
+    "窒素濃度": R(nPerL, 1),
+    "EC推定": lastResult ? R(lastResult.ecEstimate, 2) : "",
+    "給液EC実測": feedEcInput > 0 ? "TRUE" : "FALSE",
+    "判定目標": "排液" + num(ev.drainMin) + "-" + num(ev.drainMax)
+      + "/N" + num(ev.nMin) + "-" + num(ev.nMax)
+      + "/排液EC≦" + num(ev.drainEcMax),
+    "メモ": ev.note || "",
+  };
+}
+
+function resetSaveButton() {
+  const btn = $("ev-save");
+  if (!btn) return;
+  btn.dataset.arm = "";
+  btn.textContent = "この内容で記録する";
+}
+
+function saveFeedLog() {
+  const ev = state.evaluate;
+  if (!(num(ev.feedL) > 0)) {
+    toast("給液量を入れてください");
+    return false;
+  }
+  const row = buildFeedLog();
+  const list = feedLogs();
+  // 給液日は1日1行。同じ日があれば置き換える
+  let replaced = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i]["給液日"] === row["給液日"]) { list.splice(i, 1, row); replaced = true; break; }
+  }
+  if (!replaced) list.push(row);
+  list.sort((a, b) => (String(a["給液日"]) < String(b["給液日"]) ? 1 : -1));
+  writeLocal(FERT_LOG_KEY, list);
+  toast(replaced ? "✅ " + row["給液日"] + " の記録を上書きしました" : "✅ 記録しました");
+  renderFeedLogList();
+  sendFeedLog(row);
+  return true;
+}
+
+// 手元に書いたあとで裏から送る。通れば記録IDを書き戻し、
+// 送れなければキューに残る（どちらでも手元の記録は消えない）。
+//
+// ⚠️ お試しモードでは送らない。apiPostWithQueue は isMock のとき mockPost に落ち、
+//    mockPost は未知の type を「作業記録」として保存してしまう（common.js）。
+//    saveRecipe が同じ理由で isMock を分岐しているので、それに倣う
+async function sendFeedLog(row) {
+  if (isMock) return;
+  const prof = (typeof getProfile === "function" ? getProfile() : {}) || {};
+  const payload = {
+    type: "feedLog",
+    clientId: row["clientId"],
+    feedDate: row["給液日"],
+    feedL: row["給液量"],
+    drainL: row["排液量"],
+    feedEc: row["給液EC"],
+    drainEc: row["排液EC"],
+    feedPh: row["給液pH"],
+    drainPh: row["排液pH"],
+    drainPct: row["排液率"],
+    uptakeL: row["吸水量"],
+    uptakeRatio: row["養分吸収率"],
+    nitrogenPerPlant: row["窒素施用量"],
+    recipeId: row["処方ID"],
+    recipeName: row["処方名"],
+    dilution: row["希釈倍率"],
+    nitrogenMgPerL: row["窒素濃度"],
+    ecEstimate: row["EC推定"],
+    feedEcMeasured: row["給液EC実測"] === "TRUE",
+    targetNote: row["判定目標"],
+    note: row["メモ"],
+    recorder: prof.displayName || "",
+    userId: prof.userId || "",
+  };
+  try {
+    const res = await apiPostWithQueue(payload);
+    const list = feedLogs();
+    for (let i = 0; i < list.length; i++) {
+      if (list[i]["clientId"] !== row["clientId"]) continue;
+      if (res && res.ok && res.id) { list[i]["記録ID"] = res.id; list[i]["状態"] = "完了"; }
+      else if (res && res.queued) { list[i]["状態"] = "送信待ち"; }
+      writeLocal(FERT_LOG_KEY, list);
+      renderFeedLogList();
+      break;
+    }
+  } catch (err) {
+    console.warn("給液記録を送れませんでした", err);
+  }
+}
+
+// 一覧。グラフは作らず、平均1行＋表で推移を読ませる
+function renderFeedLogList() {
+  const box = $("feed-log-list");
+  const sumBox = $("feed-log-summary");
+  const moreBtn = $("feed-log-more");
+  if (!box || !sumBox) return;
+  box.innerHTML = "";
+  sumBox.innerHTML = "";
+  const list = feedLogs();
+  if (moreBtn) moreBtn.hidden = list.length <= 14;
+
+  if (list.length === 0) {
+    box.appendChild(el("p", "hint",
+      "まだ記録がありません。上の欄を埋めて「この内容で記録する」を押すと、ここに溜まっていきます"));
+    return;
+  }
+  const R = FertilizerCalc.round;
+
+  // 直近7件の平均。日々の上下ではなく傾向を読むための行
+  const recent = list.slice(0, 7);
+  const avg = (key) => {
+    const vals = recent.map((r) => Number(r[key])).filter((v) => isFinite(v) && v !== 0);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  const parts = [];
+  const ad = avg("排液率"); if (ad !== null) parts.push("排液率 " + R(ad, 0) + "%");
+  const ae = avg("排液EC"); if (ae !== null) parts.push("排液EC " + R(ae, 2));
+  const an = avg("窒素施用量"); if (an !== null) parts.push("窒素 " + R(an, 0) + " mg/株/日");
+  if (parts.length) {
+    sumBox.appendChild(el("p", "fert-context-line",
+      "直近" + recent.length + "件の平均： " + parts.join(" / ")));
+  }
+
+  const limit = state.feedLogAll ? 60 : 14;
+  const rows = list.slice(0, limit);
+  const table = el("table", "fert-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  ["日付", "排液率", "給液EC", "排液EC", "N"].forEach((h) => hr.appendChild(el("th", "", h)));
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  rows.forEach((r, i) => {
+    const tr = el("tr");
+    // 給液ECが推定だった行は薄字にして、実測と混ぜて読まないようにする
+    if (r["給液EC実測"] === "FALSE") tr.className = "fert-row-sub";
+    tr.appendChild(el("td", "", String(r["給液日"]).slice(5)));
+    // 1つ古い行と比べて矢印を付ける（既存のイオン表と同じクラスを使う）
+    const prev = rows[i + 1];
+    const cell = (key, digits, unit) => {
+      const v = Number(r[key]);
+      const td = el("td", "num", isFinite(v) && r[key] !== "" ? R(v, digits) + (unit || "") : "—");
+      if (prev && r[key] !== "" && prev[key] !== "") {
+        const p = Number(prev[key]);
+        if (isFinite(p) && isFinite(v)) {
+          if (v > p) { td.className = "num fert-above"; td.textContent += " ↑"; }
+          else if (v < p) { td.className = "num fert-below"; td.textContent += " ↓"; }
+        }
+      }
+      return td;
+    };
+    tr.appendChild(cell("排液率", 0, "%"));
+    tr.appendChild(cell("給液EC", 2, ""));
+    tr.appendChild(cell("排液EC", 2, ""));
+    tr.appendChild(cell("窒素施用量", 0, ""));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = el("div", "fert-table-wrap");
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+  box.appendChild(el("p", "hint",
+    "薄い行は給液ECが実測ではなく処方からの推定値。N は窒素施用量 mg/株/日。↑↓ は1つ前の記録との比較"));
+  if (list.length > rows.length) {
+    box.appendChild(el("p", "hint", "全 " + list.length + " 件中 " + rows.length + " 件を表示"));
+  }
+}
+
 // 根拠にした月別の実測値を、いつでも見えるところに出しておく
 function renderScaleRef() {
   const box = $("scale-ref");
@@ -621,16 +1021,16 @@ function renderScaleRef() {
   const table = el("table", "fert-table");
   const thead = el("thead");
   const hr = el("tr");
-  ["月", "吸水量", "給液量", "排液率"].forEach((h) => hr.appendChild(el("th", "", h)));
+  ["月", "給液量", "EC", "ステージ"].forEach((h) => hr.appendChild(el("th", "", h)));
   thead.appendChild(hr);
   table.appendChild(thead);
   const tbody = el("tbody");
-  FEED_VOLUME_AICHI.forEach((m) => {
+  FEED_VOLUME_FORCING.forEach((m) => {
     const tr = el("tr");
     tr.appendChild(el("td", "", m.month + "月"));
-    tr.appendChild(el("td", "num sub", FertilizerCalc.round(m.uptakeMl, 0)));
     tr.appendChild(el("td", "num", m.feedMl));
-    tr.appendChild(el("td", "num sub", m.drainPct + "%"));
+    tr.appendChild(el("td", "num sub", m.ec.toFixed(1)));
+    tr.appendChild(el("td", "sub", m.stage));
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -638,9 +1038,13 @@ function renderScaleRef() {
   wrap.appendChild(table);
   box.appendChild(wrap);
   box.appendChild(el("p", "hint",
-    "単位 mL/日/株。愛知県農総試 研報53号(2021) 表4。夏秋作ミニトマト（5月定植・7〜10月）の実測で、8月定植の越冬長期どりとは作型が違う。冬期を含まないので平均は高めに出る"));
+    "単位 mL/日/株。伊藤ら(2022) 愛知農総試研報54号の低濃度区。大玉りんか409・ヤシガラ・3.0株/m²・CO2施用あり・促成長期（9/3定植〜6/28収穫終了）"));
   box.appendChild(el("p", "hint",
-    "越冬作型の冬期は 0.5 L/株/日 前後まで下がり、2月から増えて5月に1.2L程度（愛知県ガイドライン 図I-12 の目視読み取り・実測表ではない）"));
+    "論文が直接書くのは「給液量0.5〜1.2 L/株」の範囲だけ。月別の値は窒素施用量(表3)を培養液のNO3-N濃度で割った逆算値で、実測表ではない"));
+  box.appendChild(el("p", "hint warn",
+    "⚠️ 大玉の値。中玉・ミニでは変わる。株あたりなので栽植密度が違う計画に移すときはm²あたりに直すこと（この試験は3.0株/m²＝1.1〜3.6 L/m²/日）"));
+  box.appendChild(el("p", "hint",
+    "参考：夏秋作ミニトマトなら8月に2,500 mL/株/日まで要る（研報53号）。作型が違うので越冬長期どりには使わない"));
 }
 
 function renderCost() {
@@ -1135,6 +1539,87 @@ function bindInputs() {
     recalc();
   });
 
+  const acidResidual = $("acid-residual");
+  acidResidual.value = state.acid.residual;
+  acidResidual.addEventListener("focus", () => acidResidual.select());
+  acidResidual.addEventListener("input", () => {
+    state.acid.residual = acidResidual.value;
+    saveState();
+  });
+
+  $("acid-calc").addEventListener("click", () => {
+    const hco3 = num(state.water.HCO3);
+    if (!(hco3 > 0)) {
+      toast("先に③で原水のHCO3を入れてください");
+      return;
+    }
+    const anion = state.acid.anion || "NO3";
+    const req = FertilizerCalc.acidRequirement(hco3, {
+      anion: anion,
+      residualMeq: num(state.acid.residual),
+      fertilizerId: ACID_BY_ANION[anion],
+    });
+    state.acid.anion = anion;
+    state.acid.meqPerL = String(FertilizerCalc.round(req.meqPerL, 2));
+    saveState();
+    $("acid-anion").value = anion;
+    $("acid-meq").value = state.acid.meqPerL;
+    renderAcidResult(req);
+    recalc();
+  });
+
+  // --- 実測からの評価 ---
+  // 保存済みの状態が旧バージョンだと evaluate を持っていないので補う
+  if (!state.evaluate) {
+    state.evaluate = {
+      feedL: "", drainL: "", feedEc: "", drainEc: "",
+      drainMin: "25", drainMax: "35", nMin: "100", nMax: "150", drainEcMax: "5.0",
+    };
+  }
+  [
+    ["ev-date", "date"],
+    ["ev-feed", "feedL"], ["ev-drain", "drainL"],
+    ["ev-feed-ec", "feedEc"], ["ev-drain-ec", "drainEc"],
+    ["ev-feed-ph", "feedPh"], ["ev-drain-ph", "drainPh"], ["ev-note", "note"],
+    ["ev-drain-min", "drainMin"], ["ev-drain-max", "drainMax"],
+    ["ev-n-min", "nMin"], ["ev-n-max", "nMax"], ["ev-drain-ec-max", "drainEcMax"],
+  ].forEach((pair) => {
+    const elm = $(pair[0]);
+    if (!elm) return;
+    if (state.evaluate[pair[1]] !== undefined) elm.value = state.evaluate[pair[1]];
+    // 日付欄で select() すると入力しづらいので数値・文字だけ
+    if (elm.type !== "date") elm.addEventListener("focus", () => elm.select());
+    elm.addEventListener("input", () => {
+      state.evaluate[pair[1]] = elm.value;
+      saveState();
+      renderEvaluate();
+      if (pair[1] === "date") resetSaveButton();
+    });
+  });
+
+  // 同じ給液日に2回保存すると前の記録が消える。
+  // 既に記録がある日は、1回押しただけでは書き換えない（reset-all と同じ2段階）
+  $("ev-save").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    const date = state.evaluate.date || feedToday();
+    const dup = feedLogs().some((r) => r["給液日"] === date);
+    if (dup && btn.dataset.arm !== "1") {
+      btn.dataset.arm = "1";
+      btn.textContent = date + " の記録を上書きする？";
+      setTimeout(resetSaveButton, 4000);
+      return;
+    }
+    resetSaveButton();
+    saveFeedLog();
+  });
+
+  $("feed-log-more").addEventListener("click", () => {
+    state.feedLogAll = true;
+    saveState();
+    renderFeedLogList();
+    $("feed-log-more").hidden = true;
+  });
+
   const ecm = $("ec-measured");
   ecm.value = state.ecMeasured;
   ecm.addEventListener("input", () => {
@@ -1182,6 +1667,13 @@ function bindInputs() {
     }
   });
 
+  // --- モード ---
+  Object.keys(FERT_MODES).forEach((m) => {
+    const btn = $("mode-" + m);
+    if (btn) btn.addEventListener("click", () => switchMode(m));
+  });
+  $("back-to-menu").addEventListener("click", () => switchMode(""));
+
   $("reset-all").addEventListener("click", (e) => {
     const btn = e.currentTarget;
     if (btn.dataset.arm !== "1") {
@@ -1190,7 +1682,11 @@ function bindInputs() {
       setTimeout(() => { btn.dataset.arm = ""; btn.textContent = "入力をリセット"; }, 3000);
       return;
     }
+    // モードまで消すとモード選択画面に放り出される。
+    // リセットしたいのは入力であって、いまどの画面にいるかではない
+    const keepMode = state.mode;
     state = defaultState();
+    state.mode = keepMode;
     saveState();
     initRender();
     toast("入力をリセットしました");
@@ -1264,19 +1760,22 @@ function bindInputs() {
   $("solve").addEventListener("click", runSolve);
   $("build-target").addEventListener("click", runBuildTarget);
 
-  // 愛知県の実測値をそのまま入れる。ピークは8月の給液量指針、
-  // 平均は7〜10月の給液量指針の単純平均（冬を含まないので高めに出る）
+  // 促成長期どりの月別給液量から、ピークと年間平均を入れる。
+  // ピークは6月の1,210 mL、平均は10か月の単純平均。
+  // 年間日数は 9/3定植〜6/28収穫終了 の約300日。
   $("scale-preset").addEventListener("click", () => {
-    const peak = Math.max.apply(null, FEED_VOLUME_AICHI.map((m) => m.feedMl));
-    const avg = FEED_VOLUME_AICHI.reduce((s, m) => s + m.feedMl, 0) / FEED_VOLUME_AICHI.length;
+    const peak = Math.max.apply(null, FEED_VOLUME_FORCING.map((m) => m.feedMl));
+    const avg = FEED_VOLUME_FORCING.reduce((s, m) => s + m.feedMl, 0) / FEED_VOLUME_FORCING.length;
     state.scale.peak = String(peak);
     state.scale.avg = String(Math.round(avg));
+    state.scale.days = "300";
     saveState();
     $("scale-peak").value = state.scale.peak;
     $("scale-avg").value = state.scale.avg;
+    $("scale-days").value = state.scale.days;
     renderCost();
     renderScaleRef();
-    toast("愛知県の実測値を入れました");
+    toast("促成長期どりの給液量を入れました");
   });
 
   // --- 規模の入力 ---
@@ -1320,7 +1819,18 @@ function initRender() {
   $("scale-avg").value = state.scale.avg;
   $("scale-days").value = state.scale.days;
   renderScaleRef();
+  // 給液日は既定で今日。前日の値が残っていると、気づかずに前日の行を
+  // 上書きしてしまうので、今日より前の日付は今日に戻す
+  const today = feedToday();
+  const saved = state.evaluate.date;
+  state.evaluate.date = saved && saved >= today ? saved : today;
+  $("ev-date").value = state.evaluate.date;
+  renderFeedLogList();
+  resetSaveButton();
   recalc();
+  // 最後に置く。処方の読み込み・リセットからも initRender が呼ばれるので、
+  // ここを忘れるとその後でモードの表示が崩れる
+  applyMode();
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -1329,6 +1839,13 @@ window.addEventListener("DOMContentLoaded", () => {
   const u = $("user-info");
   if (u) u.textContent = getProfile().displayName;
   loadState();
+  // fertilizer.html#daily のように開くと、そのモードで始まる。
+  // ホームから1タップで給液の入力欄まで届かせるため
+  const hash = (location.hash || "").replace("#", "");
+  if (Object.prototype.hasOwnProperty.call(FERT_MODES, hash)) {
+    state.mode = hash;
+    saveState();
+  }
   bindInputs();
   initRender();
 

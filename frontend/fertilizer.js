@@ -332,21 +332,58 @@ function compareToReference(ions, micro) {
 //   中和量(meq/L) = 原水のアルカリ度 − 目標残留アルカリ度
 // 酸を足したら、そのイオン（NO3⁻やH2PO4⁻）とH⁺を加え、同じmeqだけHCO3⁻を引く。
 // H⁺を足してHCO3⁻を引かないと、ここで電荷収支が崩れる。
+// meq → mmol は価数で割る。硫酸は H2SO4 なので H⁺ 2 meq に対して SO4²⁻ が 1 mmol、
+// つまり H⁺ 1 meq あたり SO4 は 0.5 mmol しか入らない。
+// ここを1価扱いにすると硫酸を選んだときだけSO4を2倍積む（2026-09-04に修正）。
+// 硝酸(HNO3)とリン酸は1価。リン酸は3価の酸だが、養液のpH域(5.5〜6.5)では
+// 1段階目しか解離しないので H2PO4⁻ として1価で数える。
 function applyAcidNeutralization(ions, acid) {
   if (!acid || !(acid.meqPerL > 0)) return ions;
   const meq = acid.meqPerL;
   const available = ions.HCO3;
   const neutralized = Math.min(meq, available);
 
-  // 酸のアニオンを足す（1価前提）
   const anion = acid.anion || "NO3";
-  ions[anion] = (ions[anion] || 0) + meq;
-  // 対になるH⁺
+  const charge = Math.abs(ION_CHARGE[anion] || 1);
+  ions[anion] = (ions[anion] || 0) + meq / charge;
+  // 対になるH⁺（H⁺は1価なので meq = mmol）
   ions.H = (ions.H || 0) + meq;
   // 中和された分のHCO3⁻とH⁺は水とCO2になって消える
   ions.HCO3 = available - neutralized;
   ions.H = ions.H - neutralized;
   return ions;
+}
+
+// ---------- 中和に必要な酸の量 ----------
+// 原水のアルカリ度(HCO3⁻)から、必要な中和量と、酸が持ち込むイオン量を返す。
+// 残留アルカリ度は0にしない。pHを支えるものが無くなって下振れしやすくなるため、
+// 実務では 0.5〜1.0 meq/L 残す（アーカンソー大学の実務教材は1.0前後）。
+function acidRequirement(waterHCO3, opts) {
+  const hco3 = Number(waterHCO3) || 0;
+  const o = opts || {};
+  const residual = o.residualMeq === undefined ? 1.0 : Number(o.residualMeq) || 0;
+  const anion = o.anion || "NO3";
+  const meq = Math.max(0, hco3 - residual);
+  const charge = Math.abs(ION_CHARGE[anion] || 1);
+
+  // 原液に入れる実重量。市販の酸は水溶液なので purity で割り戻す
+  const chem = FERTILIZER_CHEM[o.fertilizerId || ""] || null;
+  let gPer1000L = null;
+  if (chem) {
+    // 酸1molあたりのH⁺の数で meq を mol に直す
+    const hPerMol = (chem.ions && chem.ions.H) || 1;
+    const mol = meq / hPerMol;              // mmol/L
+    gPer1000L = (mol * chem.mw) / (chem.purity || 1);  // mmol/L × g/mol = mg/L = g/1000L
+  }
+
+  return {
+    meqPerL: meq,
+    anion: anion,
+    anionMmolPerL: meq / charge,
+    residualMeq: residual,
+    gPer1000L: gPer1000L,
+    fullNeutralizationMeq: hco3,
+  };
 }
 
 // ---------- メイン ----------
@@ -574,13 +611,159 @@ function recipeCost(tanks, dilution) {
   };
 }
 
+// ---------- 実測からの評価 ----------
+// 他所の試験のEC値をなぞっても、自分の圃場の蒸散量が違えば施肥量は合わない。
+// 測るのは4つだけ（給液量・排液量・給液EC・排液EC）。そこから
+// 「いま何が起きているか」と「次に何をどう動かすか」を出す。
+//
+// 数字の根拠:
+//   排液率     ヤシガラ25〜35%（伊藤ら2022）／ロックウール10〜20%（石原ら2000）
+//   窒素施用量 定植期25 → 収穫期は1月まで100・2月以降150 mg/株/日（伊藤ら2022の結論）
+//   培地内EC   給液ECの数倍に濃縮する。石原ら2000は給液1.8に対し
+//              排液率8.3%でマット内9.6／16.3%で6.4／39.5%で3.0 を実測。
+//              排液率が半分になると培地内ECはほぼ倍になる
+//
+// 養分吸収率の式は物質収支から出る。
+//   給液した養分 = 排液に出た養分 + 樹が吸った養分
+//   → 吸収率 = 1 − (排液EC × 排液率) ÷ 給液EC
+// 伊藤ら2022の実測と符合する（低濃度区は窒素利用率84.5%で排液ECが給液を下回り、
+// 対照区は59.4%で上回った）。
+//
+// ⚠️ ECは全イオンの合計なので、この「吸収率」は窒素利用率とは一致しない。
+//    原水のNa⁺やCl⁻は吸われず蓄積するため、実際の値より低めに出る。
+//    絶対値ではなく、同じ圃場での推移を見るための指標として使う。
+function evaluateFeed(rec) {
+  const r = rec || {};
+  const feedL = Number(r.feedLPerPlant) || 0;
+  const drainL = Number(r.drainLPerPlant) || 0;
+  const feedEc = Number(r.feedEc) || 0;
+  const drainEc = Number(r.drainEc) || 0;
+  const nMgPerL = Number(r.nitrogenMgPerL) || 0;
+
+  const drainPct = feedL > 0 ? (drainL / feedL) * 100 : null;
+  const uptakeRatio = (feedL > 0 && feedEc > 0 && drainEc >= 0)
+    ? 1 - (drainEc * (drainL / feedL)) / feedEc
+    : null;
+  const nitrogenMgPerPlant = (feedL > 0 && nMgPerL > 0) ? feedL * nMgPerL : null;
+  // 樹が実際に吸った水（＝蒸散量）。給液量ではなくこちらが日射・気温に対応する
+  const uptakeLPerPlant = feedL > 0 ? feedL - drainL : null;
+  // 排液ECが給液ECの何倍か。1.0を超えたら養分が培地に溜まっている
+  const drainRatio = feedEc > 0 && drainEc > 0 ? drainEc / feedEc : null;
+
+  return {
+    drainPct: drainPct,
+    uptakeRatio: uptakeRatio,
+    nitrogenMgPerPlant: nitrogenMgPerPlant,
+    uptakeLPerPlant: uptakeLPerPlant,
+    drainRatio: drainRatio,
+  };
+}
+
+// 評価結果を目標と突き合わせ、次の一手を数字で返す。
+// target: { drainPctMin, drainPctMax, nitrogenMin, nitrogenMax, drainEcMax }
+function feedAdvice(rec, evalResult, target) {
+  const t = target || {};
+  const dMin = t.drainPctMin === undefined ? 25 : Number(t.drainPctMin);
+  const dMax = t.drainPctMax === undefined ? 35 : Number(t.drainPctMax);
+  const nMin = Number(t.nitrogenMin) || 0;
+  const nMax = Number(t.nitrogenMax) || 0;
+  const ecMax = t.drainEcMax === undefined ? 5.0 : Number(t.drainEcMax);
+
+  const e = evalResult || {};
+  const out = [];
+  const feedL = Number((rec || {}).feedLPerPlant) || 0;
+  const feedEc = Number((rec || {}).feedEc) || 0;
+  const nMgPerL = Number((rec || {}).nitrogenMgPerL) || 0;
+
+  // ① 排液EC。ここだけは他を差し置いて先に見る
+  const drainEc = Number((rec || {}).drainEc) || 0;
+  if (drainEc > ecMax) {
+    out.push({
+      level: "danger", topic: "排液EC",
+      message: `排液EC ${round(drainEc, 2)} が上限 ${ecMax} を超えています。塩類が培地に溜まっている状態で、草勢低下と尻腐れにつながります`,
+      action: "給液量を増やして洗い流す（リーチング）。ECを下げても培地に溜まった分は抜けません",
+    });
+  }
+
+  // ② 排液率。給液量の適否はこれで決まる
+  if (e.drainPct !== null && e.drainPct !== undefined) {
+    if (e.drainPct < dMin) {
+      // 目標排液率にするのに必要な給液量
+      const need = feedL > 0 && e.uptakeLPerPlant > 0
+        ? e.uptakeLPerPlant / (1 - dMin / 100) : null;
+      out.push({
+        level: "warn", topic: "排液率",
+        message: `排液率 ${round(e.drainPct, 1)}% は目標 ${dMin}〜${dMax}% を下回っています。培地内で濃縮が進みます`,
+        action: need
+          ? `給液量を ${round(feedL, 2)} → ${round(need, 2)} L/株/日 に増やす（吸水量 ${round(e.uptakeLPerPlant, 2)} L から逆算）`
+          : "給液量を増やす",
+      });
+    } else if (e.drainPct > dMax) {
+      const need = e.uptakeLPerPlant > 0 ? e.uptakeLPerPlant / (1 - dMax / 100) : null;
+      out.push({
+        level: "info", topic: "排液率",
+        message: `排液率 ${round(e.drainPct, 1)}% は目標 ${dMin}〜${dMax}% を上回っています。肥料と水を余分に流しています`,
+        action: need ? `給液量を ${round(need, 2)} L/株/日 まで減らせます` : "給液量を減らせます",
+      });
+    }
+  }
+
+  // ③ 排液ECと給液ECの関係。上限に達していなくても、上回り続けるのは黄信号
+  if (e.drainRatio !== null && e.drainRatio !== undefined && drainEc <= ecMax) {
+    if (e.drainRatio > 1.0) {
+      out.push({
+        level: "warn", topic: "養分の収支",
+        message: `排液EC が給液EC の ${round(e.drainRatio, 2)} 倍です。入れた養分を樹が使い切れていません`,
+        action: "この状態が1週間続くなら給液ECを0.1〜0.2下げる。ただし先に排液率と樹勢を確認する",
+      });
+    }
+  }
+
+  // ④ 窒素施用量。ECではなくこちらが本体
+  if (e.nitrogenMgPerPlant !== null && e.nitrogenMgPerPlant !== undefined && nMin > 0) {
+    const n = e.nitrogenMgPerPlant;
+    if (n < nMin || (nMax > 0 && n > nMax)) {
+      // 目標窒素量を今の給液量で満たすのに必要な濃度 → ECに換算
+      const wanted = n < nMin ? nMin : nMax;
+      const needMgPerL = feedL > 0 ? wanted / feedL : null;
+      const needEc = (needMgPerL && nMgPerL > 0 && feedEc > 0)
+        ? feedEc * (needMgPerL / nMgPerL) : null;
+      out.push({
+        level: n < nMin ? "warn" : "info", topic: "窒素施用量",
+        message: `窒素 ${round(n, 0)} mg/株/日 は目標 ${nMin}${nMax ? "〜" + nMax : ""} mg から外れています`,
+        action: needEc
+          ? `いまの給液量 ${round(feedL, 2)} L のままなら、給液EC を ${round(feedEc, 2)} → ${round(needEc, 2)} にする`
+          : "給液ECか給液量を調整する",
+      });
+    }
+  }
+
+  if (out.length === 0) {
+    out.push({
+      level: "ok", topic: "総合",
+      message: "排液率・排液EC・窒素施用量とも目標の範囲に入っています",
+      action: "このまま継続。数字を記録に残して、自分の圃場の値として蓄積する",
+    });
+  }
+  return out;
+}
+
+// 処方から窒素濃度(mg/L)を出す。evaluateFeed に渡す用。
+// NO3⁻ も NH4⁺ も窒素は1原子なので、mmol/L の合計に原子量を掛ける
+function nitrogenMgPerL(ions) {
+  const i = ions || {};
+  const no3 = Number(i.NO3) || 0;
+  const nh4 = Number(i.NH4) || 0;
+  return (no3 + nh4) * 14.01;
+}
+
 // ---------- 給液量から見た規模 ----------
 // 「1000L作るのに何kg」だけでは、タンクが何日持つか・年間いくらかかるかが分からない。
 // 株数と1株あたりの給液量を入れて、調製の頻度と年間の肥料費を出す。
 //
-// 給液量の目安（愛知県農業総合試験場・夏秋ミニトマトのヤシガラ培地耕）:
-//   1回 100〜120 mL/株（高温期8月は150）、8〜19回/日
-//   月別の最大吸水量 737.5〜1695.6 mL/日/株
+// 給液量の目安（伊藤ら2022・愛知農総試研報54号・促成長期どり・大玉りんか409）:
+//   1回 150〜200 mL/株、給液量 0.5〜1.2 L/株/日、排液率25〜35%を目標
+// ⚠️ 夏秋作ミニトマトの値（8月に2,500 mL/株/日）は作型が違うので混ぜない。
 // ピーク時と年間平均を分けて扱う。
 //   タンク容量・調製の頻度 → ピーク（いちばん厳しい日に足りるか）
 //   年間の肥料費           → 平均（繁忙期の値を年間に掛けると過大になる）
@@ -832,6 +1015,8 @@ if (typeof window !== "undefined") {
     solveRecipe, mmolToKg, estimatePhBand, tankStockPh,
     fertilizerTankRoles, tankRoles, conflictsWithTank, tankConflicts, splitIntoTwoTanks,
     recipeCost, scaleEstimate, buildBalancedTarget,
+    applyAcidNeutralization, acidRequirement,
+    evaluateFeed, feedAdvice, nitrogenMgPerL,
     EC_COEFFICIENT,
   };
 }

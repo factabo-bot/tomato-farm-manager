@@ -64,6 +64,7 @@ var SHEET_WEATHER = "気象データ";
 var SHEET_MASTER_WATER = "マスタ_原水";
 var SHEET_FEED_RECIPE = "マスタ_養液処方";
 var SHEET_FEED_RECIPE_ITEMS = "マスタ_養液処方明細";
+var SHEET_FEED_LOG = "養液記録";
 
 // 目的タグを1つの列にまとめるときの区切り文字。マスタの目的名にこの文字は使わない
 var PURPOSE_SEPARATOR = "、";
@@ -161,6 +162,23 @@ var FEED_RECIPE_ITEM_HEADERS = [
   "処方ID", "表示順", "タンク名", "タンク容量L", "肥料ID", "肥料名", "量kg",
 ];
 
+// 日々の給液記録。1日1行。
+// 実測4項目だけでなく、そこから計算した導出値と、そのとき使っていた処方の
+// スナップショットまで持つ。判断基準は「半年後にこの行だけ見て当時の判定を再現できるか」。
+//   ・処方は上書き保存されうるので、処方IDへの参照だけでは再現できない
+//     → 窒素濃度・希釈倍率・EC推定を値で残す
+//   ・給液ECは未入力だとフロントが処方からの推定値で代用する
+//     → 「給液EC実測」で区別しないと、推移を見るときに実測と推定が混ざる
+//   ・判定に使った目標値も残す。「なぜ当時NGと出たか」が後から追えなくなるため
+var FEED_LOG_HEADERS = [
+  "記録ID", "給液日", "記録日時", "拠点", "棟・区画", "記録者", "userId", "clientId", "状態", "更新日時",
+  "給液量", "排液量", "給液EC", "排液EC", "給液pH", "排液pH",
+  "排液率", "吸水量", "養分吸収率", "窒素施用量",
+  "処方ID", "処方名", "希釈倍率", "窒素濃度", "EC推定",
+  "給液EC実測", "判定目標",
+  "天候", "最高気温", "最低気温", "メモ",
+];
+
 // 散布区分の判定に使う区分の分類。
 // 展着剤は農薬登録があっても「防除をした」根拠にはしない（他の資材の効きを助けるだけのため）
 var KUBUN_PEST_CONTROL = ["殺虫剤", "殺菌剤", "殺虫殺菌剤", "除草剤", "殺ダニ剤", "生物殺虫剤（微生物）", "殺虫剤（気門封鎖剤）"];
@@ -251,6 +269,7 @@ function setup() {
   ensureSheet_(ss, SHEET_MASTER_WATER, MASTER_WATER_HEADERS);
   ensureSheet_(ss, SHEET_FEED_RECIPE, FEED_RECIPE_HEADERS);
   ensureSheet_(ss, SHEET_FEED_RECIPE_ITEMS, FEED_RECIPE_ITEM_HEADERS);
+  ensureSheet_(ss, SHEET_FEED_LOG, FEED_LOG_HEADERS);
   seedMastersIfEmpty_(ss);
 }
 
@@ -428,6 +447,8 @@ function doPost(e) {
     if (data.type === "upsertMaster") return upsertMaster_(data);
     if (data.type === "feedRecipe") return saveFeedRecipe_(data);
     if (data.type === "deleteFeedRecipe") return deleteFeedRecipe_(data);
+    if (data.type === "feedLog") return saveFeedLog_(data);
+    if (data.type === "cancelFeedLog") return cancelFeedLog_(data);
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -829,6 +850,143 @@ function deleteFeedRecipe_(data) {
   return json_({ ok: false, error: "処方が見つかりません" });
 }
 
+// ---------- 日々の給液記録 ----------
+
+// 気象データシートから、その日の天候を引く。
+// 入力させずに済ませたいので、保存のついでにこちらで写す
+function weatherOn_(dateStr) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_WEATHER);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  var hm = headerMap_(sheet);
+  if (hm["日付"] === undefined) return null;
+  var values = sheet.getDataRange().getValues();
+  for (var i = values.length - 1; i >= 1; i--) {   // 新しい行が後ろにある想定で後ろから
+    if (dateKey_(values[i][hm["日付"]]) === dateStr) {
+      return {
+        weather: hm["天気概況"] === undefined ? "" : values[i][hm["天気概況"]],
+        tmax: hm["最高気温"] === undefined ? "" : values[i][hm["最高気温"]],
+        tmin: hm["最低気温"] === undefined ? "" : values[i][hm["最低気温"]],
+      };
+    }
+  }
+  return null;
+}
+
+// 給液記録の保存。給液日は1日1行で、同じ日が来たら上書きする。
+// setup() の実行を待たずに動くよう、シートが無ければここで作る
+function saveFeedLog_(data) {
+  if (!(Number(data.feedL) > 0)) return json_({ ok: false, error: "給液量を入れてください" });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSheet_(ss, SHEET_FEED_LOG, FEED_LOG_HEADERS);
+  ensureColumns_(SHEET_FEED_LOG, FEED_LOG_HEADERS);
+
+  var dup = findByClientId_(SHEET_FEED_LOG, data.clientId);
+  if (dup) return json_({ ok: true, id: dup, duplicate: true });
+
+  var sheet = ss.getSheetByName(SHEET_FEED_LOG);
+  var now = new Date();
+  var nowStr = Utilities.formatDate(now, TZ, "yyyy-MM-dd HH:mm:ss");
+  var feedDate = data.feedDate || Utilities.formatDate(now, TZ, "yyyy-MM-dd");
+  var w = weatherOn_(feedDate) || { weather: "", tmax: "", tmin: "" };
+
+  var obj = {
+    "記録ID": Utilities.getUuid(),
+    "給液日": feedDate,
+    "記録日時": nowStr,
+    "拠点": data.base || "",
+    "棟・区画": data.building || "",
+    "記録者": data.recorder || "",
+    "userId": data.userId || "",
+    "clientId": data.clientId || "",
+    "状態": "完了",
+    "更新日時": nowStr,
+    "給液量": data.feedL,
+    "排液量": data.drainL === undefined ? "" : data.drainL,
+    "給液EC": data.feedEc === undefined ? "" : data.feedEc,
+    "排液EC": data.drainEc === undefined ? "" : data.drainEc,
+    "給液pH": data.feedPh === undefined ? "" : data.feedPh,
+    "排液pH": data.drainPh === undefined ? "" : data.drainPh,
+    "排液率": data.drainPct === undefined ? "" : data.drainPct,
+    "吸水量": data.uptakeL === undefined ? "" : data.uptakeL,
+    "養分吸収率": data.uptakeRatio === undefined ? "" : data.uptakeRatio,
+    "窒素施用量": data.nitrogenPerPlant === undefined ? "" : data.nitrogenPerPlant,
+    "処方ID": data.recipeId || "",
+    "処方名": data.recipeName || "",
+    "希釈倍率": data.dilution === undefined ? "" : data.dilution,
+    "窒素濃度": data.nitrogenMgPerL === undefined ? "" : data.nitrogenMgPerL,
+    "EC推定": data.ecEstimate === undefined ? "" : data.ecEstimate,
+    "給液EC実測": data.feedEcMeasured ? "TRUE" : "FALSE",
+    "判定目標": data.targetNote || "",
+    "天候": w.weather,
+    "最高気温": w.tmax,
+    "最低気温": w.tmin,
+    "メモ": data.note || "",
+  };
+
+  // 同じ給液日の行があれば、それを書き換える（1日1行）
+  var hm = headerMap_(sheet);
+  var last = sheet.getLastRow();
+  if (last >= 2 && hm["給液日"] !== undefined) {
+    var values = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+    for (var i = 0; i < values.length; i++) {
+      if (String(values[i][hm["状態"]]) === "取消") continue;
+      if (dateKey_(values[i][hm["給液日"]]) !== feedDate) continue;
+      obj["記録ID"] = values[i][hm["記録ID"]] || obj["記録ID"];
+      sheet.getRange(i + 2, 1, 1, sheet.getLastColumn())
+        .setValues([objectToRowBySheet_(sheet, obj)]);
+      return json_({ ok: true, id: obj["記録ID"], replaced: true });
+    }
+  }
+
+  sheet.appendRow(objectToRowBySheet_(sheet, obj));
+  return json_({ ok: true, id: obj["記録ID"] });
+}
+
+// 論理削除。行は消さずに状態を「取消」にする（他の記録と同じ扱い）
+function cancelFeedLog_(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_FEED_LOG);
+  if (!sheet) return json_({ ok: false, error: "養液記録のシートがありません" });
+  var id = String(data.recordId || "").trim();
+  if (!id) return json_({ ok: false, error: "記録IDがありません" });
+  var last = sheet.getLastRow();
+  if (last < 2) return json_({ ok: false, error: "記録が見つかりません" });
+
+  var hm = headerMap_(sheet);
+  var values = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][hm["記録ID"]]) === id) {
+      sheet.getRange(i + 2, hm["状態"] + 1).setValue("取消");
+      if (hm["更新日時"] !== undefined) {
+        sheet.getRange(i + 2, hm["更新日時"] + 1)
+          .setValue(Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss"));
+      }
+      return json_({ ok: true });
+    }
+  }
+  return json_({ ok: false, error: "記録が見つかりません" });
+}
+
+function getFeedLogs_(params) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_FEED_LOG);
+  if (!sheet || sheet.getLastRow() < 2) return json_({ ok: true, logs: [] });
+  var hm = headerMap_(sheet);
+  var from = params.from || "0000-00-00";
+  var to = params.to || "9999-99-99";
+  var values = sheet.getDataRange().getValues();
+  var logs = [];
+  for (var i = 1; i < values.length; i++) {
+    var d = dateKey_(values[i][hm["給液日"]]);
+    if (d < from || d > to) continue;
+    if (String(values[i][hm["状態"]]) === "取消") continue;
+    var o = rowToObjectBySheet_(hm, values[i]);
+    o["給液日"] = d;
+    logs.push(o);
+  }
+  logs.sort(function (a, b) { return String(a["給液日"]) < String(b["給液日"]) ? 1 : -1; });
+  return json_({ ok: true, logs: logs });
+}
+
 function upsertMaster_(data) {
   var allowed = [
     SHEET_MASTER_BASE, SHEET_MASTER_WORKTYPE, SHEET_MASTER_MATERIAL,
@@ -1033,6 +1191,7 @@ function doGet(e) {
   if (action === "legalLedger") return getLegalLedger_(params);
   if (action === "weather") return getWeather_(params);
   if (action === "weatherRange") return getWeatherRange_(params);
+  if (action === "feedLogs") return getFeedLogs_(params);
   if (action === "debug") return getDebug_();
 
   return json_({ ok: true, message: "tomato-farm-manager API" });

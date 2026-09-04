@@ -210,6 +210,187 @@
   cursor: pointer;
 }
 /* タンクの箱の中に出す警告。計算結果まで見に行かなくても気づけるようにする */
+/* 注意書きだが警告ではないもの。グレーのhintだと読み飛ばすので色を付ける */
+.hint.warn {
+  color: #8e1b13;
+}
+
+/* 中和酸が持ち込むイオン量。ここを見落とすと組成が狂うので目立たせる */
+.fert-acid-gain {
+  background: #fff4e5;
+  border-left: 4px solid #ed6c02;
+  color: #7a3e00;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 6px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- モード選択 ---- */
+/* .btn-primary / .btn-secondary は line-height:56px の1行前提なので、
+   説明文を2行で入れるモードカードは別クラスにする */
+.mode-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mode-card:active {
+  background: #eef3f5;
+}
+
+.mode-card-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: #22303a;
+}
+
+.mode-card-sub {
+  display: block;
+  font-size: 12px;
+  color: #778;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.mode-back {
+  flex: 0 0 auto;
+  border: 1px solid #cfd8dc;
+  border-radius: 6px;
+  background: #fff;
+  color: #456;
+  font-size: 13px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.mode-bar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #22303a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 3モード共通の処方バンド。いまどの処方の話をしているかを示す */
+.fert-context {
+  background: #f5f7f8;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.fert-context-line {
+  font-size: 13px;
+  font-weight: 600;
+  color: #22303a;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 実測からの評価 ---- */
+.fert-ev-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.fert-ev-cell {
+  background: #f5f7f8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.fert-ev-label {
+  font-size: 11px;
+  color: #667;
+}
+
+.fert-ev-value {
+  font-size: 19px;
+  font-weight: 700;
+  color: #22303a;
+  line-height: 1.3;
+}
+
+.fert-ev-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: #889;
+  margin-left: 3px;
+}
+
+/* 助言。level で色を変える。actionが「次に何をするか」の行 */
+.fert-advice {
+  border-left: 4px solid #ccc;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: #fafafa;
+}
+
+.fert-advice-topic {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+
+.fert-advice-msg {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fert-advice-action {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.fert-advice-danger { border-left-color: #c62828; background: #fdecea; color: #8e1b13; }
+.fert-advice-warn   { border-left-color: #ed6c02; background: #fff4e5; color: #7a3e00; }
+.fert-advice-info   { border-left-color: #0288d1; background: #e8f4fb; color: #01579b; }
+.fert-advice-ok     { border-left-color: #2e7d32; background: #edf7ed; color: #1b5e20; }
+
+.fert-details {
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.fert-details > summary {
+  cursor: pointer;
+  color: #567;
+  padding: 4px 0;
+}
+
+.num-input.narrow {
+  max-width: 74px;
+}
+
 .fert-tank-warn {
   background: #fdecea;
   border-left: 4px solid #c62828;

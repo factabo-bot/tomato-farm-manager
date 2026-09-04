@@ -7,7 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
 <link rel="stylesheet" href="styles.css?v=20260903a">
-<link rel="stylesheet" href="fertilizer.css?v=20260903a">
+<link rel="stylesheet" href="fertilizer.css?v=20260904a">
 </head>
 <body>
 <header>
@@ -29,10 +29,127 @@
 <main>
   <div id="queue-badge" class="queue-badge" hidden></div>
 
-  <p class="hint">原液タンクの配合を入れると、給液の組成・EC・電荷バランスを計算します。入力はこの端末に自動保存されます。</p>
+  <!-- ============ モード選択（mode未設定のときだけ出る） ============ -->
+  <section id="mode-menu" hidden>
+    <h2>何をしますか</h2>
+    <button id="mode-daily" class="mode-card" type="button">
+      <span class="mode-card-title">📓 日々の記録と評価</span>
+      <span class="mode-card-sub">給液量と排液ECを入れて、次の一手を出す／毎日・ハウスで</span>
+    </button>
+    <button id="mode-design" class="mode-card" type="button">
+      <span class="mode-card-title">🧪 処方をつくる</span>
+      <span class="mode-card-sub">タンクの配合・原水・pH調整・逆算／就農前の設計、年に数回</span>
+    </button>
+    <button id="mode-cost" class="mode-card" type="button">
+      <span class="mode-card-title">💰 コストを見る</span>
+      <span class="mode-card-sub">肥料代と調製の頻度／事業計画・資材の発注</span>
+    </button>
+    <p class="hint">次に開いたときは、最後に使ったモードが直接出ます</p>
+  </section>
 
-  <!-- ============ 結果（入力の上に置く。数値を見ながら配合をいじるため） ============ -->
-  <section id="result-panel" class="mix-sheet">
+  <!-- ============ モードバー（モード選択済みのとき） ============ -->
+  <div id="mode-bar" class="mode-bar" hidden>
+    <button id="back-to-menu" class="mode-back" type="button">← モード選択</button>
+    <span id="mode-title" class="mode-bar-title"></span>
+  </div>
+
+  <!-- ============ 処方コンテキスト（3モード共通） ============ -->
+  <section id="fert-context" class="fert-context" data-mode="design cost daily">
+    <select id="recipe-select"><option value="">（読み込み中…）</option></select>
+    <p class="hint" id="recipe-hint">選ぶとタンクの配合・希釈倍率・原水がまとめて入ります</p>
+    <div id="recipe-summary"></div>
+  </section>
+
+  <!-- ============ 日々の記録と評価 ============ -->
+  <section id="sec-evaluate" data-mode="daily">
+    <h2>実測から評価する</h2>
+    <div class="num-row">
+      <label class="num-label" for="ev-date">給液日</label>
+      <input class="num-input" type="date" id="ev-date">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="ev-feed">給液量</label>
+      <input class="num-input" type="number" id="ev-feed" inputmode="decimal" step="0.05" placeholder="例: 0.55">
+      <span class="num-unit">L/株/日</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="ev-drain">排液量</label>
+      <input class="num-input" type="number" id="ev-drain" inputmode="decimal" step="0.01" placeholder="例: 0.17">
+      <span class="num-unit">L/株/日</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="ev-feed-ec">給液EC</label>
+      <input class="num-input" type="number" id="ev-feed-ec" inputmode="decimal" step="0.01" placeholder="例: 1.80">
+      <span class="num-unit">dS/m</span>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="ev-drain-ec">排液EC</label>
+      <input class="num-input" type="number" id="ev-drain-ec" inputmode="decimal" step="0.01" placeholder="例: 1.50">
+      <span class="num-unit">dS/m</span>
+    </div>
+
+    <details class="fert-details">
+      <summary>任意（pH・メモ）</summary>
+      <div class="num-row">
+        <label class="num-label" for="ev-feed-ph">給液pH</label>
+        <input class="num-input" type="number" id="ev-feed-ph" inputmode="decimal" step="0.1" placeholder="例: 5.8">
+      </div>
+      <div class="num-row">
+        <label class="num-label" for="ev-drain-ph">排液pH</label>
+        <input class="num-input" type="number" id="ev-drain-ph" inputmode="decimal" step="0.1" placeholder="例: 6.2">
+      </div>
+      <div class="num-row">
+        <label class="num-label" for="ev-note">メモ</label>
+        <input class="num-input fert-name-input" type="text" id="ev-note" placeholder="棟・レーン・気づいたことなど">
+      </div>
+      <p class="hint">pHは評価計算には使いませんが、記録には残ります。給液pHは混入機の調子、排液pHは根圏の状態を示す別々の指標です</p>
+    </details>
+
+    <button id="ev-save" class="btn-primary" type="button">この内容で記録する</button>
+
+    <details class="fert-details">
+      <summary>目標値（自分の圃場に合わせて変える）</summary>
+      <div class="num-row">
+        <label class="num-label" for="ev-drain-min">排液率</label>
+        <input class="num-input narrow" type="number" id="ev-drain-min" inputmode="decimal" step="1" value="25">
+        <span class="num-unit">〜</span>
+        <input class="num-input narrow" type="number" id="ev-drain-max" inputmode="decimal" step="1" value="35">
+        <span class="num-unit">%</span>
+      </div>
+      <div class="num-row">
+        <label class="num-label" for="ev-n-min">窒素施用量</label>
+        <input class="num-input narrow" type="number" id="ev-n-min" inputmode="decimal" step="5" value="100">
+        <span class="num-unit">〜</span>
+        <input class="num-input narrow" type="number" id="ev-n-max" inputmode="decimal" step="5" value="150">
+        <span class="num-unit">mg/株/日</span>
+      </div>
+      <div class="num-row">
+        <label class="num-label" for="ev-drain-ec-max">排液EC上限</label>
+        <input class="num-input" type="number" id="ev-drain-ec-max" inputmode="decimal" step="0.1" value="5.0">
+        <span class="num-unit">dS/m</span>
+      </div>
+      <p class="hint">既定値の出どころ：排液率25〜35%＝伊藤ら2022（ヤシガラ）。ロックウールなら石原ら2000の10〜20%。窒素は伊藤ら2022の結論（定植期25 → 収穫開始100 → 2月以降150）。排液EC 5.0＝愛知県実証②</p>
+    </details>
+
+    <div id="ev-result"></div>
+
+    <p class="hint"><strong>他所の試験のEC値は初期値でしかありません。</strong>自分の圃場の蒸散量が違えば、同じECでも施肥量は変わります</p>
+    <p class="hint">測るのは4つだけ。ここから<strong>次に何をどう動かすか</strong>が出ます</p>
+  </section>
+
+  <!-- 記録の一覧 -->
+  <section id="sec-feed-log" data-mode="daily">
+    <h2>最近の記録</h2>
+    <div id="feed-log-summary"></div>
+    <div id="feed-log-list"></div>
+    <button id="feed-log-more" class="btn-secondary" type="button" hidden>もっと見る</button>
+  </section>
+
+  <!-- ============ 処方をつくる ============ -->
+  <p class="hint" data-mode="design">原液タンクの配合を入れると、給液の組成・EC・電荷バランスを計算します。入力はこの端末に自動保存されます。</p>
+
+  <!-- 結果（入力の上に置く。数値を見ながら配合をいじるため） -->
+  <section id="sec-result" class="mix-sheet" data-mode="design">
     <h2>計算結果</h2>
 
     <div class="fert-summary">
@@ -67,11 +184,9 @@
     <div id="res-micro" class="fert-table-wrap"></div>
   </section>
 
-  <!-- ============ 処方の呼び出し・保存 ============ -->
-  <section>
-    <h2>保存した処方</h2>
-    <select id="recipe-select"><option value="">（読み込み中…）</option></select>
-    <p class="hint" id="recipe-hint">選ぶとタンクの配合・希釈倍率・原水がまとめて入ります</p>
+  <!-- 処方の保存 -->
+  <section id="sec-recipe" data-mode="design">
+    <h2>処方の保存</h2>
     <div class="num-row">
       <label class="num-label" for="recipe-name">処方名</label>
       <input class="num-input fert-name-input" type="text" id="recipe-name" placeholder="例: 厳寒期・生殖成長型">
@@ -94,9 +209,9 @@
     <button id="delete-recipe" class="btn-secondary" type="button" hidden>この処方を削除</button>
   </section>
 
-  <!-- ============ 希釈倍率 ============ -->
-  <section>
-    <h2>① 希釈倍率</h2>
+  <!-- 希釈倍率 -->
+  <section id="sec-dilution" data-mode="design">
+    <h2>希釈倍率</h2>
     <div class="num-row">
       <label class="num-label" for="dilution">原液を</label>
       <input class="num-input" type="number" id="dilution" inputmode="decimal" value="120">
@@ -105,18 +220,18 @@
     <p class="hint">液肥混入機の設定値。原液1に対して水を何倍入れるか</p>
   </section>
 
-  <!-- ============ タンク ============ -->
-  <section>
-    <h2>② 原液タンク</h2>
+  <!-- タンク -->
+  <section id="sec-tank" data-mode="design">
+    <h2>原液タンク</h2>
     <p class="hint">カルシウムと硫酸／リン酸は同じタンクに入れると沈殿します。分けてください</p>
     <div id="tank-list"></div>
     <button id="auto-split" class="btn-secondary" type="button">🔀 タンクを自動で分ける</button>
     <button id="add-tank" class="btn-secondary" type="button">＋ タンクを増やす</button>
   </section>
 
-  <!-- ============ 原水 ============ -->
-  <section>
-    <h2>③ 原水（井戸水・水道水）</h2>
+  <!-- 原水 -->
+  <section id="sec-water" data-mode="design">
+    <h2>原水（井戸水・水道水）</h2>
     <select id="water-select"><option value="">（手入力）</option></select>
     <p class="hint">水質分析値を入れると計算に加算します。<strong>電荷バランスがゼロにならない場合、分析値に抜けがあります</strong>（HCO3やNaが未測定など）</p>
     <div id="water-inputs" class="fert-water-grid"></div>
@@ -126,9 +241,9 @@
     </div>
   </section>
 
-  <!-- ============ 中和酸 ============ -->
-  <section>
-    <h2>④ アルカリ度の中和（任意）</h2>
+  <!-- 中和酸 -->
+  <section id="sec-acid" data-mode="design">
+    <h2>アルカリ度の中和（任意）</h2>
     <p class="hint">原水のHCO3を酸で中和する場合に入れます。酸のイオンとH⁺を加え、同じ分のHCO3を引きます</p>
     <div class="num-row">
       <label class="num-label" for="acid-anion">使う酸</label>
@@ -144,12 +259,19 @@
       <input class="num-input" type="number" id="acid-meq" inputmode="decimal" step="0.1" placeholder="例: 1.8">
       <span class="num-unit">meq/L</span>
     </div>
-    <p class="hint">目安は「原水のアルカリ度 − 残したい量（1.0前後）」</p>
+    <div class="num-row">
+      <label class="num-label" for="acid-residual">残す量</label>
+      <input class="num-input" type="number" id="acid-residual" inputmode="decimal" step="0.1" value="1.0">
+      <span class="num-unit">meq/L</span>
+    </div>
+    <button id="acid-calc" class="btn-secondary" type="button">原水のHCO3から必要量を出す</button>
+    <div id="acid-result"></div>
+    <p class="hint">アルカリ度を<strong>ゼロまで中和しない</strong>のが実務です。pHを支えるものが無くなって下振れするため、1.0前後を残します</p>
   </section>
 
-  <!-- ============ 実測EC ============ -->
-  <section>
-    <h2>⑤ 実測EC（任意）</h2>
+  <!-- 実測EC -->
+  <section id="sec-ec" data-mode="design">
+    <h2>実測EC（任意）</h2>
     <p class="hint">EC計で測った給液の値を入れると、<strong>この処方に固有の係数</strong>を逆算します。係数はイオン組成で変わるので、測るほど精度が上がります</p>
     <div class="num-row">
       <label class="num-label" for="ec-measured">実測EC</label>
@@ -166,18 +288,18 @@
     </div>
   </section>
 
-  <!-- ============ 元素を指定して組成を作る ============ -->
-  <section>
-    <h2>⑥ 元素を指定して組成を作る</h2>
+  <!-- 元素を指定して組成を作る -->
+  <section id="sec-build" data-mode="design">
+    <h2>元素を指定して組成を作る</h2>
     <p class="hint">「カルシウムを増やしたい」のように<strong>動かしたい元素だけを決める</strong>と、残りを基準の範囲内で調整して電荷が釣り合う組成を作ります。作った組成はそのまま下の逆算に入ります</p>
     <div id="lock-inputs" class="fert-water-grid"></div>
     <button id="build-target" class="btn-primary" type="button">残りを自動で釣り合わせる</button>
     <div id="build-result"></div>
   </section>
 
-  <!-- ============ 逆算 ============ -->
-  <section>
-    <h2>⑦ 逆算（目標の組成から配合を出す）</h2>
+  <!-- 逆算 -->
+  <section id="sec-solve" data-mode="design">
+    <h2>逆算（目標の組成から配合を出す）</h2>
     <p class="hint">作りたい組成を入れると、必要な単肥の量を計算します。<strong>塩は中性なので、目標の電荷が釣り合っていないと作れません</strong>（差は酸で埋めることになります）</p>
 
     <select id="target-preset">
@@ -198,9 +320,9 @@
     <div id="solve-result"></div>
   </section>
 
-  <!-- ============ コストと規模 ============ -->
-  <section>
-    <h2>⑧ 肥料コストと調製の頻度</h2>
+  <!-- ============ コストを見る ============ -->
+  <section id="sec-cost" data-mode="cost">
+    <h2>肥料コストと調製の頻度</h2>
     <p class="hint">株数と給液量を入れると、タンクが何日持つか・年間いくらかかるかを出します。<strong>価格は通販の掲載価格から換算した概算</strong>で、処方どうしの差を見る用途に留めてください</p>
     <div class="num-row">
       <label class="num-label" for="scale-plants">株数</label>
@@ -224,14 +346,14 @@
     </div>
     <p class="hint"><strong>タンク容量はピークで、費用は平均で見ます。</strong>1つの値で兼ねると、タンクが足りないか費用を数割多く見積もるかのどちらかになります</p>
     <p class="hint">⚠ 入れるのは<strong>吸水量ではなく給液量</strong>です。排液率30〜35%を確保するため、実際に作る液は作物が吸う量より2〜5割多くなります</p>
-    <button id="scale-preset" class="btn-secondary" type="button">愛知県の実測値を入れる</button>
+    <button id="scale-preset" class="btn-secondary" type="button">促成長期どりの給液量を入れる</button>
     <div id="scale-ref"></div>
     <div id="cost-result"></div>
   </section>
 
   <!-- ============ 書き出し ============ -->
-  <section>
-    <h2>⑨ 書き出し</h2>
+  <section id="sec-export" data-mode="design">
+    <h2>書き出し</h2>
     <button id="copy-result" class="btn-secondary" type="button">📋 計算結果をコピー</button>
     <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
     <p class="hint">処方の保存（マスタ登録）は次の段階で実装します。いまはコピーして貼り付けてください</p>
@@ -240,15 +362,15 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260903a"></script>
-<script src="masters-default.js?v=20260903a"></script>
-<script src="common.js?v=20260903a"></script>
-<script src="fertilizers-chem.js?v=20260903a"></script>
-<script src="fertilizer.js?v=20260903a"></script>
-<script src="fertilizer-ui.js?v=20260903a"></script>
+<script src="config.js?v=20260904a"></script>
+<script src="masters-default.js?v=20260904a"></script>
+<script src="common.js?v=20260904a"></script>
+<script src="fertilizers-chem.js?v=20260904a"></script>
+<script src="fertilizer.js?v=20260904a"></script>
+<script src="fertilizer-ui.js?v=20260904a"></script>
 <script>
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+  navigator.serviceWorker.register('sw.js');
 }
 </script>
 </body>

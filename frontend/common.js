@@ -614,6 +614,9 @@ function queueItemLabel(payload) {
   if (payload.type === "growth") {
     return `📏 ${payload.surveyDate || ""} ${payload.base || ""} / 生育調査 ${(payload.items || []).length}株`;
   }
+  if (payload.type === "feedLog") {
+    return `🧫 ${payload.feedDate || ""} / 給液 ${payload.feedL || "?"}L・排液EC ${payload.drainEc || "?"}`;
+  }
   return `📝 ${payload.workDate || ""} ${payload.base || ""} / ${payload.workType || "作業"}`;
 }
 
