@@ -1,6 +1,6 @@
 ﻿'use strict';
 
-const CACHE = 'tomato-farm-manager-v21';
+const CACHE = 'tomato-farm-manager-v22';
 const ASSETS = [
   './',
   './index.html',

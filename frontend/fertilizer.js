@@ -408,6 +408,13 @@ function calcSolution(input) {
 
   // 原水を足す（Ca・Mgだけでなく Na・Cl・HCO3 まで入れないと電荷が合わない）
   const water = input.water || {};
+  const waterEmpty = !Object.keys(water).some((k) => Number(water[k]) > 0);
+  // 原水だけの陽イオン。希釈倍率を逆算するときに要る（原水は薄まらないため）
+  const waterOnly = emptyIons();
+  Object.keys(water).forEach((k) => {
+    if (waterOnly[k] !== undefined) waterOnly[k] += Number(water[k]) || 0;
+  });
+  const waterCationMeq = chargeBalance(waterOnly).cationMeq;
   Object.keys(water).forEach((k) => {
     if (ions[k] !== undefined) ions[k] += Number(water[k]) || 0;
   });
@@ -457,13 +464,16 @@ function calcSolution(input) {
     balanceDiff: balance.diff,
     balanceErrorPct: balance.errorPct,
     ecEstimate: ec,
-    phBand: estimatePhBand(ions),
+    phBand: estimatePhBand(ions, { waterEmpty: waterEmpty }),
     // タンクごとの原液pH（酸を入れていないタンクは null）
     tankStockPh: tanks.map((t) => ({ name: t.name, est: tankStockPh(t, dilution) })),
     ecCoefficient: coefficient,
     ecCoefficientIsDefault: coefficient === EC_COEFFICIENT,
     ecMeasured: measured > 0 ? measured : null,
     ecCoefficientDerived: derivedCoefficient,
+    waterEmpty: waterEmpty,
+    waterCationMeq: waterCationMeq,
+    dilution: dilution,
     reference: compareToReference(ions, micro),
     tanks,
     warnings,
@@ -480,7 +490,8 @@ function calcSolution(input) {
 //   ・原水のアルカリ度は 1.0 meq/L 程度を残す設計（アーカンソー大学の実務教材）
 // この2つを突き合わせると「残留アルカリ度1.0前後なら目標に入りやすい」と言える。
 // それ以外の帯は、そこからの外挿。
-function estimatePhBand(ions) {
+function estimatePhBand(ions, opts) {
+  const o = opts || {};
   const hco3 = Number(ions.HCO3) || 0;   // 残留アルカリ度
   const freeH = Number(ions.H) || 0;     // 中和しきれずに残った酸
   const phosphate = Number(ions.H2PO4) || 0;
@@ -513,6 +524,18 @@ function estimatePhBand(ions) {
   }
 
   if (hco3 < 0.2) {
+    // アルカリ度ゼロは、たいてい「原水をまだ入れていない」だけ。
+    // 実際の井戸水・水道水は 1〜4 meq/L 程度の重炭酸を持っており、
+    // それが第一リン酸カリ由来の酸性（H2PO4⁻ 単独の水溶液は pH 4.7 前後）を受け止める。
+    // 処方が悪いかのように読ませないよう、原因を分けて書く
+    if (o.waterEmpty) {
+      return {
+        level: "low",
+        label: "純水なら 5.5 未満",
+        message: "原水を入れていないので、アルカリ度ゼロとして計算しています。実際の井戸水・水道水は重炭酸を1〜4 meq/L程度含み、それが酸を受け止めるのでpHはこれより高くなります。①前提の原水に分析値を入れてください",
+        buffered: buffered,
+      };
+    }
     return {
       level: "low",
       label: "5.5 未満になりやすい",
@@ -620,6 +643,44 @@ function recipeCost(tanks, dilution) {
     yenPer1000L: feedVolumeL > 0 ? (batchTotal / feedVolumeL) * 1000 : 0,
     rows: rows,
     unpriced: unpriced,
+  };
+}
+
+// ---------- 目標ECから希釈倍率を逆算 ----------
+// 生育ステージでECを変えるとき、実務では原液の配合を作り直すのではなく
+// 液肥混入機の倍率を変える。100Lのタンクを作り直すより、ダイヤルを回す方が早い。
+// 伊藤ら(2022)の試験も「同じ組成の培養液を希釈率だけ変えて」2区を比較している。
+//
+// ⚠️ ECは希釈倍率の単純な反比例にはならない。原水は薄まらないため。
+//     EC = (原液由来の陽イオン ÷ D + 原水の陽イオン) × 係数
+//   これを D について解く。原水だけで目標ECを超えていれば解は無い
+//   （硬水・高EC原水では、いくら薄めても目標まで下がらないことが実際にある）
+function dilutionForTargetEc(result, targetEc) {
+  const target = Number(targetEc) || 0;
+  if (!(target > 0) || !result) return null;
+  const coef = Number(result.ecCoefficient) > 0 ? Number(result.ecCoefficient) : EC_COEFFICIENT;
+  const water = Number(result.waterCationMeq) || 0;
+  const d0 = Number(result.dilution) || 1;
+  // 原液1Lあたりの陽イオン meq（希釈前）
+  const stock = (Number(result.cationMeq) - water) * d0;
+  if (!(stock > 0)) return null;
+
+  const wantCation = target / coef;
+  if (wantCation <= water) {
+    return {
+      dilution: null,
+      current: d0,
+      currentEc: result.ecEstimate,
+      waterCationMeq: water,
+      reason: `原水だけで陽イオンが ${round(water, 2)} meq/L あります。目標EC ${target} に相当するのは ${round(wantCation, 2)} meq/L なので、肥料をゼロにしても届きません`,
+    };
+  }
+  return {
+    dilution: stock / (wantCation - water),
+    current: d0,
+    currentEc: result.ecEstimate,
+    stockCationMeq: stock,
+    waterCationMeq: water,
   };
 }
 
@@ -1046,7 +1107,7 @@ if (typeof window !== "undefined") {
     fertilizerTankRoles, tankRoles, conflictsWithTank, tankConflicts, splitIntoTwoTanks,
     recipeCost, scaleEstimate, buildBalancedTarget,
     applyAcidNeutralization, acidRequirement,
-    evaluateFeed, feedAdvice, nitrogenMgPerL,
+    evaluateFeed, feedAdvice, nitrogenMgPerL, dilutionForTargetEc,
     EC_COEFFICIENT,
   };
 }

@@ -109,6 +109,45 @@ log("  [原水HCO3 2.8を1.8中和] pH: " + r2.phBand.label + "（" + r2.phBand.
 log("       " + r2.phBand.message);
 ok("残留1.0で目標範囲の判定になる", r2.phBand.level === "ok", "HCO3=" + FertilizerCalc.round(r2.ions.HCO3, 2));
 
+// 原水を入れていないだけなのに「処方が悪い」ように読めるメッセージを出さないこと。
+// 実際の井戸水は重炭酸を1〜4 meq/L 持っており、それが第一リン酸カリ由来の酸性
+// （H2PO4- 単独の水溶液は pH 4.7 前後）を受け止める
+log("");
+log("=== 原水が空のときは、そう書く ===");
+{
+  const w0 = FertilizerCalc.calcSolution({
+    dilution: 120,
+    tanks: [{ name: "A", tankL: 100, items: [
+      { id: "mono_potassium_phosphate", kg: 5 },
+      { id: "potassium_nitrate", kg: 5 }] }],
+    water: {},
+  });
+  log("  [原水なし] pH: " + w0.phBand.label);
+  log("       " + w0.phBand.message);
+  ok("原水が空だと分かる", w0.waterEmpty === true);
+  ok("純水ベースだと明示する", w0.phBand.label.indexOf("純水") >= 0, w0.phBand.label);
+  ok("原水を入れるよう促す", w0.phBand.message.indexOf("原水") >= 0);
+  ok("実際はもっと高くなると伝える", w0.phBand.message.indexOf("高くなり") >= 0);
+}
+{
+  const w1 = FertilizerCalc.calcSolution({
+    dilution: 120,
+    tanks: [{ name: "A", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5 }] }],
+    water: { HCO3: 1.0, Na: 1.0 },
+  });
+  ok("原水を入れれば純水扱いしない", w1.phBand.label.indexOf("純水") < 0, w1.phBand.label);
+  ok("目標帯に入ると判定する", w1.phBand.level === "ok", w1.phBand.label);
+}
+{
+  const w2 = FertilizerCalc.calcSolution({
+    dilution: 120,
+    tanks: [{ name: "A", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5 }] }],
+    water: { Na: 1.0, Cl: 1.0 },
+  });
+  ok("原水はあるがアルカリ度ゼロなら従来の警告",
+     w2.phBand.label === "5.5 未満になりやすい", w2.phBand.label);
+}
+
 log("");
 log("============================================");
 log("  PASS " + pass + " / FAIL " + fail);

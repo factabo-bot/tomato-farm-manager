@@ -349,6 +349,84 @@ head("F. 中和酸の価数：どの酸でも meq と mmol の関係が保たれ
   if (bad === 0) pass++;
 }
 
+head("G. 目標ECから希釈倍率：出た倍率で計算し直すと目標ECになるか");
+{
+  const rng = makeRng(99887);
+  const SALTS = ["potassium_nitrate", "calcium_nitrate_4h", "magnesium_sulfate_7h",
+                 "mono_potassium_phosphate", "potassium_sulfate", "ammonium_nitrate"]
+                .filter(function (id) { return FERTILIZER_CHEM[id]; });
+  let checked = 0, worst = 0, worstCase = "";
+  let noSolution = 0;
+  for (let i = 0; i < 250; i++) {
+    const items = [];
+    const n = 1 + Math.floor(rng() * 3);
+    for (let j = 0; j < n; j++) {
+      items.push({ id: SALTS[Math.floor(rng() * SALTS.length)], kg: 0.5 + rng() * 7 });
+    }
+    // 原水は電荷が揃った形で（揃わないのは測り漏れ）
+    const water = {};
+    if (rng() < 0.6) {
+      const ca = Math.round(rng() * 150) / 100;
+      const cl = Math.round(rng() * 200) / 100;
+      water.Ca = ca; water.SO4 = ca; water.Cl = cl; water.Na = cl;
+    }
+    const tanks = [{ name: "A", tankL: 100, items: items }];
+    const base = FC.calcSolution({ tanks: tanks, dilution: 120, water: water });
+    if (!(base.cationMeq > 0)) continue;
+
+    const targetEc = 0.4 + rng() * 3;
+    const r = FC.dilutionForTargetEc(base, targetEc);
+    if (!r) continue;
+    if (!r.dilution) { noSolution++; continue; }
+    if (r.dilution < 2 || r.dilution > 100000) continue;   // 極端な倍率は運用外
+
+    // 出た倍率でもう一度計算して、目標ECに乗るか
+    const redo = FC.calcSolution({ tanks: tanks, dilution: r.dilution, water: water });
+    const gap = Math.abs(redo.ecEstimate - targetEc);
+    checked++;
+    if (gap > worst) { worst = gap; worstCase = "目標" + R(targetEc, 2) + " 実際" + R(redo.ecEstimate, 2)
+                                    + " 倍率" + R(r.dilution, 1); }
+    if (gap > 0.005) {
+      fail++;
+      L.push("  FAIL 倍率を当てても目標ECにならない | 目標" + R(targetEc, 3)
+             + " → " + R(redo.ecEstimate, 3) + " 倍率" + R(r.dilution, 1));
+    }
+  }
+  note(checked + " 件を往復検証。最大ずれ " + R(worst, 5) + " dS/m（" + worstCase + "）");
+  note("原水だけで目標ECを超えていて解なし: " + noSolution + " 件");
+  ok("出た倍率で計算し直すと目標ECになる", worst <= 0.005, "最大 " + R(worst, 5));
+  if (worst <= 0.005) pass++;
+}
+
+head("H. 希釈倍率とECの関係：原水があると単純な反比例にはならない");
+{
+  const tanks = [{ name: "A", tankL: 100, items: [{ id: "potassium_nitrate", kg: 5 }] }];
+  // 原水なし → 倍率を2倍にすればECは半分
+  const a1 = FC.calcSolution({ tanks: tanks, dilution: 100, water: {} });
+  const a2 = FC.calcSolution({ tanks: tanks, dilution: 200, water: {} });
+  const ratioNoWater = a1.ecEstimate / a2.ecEstimate;
+  ok("原水なしなら倍率2倍でECは半分", Math.abs(ratioNoWater - 2) < 0.001, "比 " + R(ratioNoWater, 4));
+  if (Math.abs(ratioNoWater - 2) < 0.001) pass++;
+
+  // 原水あり → 薄めても原水ぶんが残るので、半分にはならない
+  const w = { Ca: 1.5, SO4: 1.5, Na: 2.0, Cl: 2.0 };
+  const b1 = FC.calcSolution({ tanks: tanks, dilution: 100, water: w });
+  const b2 = FC.calcSolution({ tanks: tanks, dilution: 200, water: w });
+  const ratioWater = b1.ecEstimate / b2.ecEstimate;
+  ok("原水があると2倍にならない（薄まらない分が残る）", ratioWater < 1.95, "比 " + R(ratioWater, 4));
+  if (ratioWater < 1.95) pass++;
+  note("原水なし 比 " + R(ratioNoWater, 3) + " / 原水あり 比 " + R(ratioWater, 3));
+
+  // 原水だけで目標を超えるケースは解なしと返す
+  const heavy = { Ca: 8, SO4: 8, Na: 10, Cl: 10 };
+  const c1 = FC.calcSolution({ tanks: tanks, dilution: 100, water: heavy });
+  const r = FC.dilutionForTargetEc(c1, 0.5);
+  ok("原水だけで超えるなら解なしと返す", r && r.dilution === null, r ? String(r.dilution) : "null");
+  ok("その理由を書く", r && r.reason && r.reason.indexOf("原水") >= 0, r ? r.reason : "-");
+  if (r && r.dilution === null) pass++;
+  if (r && r.reason && r.reason.indexOf("原水") >= 0) pass++;
+}
+
 L.push("");
 L.push("========================================");
 L.push("  " + pass + " passed, " + fail + " failed");

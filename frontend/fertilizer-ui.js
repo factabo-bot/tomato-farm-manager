@@ -43,6 +43,8 @@ function defaultState() {
   return {
     mode: "",
     dilution: 120,
+    // 目標ECから希釈倍率を逆算するための入力
+    targetEc: "",
     tanks: [
       { name: "A液", tankL: 100, items: [] },
       { name: "B液", tankL: 100, items: [] },
@@ -441,6 +443,7 @@ function recalc() {
   renderCost();
   renderEvaluate();
   renderRecipeSummary();
+  renderDilutionSolve();
 
   // 実測ECが入っていれば係数の補正ボタンを出す
   $("ec-coef-box").hidden = !(result.ecCoefficientDerived > 0);
@@ -689,6 +692,52 @@ function renderAcidResult(req) {
   }
   box.appendChild(el("p", "hint",
     "増えた分は処方から差し引いてください。差し引かないと" + label + "が狙いより多くなります"));
+}
+
+// 目標ECから必要な希釈倍率を出す。
+// 生育ステージでECを変えるとき、原液を作り直すのではなく倍率を変えるのが実務
+function renderDilutionSolve() {
+  const box = $("dilution-result");
+  if (!box) return;
+  box.innerHTML = "";
+  const target = num(state.targetEc);
+  if (!(target > 0)) return;
+  const R = FertilizerCalc.round;
+  const r = lastResult ? FertilizerCalc.dilutionForTargetEc(lastResult, target) : null;
+  if (!r) {
+    box.appendChild(el("p", "hint", "先に③のタンクへ肥料を入れてください"));
+    return;
+  }
+  if (!r.dilution) {
+    box.appendChild(el("p", "hint warn", "⚠️ " + r.reason));
+    return;
+  }
+  const d = R(r.dilution, 0);
+  box.appendChild(el("p", "fert-context-line",
+    "EC " + target + " にするには " + d + " 倍"
+    + "（いま " + R(r.current, 0) + "倍で EC " + R(r.currentEc, 2) + "）"));
+
+  // 混入機には可動範囲がある。外れていたら倍率ではなく配合を変える話になる
+  if (r.dilution < 50 || r.dilution > 500) {
+    box.appendChild(el("p", "hint warn",
+      "⚠️ 液肥混入機の可動範囲を外れています（ドサトロン DR06GL は 1:500〜1:50＝50〜500倍）。"
+      + "この場合は倍率ではなく原液の配合そのものを変えることになります"));
+  }
+  if (r.waterCationMeq > 0) {
+    box.appendChild(el("p", "hint",
+      "原水の陽イオン " + R(r.waterCationMeq, 2) + " meq/L は薄まらないので、"
+      + "ECは倍率の単純な反比例にはなりません。それを織り込んだ値です"));
+  }
+  const btn = el("button", "btn-secondary", "この倍率にする");
+  btn.type = "button";
+  btn.addEventListener("click", () => {
+    state.dilution = d;
+    saveState();
+    $("dilution").value = d;
+    recalc();
+    toast("希釈倍率を " + d + " 倍にしました");
+  });
+  box.appendChild(btn);
 }
 
 // 3モード共通の1行サマリー。
@@ -1719,6 +1768,22 @@ function bindInputs() {
     } else {
       toast("この端末ではコピーできません");
     }
+  });
+
+  // --- 目標ECから希釈倍率 ---
+  const tec = $("dilution-target-ec");
+  if (tec) {
+    tec.value = state.targetEc || "";
+    tec.addEventListener("focus", () => tec.select());
+    tec.addEventListener("input", () => {
+      state.targetEc = tec.value;
+      saveState();
+      renderDilutionSolve();
+    });
+  }
+  $("dilution-solve").addEventListener("click", () => {
+    if (!(num(state.targetEc) > 0)) { toast("目標ECを入れてください"); return; }
+    renderDilutionSolve();
   });
 
   // --- モード ---
