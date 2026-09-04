@@ -56,6 +56,8 @@ function defaultState() {
       drainMin: "25", drainMax: "35", nMin: "100", nMax: "150", drainEcMax: "5.0",
     },
     feedLogAll: false,
+    // 処方モードの折りたたみグループの開閉。毎回たたみ直す手間をなくす
+    groups: {},
     ecMeasured: "",
     ecCoefficient: "",
     // 保存した処方とのひもづけ
@@ -1725,6 +1727,20 @@ function bindInputs() {
     if (btn) btn.addEventListener("click", () => switchMode(m));
   });
   $("back-to-menu").addEventListener("click", () => switchMode(""));
+
+  // --- 処方モードの折りたたみグループ ---
+  // 既定は閉じている（毎回触るのは②配合と③結果だけなので）。
+  // 一度開いたら次も開いたままにする
+  if (!state.groups) state.groups = {};
+  ["grp-basis", "grp-reverse", "grp-ec"].forEach((id) => {
+    const box = $(id);
+    if (!box) return;
+    if (state.groups[id]) box.open = true;
+    box.addEventListener("toggle", () => {
+      state.groups[id] = box.open;
+      saveState();
+    });
+  });
 
   $("reset-all").addEventListener("click", (e) => {
     const btn = e.currentTarget;

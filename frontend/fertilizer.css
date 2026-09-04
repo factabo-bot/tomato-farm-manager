@@ -295,6 +295,97 @@
   white-space: nowrap;
 }
 
+/* ---- 処方モードのグループ ---- */
+/* 性質の違う作業を番号付きのグループに分ける。
+   毎回は触らないもの（前提・逆算・実測EC）は details で畳んでおく */
+.fert-group {
+  border: 1px solid #dfe4e6;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* ⚠️ summary 自体の display を変えてはいけない。
+   Chrome は summary を display:list-item として扱うことで開閉を制御しており、
+   display:flex にすると「summaryを持たない details」とみなされて
+   閉じているのに中身が表示されっぱなしになる。
+   横並びにしたいときは中に span を1枚挟んで、そちらを flex にする */
+.fert-group > summary {
+  cursor: pointer;
+  padding: 13px 14px;
+  list-style: none;
+  background: #f5f7f8;
+}
+
+/* 既定の三角マーカーを消して、自前の▸▾に置き換える */
+.fert-group > summary::-webkit-details-marker { display: none; }
+.fert-group > summary::marker { content: ""; }
+
+.fert-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fert-group-head::after {
+  content: "▸";
+  color: #8a9aa3;
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+.fert-group[open] .fert-group-head::after { content: "▾"; }
+
+.fert-group[open] > summary { border-bottom: 1px solid #e8ecee; }
+
+.fert-group-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #22303a;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.fert-group-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #8a9aa3;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 番号。畳んだ見出しと、開いたままの見出し（h2）の両方で使う */
+.fert-group-num {
+  color: #2e7d32;
+  font-weight: 700;
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+
+.fert-group-body {
+  padding: 4px 13px 10px;
+}
+
+/* グループの中の小見出し。セクション見出しより一段小さく */
+.fert-group-body > section > h3 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+  color: #37474f;
+}
+.fert-group-body > section:first-of-type > h3 { margin-top: 8px; }
+
+/* 常に開いている段（②③⑥）。畳んだグループと見出しの高さを揃える */
+.fert-step > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 /* 3モード共通の処方バンド。いまどの処方の話をしているかを示す */
 .fert-context {
   background: #f5f7f8;
