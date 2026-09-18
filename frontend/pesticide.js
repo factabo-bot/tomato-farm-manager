@@ -14,6 +14,8 @@ const state = {
   recipeName: "",
   picked: null,         // 選択中の資材（倍率を決める前の状態）
   choices: [],          // その資材の倍率候補
+  sprayRecords: [],     // この拠点の散布記録（使用回数を数えるため）
+  usage: null,          // 選んでいる棟の使用回数
   profile: getProfile(),
 };
 
@@ -51,6 +53,7 @@ async function init() {
     renderAll();
   });
   renderAll();
+  refreshSprayHistory(); // 使用回数は待たずに裏で数える（取れたら一覧に反映される）
 }
 
 // 作業画面の「🧪 防除」「🧪 葉面散布」からURLパラメータで渡された日付・拠点・棟を反映する。
@@ -103,6 +106,7 @@ function renderBases() {
       state.base = name;
       state.buildings.clear(); // 拠点が変われば棟の選択も外す
       renderBases();
+      refreshSprayHistory();
     });
     box.appendChild(btn);
   });
@@ -158,6 +162,61 @@ function renderBuildings() {
   }
 
   renderVolumes();
+  recomputeUsage();
+}
+
+// ---------- 使用回数 ----------
+// 農薬には「本剤を何回まで」と「同じ成分を含む農薬を通算で何回まで」の枠があり、
+// 撒く前に気づけないと後から取り返せない。資材を選ぶ画面でその作の回数を出す。
+
+// 複数の棟をまとめて回るときは、いちばん使っている棟に合わせる
+function recomputeUsage() {
+  if (!state.masters) return;
+  const names = state.buildings.size ? [...state.buildings] : [""];
+  state.usage = mergeSprayUsage(
+    names.map((n) => countSprayUsage(state.sprayRecords, state.masters, state.base, n))
+  );
+  renderMaterialPicker();
+  updateUsageHint();
+}
+
+// 散布記録は拠点ごとに取る（棟を切り替えただけなら取り直さない）
+async function refreshSprayHistory() {
+  const base = state.base;
+  const records = await loadSprayHistory(base, (fresh) => {
+    if (state.base !== base) return; // 待っている間に拠点が変わっていたら捨てる
+    state.sprayRecords = fresh;
+    recomputeUsage();
+  });
+  if (state.base !== base) return;
+  state.sprayRecords = records;
+  recomputeUsage();
+}
+
+// 選んだ資材について、本剤・成分・作用機構それぞれの回数を出す
+function updateUsageHint() {
+  const m = state.picked;
+  const hint = $("usage-hint");
+  if (!m || !state.usage || !isPesticide(m)) {
+    hint.hidden = true;
+    return;
+  }
+  const u = state.usage;
+  const st = usageStatusOf(m, u);
+  const parts = [];
+  parts.push(st.limit
+    ? "この作で" + st.used + "回使用（本剤は" + st.limit + "回まで）"
+    : "この作で" + st.used + "回使用");
+  parseIngredientLimits(m["成分と通算回数"]).forEach((g) => {
+    const n = u.ingredients[g.name] || 0;
+    parts.push(g.name + " 通算" + n + (g.limit ? "/" + g.limit : "") + "回");
+  });
+  splitCodes(m["IRACコード"]).forEach((c) => parts.push("IRAC " + c + " をこの作で" + (u.irac[c] || 0) + "回"));
+  splitCodes(m["FRACコード"]).forEach((c) => parts.push("FRAC " + c + " をこの作で" + (u.frac[c] || 0) + "回"));
+  if (u.since) parts.push("作の開始 " + u.since + " から");
+  hint.hidden = false;
+  hint.className = "hint" + (st.full ? " warn" : "");
+  hint.textContent = (st.full ? "⚠ 上限に達しています。" : "") + parts.join(" ／ ");
 }
 
 // ---------- 棟ごとの散布量 ----------
@@ -302,6 +361,12 @@ function renderMaterialPicker() {
     text.appendChild(el("div", "", m.薬剤名));
     if (m.希釈倍率目安) text.appendChild(el("div", "sub", String(m.希釈倍率目安)));
     row.appendChild(text);
+    // その作で使った回数。使っていないものには出さない（残りが少ないものを目立たせる）
+    const st = usageStatusOf(m, state.usage);
+    if (st && st.used > 0) {
+      row.appendChild(el("span", "use-badge" + (st.full ? " is-full" : ""),
+        st.limit ? st.used + "/" + st.limit + "回" : st.used + "回"));
+    }
     row.addEventListener("click", () => pickMaterial(m));
     box.appendChild(row);
   });
@@ -311,6 +376,7 @@ function pickMaterial(m) {
   state.picked = m;
   renderMaterialPicker();
   updatePpeHint();
+  updateUsageHint();
 
   $("dilution-box").hidden = false;
   $("dilution-label").textContent = `${m.薬剤名} の希釈倍率`;

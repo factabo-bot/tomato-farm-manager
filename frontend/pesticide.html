@@ -6,7 +6,7 @@
 <title>散布記録 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2e7d32">
-<link rel="stylesheet" href="styles.css?v=20260903a">
+<link rel="stylesheet" href="styles.css?v=20260918b">
 </head>
 <body>
 <header>
@@ -87,6 +87,7 @@
     <input type="text" id="material-filter" placeholder="資材名で絞り込み（例: アファーム）">
     <div id="material-picker" class="picker"></div>
     <p class="hint ppe-hint" id="ppe-hint" hidden></p>
+    <p class="hint" id="usage-hint" hidden></p>
     <div id="dilution-box" hidden>
       <h3 id="dilution-label">希釈倍率</h3>
       <p class="hint" id="dilution-note"></p>
@@ -129,9 +130,9 @@
 <div id="toast" hidden></div>
 
 <script src="config.js?v=20260903a"></script>
-<script src="masters-default.js?v=20260918a"></script>
-<script src="common.js?v=20260918a"></script>
-<script src="pesticide.js?v=20260903a"></script>
+<script src="masters-default.js?v=20260918b"></script>
+<script src="common.js?v=20260918b"></script>
+<script src="pesticide.js?v=20260918b"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

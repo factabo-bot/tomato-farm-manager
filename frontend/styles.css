@@ -88,6 +88,48 @@ label {
   color: #2e7d32;
 }
 
+/* その作で何回使ったか。上限に達したもの・成分の通算が尽きたものは赤くする */
+.use-badge {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  white-space: nowrap;
+  background: #eceff1;
+  color: #37474f;
+}
+.use-badge.is-full {
+  background: #b71c1c;
+  color: #fff;
+}
+.hint.warn {
+  color: #b71c1c;
+  font-weight: bold;
+}
+
+/* 使用回数タブ */
+.usage-group {
+  margin-top: 10px;
+}
+.usage-title {
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: #555;
+  margin-bottom: 4px;
+}
+.usage-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.usage-row .grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* 行の中で伸びる要素（バッジや削除ボタンと並べたときに文字側を広げる） */
 .item .grow {
   flex: 1 1 auto;

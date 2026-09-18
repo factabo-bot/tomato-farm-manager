@@ -280,6 +280,158 @@ async function refreshMasters() {
   return loadMasters();
 }
 
+// ---------- 使用回数の集計 ----------
+// 農薬には「本剤を何回まで」と「同じ成分を含む農薬を通算で何回まで」の2つの枠があり、
+// 後者は製品が違っても足し算される（TPNを含むダコニール1000・フォリオゴールド・
+// アミスターオプティを別々に数えると超える）。ここでは両方と、抵抗性管理のための
+// 作用機構コード（IRAC/FRAC）の回数を、棟ごとに数える。
+// 作の区切りはマスタ_拠点棟の「現作の開始日」。空なら全期間を数える。
+
+function splitBuildings(value) {
+  return String(value || "").split(/[、,]/).map((s) => s.trim()).filter(Boolean);
+}
+
+// 「11/M5」のようにコードが複数ある混合剤を分ける
+function splitCodes(value) {
+  return String(value || "").split(/[/／、,]/).map((s) => s.trim()).filter(Boolean);
+}
+
+// 「TPN:6」「メタラキシルM:4/TPN:6」を [{ name, limit }] にする。
+// 回数が書かれていなければ limit は null（＝数えるが上限は判定しない）
+function parseIngredientLimits(value) {
+  return splitCodes(value).map((part) => {
+    const i = part.lastIndexOf(":");
+    if (i < 0) return { name: part, limit: null };
+    const limit = Number(part.slice(i + 1).replace(/[^0-9]/g, ""));
+    return { name: part.slice(0, i).trim(), limit: limit || null };
+  }).filter((x) => x.name);
+}
+
+function cropStartOf(masters, baseName, buildingName) {
+  const row = (masters.bases || []).find((b) =>
+    b.拠点名 === baseName && String(b.棟区画名 || "") === String(buildingName || ""));
+  return row ? String(row["現作の開始日"] || "").slice(0, 10) : "";
+}
+
+// 1棟分の集計。散布記録の「棟・区画」は「1号棟、2号棟」のように複数入るので分解して照合する
+function countSprayUsage(records, masters, baseName, buildingName) {
+  const since = cropStartOf(masters, baseName, buildingName);
+  const byMaterial = {};
+  const byIngredient = {};
+  const byIrac = {};
+  const byFrac = {};
+  const materials = masters.materials || [];
+
+  (records || []).forEach((rec) => {
+    if (rec.状態 === "取消" || rec.状態 === "予定") return;
+    if (rec.拠点 !== baseName) return;
+    if (since && String(rec.使用年月日 || "").slice(0, 10) < since) return;
+
+    const builds = splitBuildings(rec["棟・区画"]);
+    // 棟を持たない拠点は、棟名も空どうしで照合する
+    const hit = builds.length
+      ? builds.indexOf(String(buildingName || "")) >= 0
+      : String(buildingName || "") === "";
+    if (!hit) return;
+
+    (rec.items || []).forEach((it) => {
+      const name = String(it.資材名 || "");
+      if (!name) return;
+      const m = materials.find((x) => x.薬剤名 === name);
+      // 肥料には使用回数の制限がない。記録した時点の値を先に見る（マスタは後から変わりうる）
+      const registered = String(
+        it["農薬登録の有無"] !== undefined && it["農薬登録の有無"] !== ""
+          ? it["農薬登録の有無"]
+          : (m ? m.農薬登録の有無 : "")
+      ).toUpperCase() === "TRUE";
+      if (!registered) return;
+
+      byMaterial[name] = (byMaterial[name] || 0) + 1;
+      if (!m) return;
+      parseIngredientLimits(m["成分と通算回数"]).forEach((g) => {
+        byIngredient[g.name] = (byIngredient[g.name] || 0) + 1;
+      });
+      splitCodes(m["IRACコード"]).forEach((c) => { byIrac[c] = (byIrac[c] || 0) + 1; });
+      splitCodes(m["FRACコード"]).forEach((c) => { byFrac[c] = (byFrac[c] || 0) + 1; });
+    });
+  });
+
+  return { since, materials: byMaterial, ingredients: byIngredient, irac: byIrac, frac: byFrac };
+}
+
+// 複数の棟に撒くときは、いちばん使っている棟に合わせる（超える棟を見落とさないため）
+function mergeSprayUsage(list) {
+  const out = { since: "", materials: {}, ingredients: {}, irac: {}, frac: {} };
+  (list || []).forEach((u) => {
+    if (u.since && (!out.since || u.since < out.since)) out.since = u.since;
+    ["materials", "ingredients", "irac", "frac"].forEach((k) => {
+      Object.keys(u[k]).forEach((name) => {
+        out[k][name] = Math.max(out[k][name] || 0, u[k][name]);
+      });
+    });
+  });
+  return out;
+}
+
+// 1剤ぶんの「あと何回使えるか」。上限が分かっていない項目は判定しない
+function usageStatusOf(material, usage) {
+  if (!material || !usage) return null;
+  const used = usage.materials[material.薬剤名] || 0;
+  const limit = Number(String(material["本剤の使用回数"] || "").replace(/[^0-9]/g, "")) || null;
+  const overs = [];
+  parseIngredientLimits(material["成分と通算回数"]).forEach((g) => {
+    const n = usage.ingredients[g.name] || 0;
+    if (g.limit && n >= g.limit) overs.push(g.name + " 通算" + n + "/" + g.limit);
+  });
+  const full = (limit && used >= limit) || overs.length > 0;
+  return { used, limit, overs, full };
+}
+
+// 散布記録は取得が重いので、拠点ごとに少しの間だけ手元に置く
+const SPRAY_HISTORY_CACHE_KEY = "tfm_spray_history_cache";
+const SPRAY_HISTORY_TTL_MS = 10 * 60 * 1000;
+
+function readSprayHistoryCache(baseName) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SPRAY_HISTORY_CACHE_KEY) || "{}");
+    return all[baseName] || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveSprayHistoryCache(baseName, records) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SPRAY_HISTORY_CACHE_KEY) || "{}");
+    all[baseName] = { savedAt: Date.now(), records };
+    localStorage.setItem(SPRAY_HISTORY_CACHE_KEY, JSON.stringify(all));
+  } catch (err) {
+    console.warn("散布履歴の保存に失敗", err);
+  }
+}
+
+// キャッシュがあれば待たずに返し、裏で取り直す。取れたら onFresh(records) を呼ぶ
+async function loadSprayHistory(baseName, onFresh) {
+  const cached = readSprayHistoryCache(baseName);
+  if (cached && Date.now() - cached.savedAt < SPRAY_HISTORY_TTL_MS) return cached.records;
+
+  const fetching = apiGet("sprays", { base: baseName })
+    .then((res) => {
+      if (!res || !res.ok) return null;
+      const records = res.records || [];
+      saveSprayHistoryCache(baseName, records);
+      if (cached && onFresh) onFresh(records);
+      return records;
+    })
+    .catch((err) => {
+      console.warn("散布履歴の取得に失敗（手元の分で続ける）", err);
+      return null;
+    });
+
+  if (cached) return cached.records;
+  return (await fetching) || [];
+}
+
 // ---------- 手元の記録ストア ----------
 // GASは何もしないAPIでも1.5秒かかる（実測）。毎回サーバーに聞いてから描いていたので、
 // 開くたびに数秒なにも出なかった。記録はこの端末に持ち、画面は常にここだけを見て描く。

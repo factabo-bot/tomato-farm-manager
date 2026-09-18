@@ -21,6 +21,7 @@ async function init() {
   $("tab-work").addEventListener("click", () => switchTab("work"));
   $("tab-spray").addEventListener("click", () => switchTab("spray"));
   $("tab-growth").addEventListener("click", () => switchTab("growth"));
+  $("tab-usage").addEventListener("click", () => switchTab("usage"));
   $("search").addEventListener("click", load);
   $("from-date").addEventListener("change", load);
   $("to-date").addEventListener("change", load);
@@ -60,7 +61,10 @@ function switchTab(tab) {
   $("tab-work").classList.toggle("active", tab === "work");
   $("tab-spray").classList.toggle("active", tab === "spray");
   $("tab-growth").classList.toggle("active", tab === "growth");
+  $("tab-usage").classList.toggle("active", tab === "usage");
   $("purpose-filter-box").hidden = tab !== "spray";
+  // 使用回数は作の区切りで数えるので、期間の指定は使わない
+  $("period-box").hidden = tab === "usage";
   load();
 }
 
@@ -104,6 +108,7 @@ async function load() {
     to: $("to-date").value,
     base: $("base-filter").value,
   };
+  if (state.tab === "usage") return loadUsage();
   const kind = state.tab === "work" ? "work" : state.tab === "growth" ? "growth" : "spray";
 
   // 記録も気象も手元にあるので、まずそれで描き切る（90日以内ならここで終わり）
@@ -198,4 +203,91 @@ function render() {
     if (r.状態 === "取消") row.appendChild(el("span", "cancelled-label", "取消済"));
     box.appendChild(row);
   });
+}
+
+// ---------- 使用回数タブ ----------
+// 「この作であと何回使えるか」を棟ごとに並べる。期間ではなく、マスタ_拠点棟の
+// 「現作の開始日」で区切る。制限は本剤・成分の通算の2本立てで、成分のほうは
+// 製品が違っても足し算されるので、剤ごとに見ているだけでは超過に気づけない。
+
+async function loadUsage() {
+  const base = $("base-filter").value;
+  const list = $("record-list");
+  $("empty-hint").hidden = true;
+  if (!base) {
+    list.innerHTML = "";
+    list.appendChild(el("p", "hint", "拠点を選ぶと、棟ごとの使用回数が出ます"));
+    setStatus("");
+    return;
+  }
+  setStatus("読み込み中…");
+  const seq = loadSeq;
+  const records = await loadSprayHistory(base, (fresh) => {
+    if (seq !== loadSeq) return;
+    renderUsage(base, fresh);
+  });
+  if (seq !== loadSeq) return;
+  renderUsage(base, records);
+  setStatus("");
+}
+
+function renderUsage(base, records) {
+  const list = $("record-list");
+  list.innerHTML = "";
+  const buildings = buildingsOfBase(state.masters, base);
+  const names = buildings.length ? buildings.map((b) => b.棟区画名) : [""];
+
+  names.forEach((name) => {
+    const u = countSprayUsage(records, state.masters, base, name);
+    const card = el("div", "record");
+    card.appendChild(el("div", "record-head", (name || base)
+      + (u.since ? "（作の開始 " + u.since + " から）" : "（全期間）")));
+
+    const rows = [];
+    // 本剤の回数。上限が分かっているものを先に、残りの少ない順に並べる
+    Object.keys(u.materials).sort().forEach((matName) => {
+      const m = (state.masters.materials || []).find((x) => x.薬剤名 === matName);
+      const st = usageStatusOf(m, u);
+      const used = u.materials[matName];
+      if (!st) { rows.push([matName, used + "回", false]); return; }
+      rows.push([matName, st.limit ? used + "/" + st.limit + "回" : used + "回", st.full]);
+    });
+    card.appendChild(usageGroup("資材ごと", rows, "この作ではまだ撒いていません"));
+
+    const ing = Object.keys(u.ingredients).sort().map((gname) => {
+      // 上限は、その成分を持つ資材のどれかから引く（同じ成分なら同じ上限）
+      let limit = null;
+      (state.masters.materials || []).forEach((m) => {
+        parseIngredientLimits(m["成分と通算回数"]).forEach((g) => {
+          if (g.name === gname && g.limit) limit = g.limit;
+        });
+      });
+      const n = u.ingredients[gname];
+      return [gname, limit ? n + "/" + limit + "回" : n + "回", !!(limit && n >= limit)];
+    });
+    card.appendChild(usageGroup("成分の通算（製品が違っても足される）", ing, "なし"));
+
+    const codes = []
+      .concat(Object.keys(u.irac).sort().map((c) => ["IRAC " + c, u.irac[c] + "回", false]))
+      .concat(Object.keys(u.frac).sort().map((c) => ["FRAC " + c, u.frac[c] + "回", false]));
+    card.appendChild(usageGroup("作用機構（同じコードが続くと効かなくなる）", codes, "なし"));
+
+    list.appendChild(card);
+  });
+}
+
+function usageGroup(title, rows, emptyText) {
+  const box = el("div", "usage-group");
+  box.appendChild(el("div", "usage-title", title));
+  if (rows.length === 0) {
+    box.appendChild(el("div", "hint", emptyText));
+    return box;
+  }
+  rows.forEach(([label, value, full]) => {
+    const row = el("div", "usage-row");
+    row.appendChild(el("span", "grow", label));
+    row.appendChild(el("span", "use-badge" + (full ? " is-full" : ""), value));
+    box.appendChild(row);
+  });
+  return box;
 }
