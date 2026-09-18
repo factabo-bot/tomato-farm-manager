@@ -9,6 +9,24 @@ async function init() {
   $("user-info").textContent = profile.displayName + (isMock ? "（お試しモード）" : "");
   $("display-name-input").value = profile.displayName;
 
+  $("refresh-masters").addEventListener("click", async () => {
+    const btn = $("refresh-masters");
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "取得中…";
+    try {
+      const masters = await refreshMasters();
+      const n = (masters && masters.materials) ? masters.materials.length : 0;
+      toast("マスタを取り直しました（資材 " + n + "件）");
+    } catch (err) {
+      console.warn("マスタの取り直しに失敗", err);
+      toast("取り直せませんでした。電波の届くところで試してください");
+    } finally {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+  });
+
   $("save-name").addEventListener("click", () => {
     const name = $("display-name-input").value.trim();
     if (!name) return toast("名前を入力してください");

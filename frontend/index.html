@@ -68,14 +68,20 @@
     </div>
     <p class="hint">複数人で使う場合、この端末で記録する人の名前を設定してください</p>
   </section>
+
+  <section class="settings-box">
+    <h2>マスタの取り直し</h2>
+    <button id="refresh-masters" class="btn-secondary" type="button">🔄 マスタを取り直す</button>
+    <p class="hint">スプレッドシートの資材・拠点などを足したのに画面が古いままのときに押す。ふだんは1時間ごとに自動で取り直しているので、急がないなら押さなくてよい</p>
+  </section>
 </main>
 
 <div id="toast" hidden></div>
 
 <script src="config.js?v=20260903a"></script>
-<script src="masters-default.js?v=20260903a"></script>
-<script src="common.js?v=20260903a"></script>
-<script src="index.js?v=20260903a"></script>
+<script src="masters-default.js?v=20260918a"></script>
+<script src="common.js?v=20260918a"></script>
+<script src="index.js?v=20260918a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

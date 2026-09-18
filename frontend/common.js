@@ -269,6 +269,17 @@ async function loadMasters(onFresh) {
   return fresh || Object.assign({ ok: true }, MASTERS_DEFAULT);
 }
 
+// スプレッドシート側のマスタを直したのに画面が古いまま、というときに使う。
+// 上の1時間を待たずに済ませたいだけなので、キャッシュを捨ててから取り直す
+async function refreshMasters() {
+  try {
+    localStorage.removeItem(MASTERS_CACHE_KEY);
+  } catch (err) {
+    console.warn("マスタキャッシュの削除に失敗（取得は続ける）", err);
+  }
+  return loadMasters();
+}
+
 // ---------- 手元の記録ストア ----------
 // GASは何もしないAPIでも1.5秒かかる（実測）。毎回サーバーに聞いてから描いていたので、
 // 開くたびに数秒なにも出なかった。記録はこの端末に持ち、画面は常にここだけを見て描く。
