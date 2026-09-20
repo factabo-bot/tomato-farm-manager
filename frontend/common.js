@@ -116,14 +116,24 @@ const isMock = !CONFIG.GAS_URL;
 // それでも駄目なら {ok:false} を返したうえでその場に知らせる（黙って空にしない）
 const GET_TRIES = 3;
 
-async function apiGet(action, params) {
+const readsInFlight = new Map();
+function apiGet(action, params) {
+  const key = JSON.stringify([action, params || {}]);
+  if (readsInFlight.has(key)) return readsInFlight.get(key);
+  const pending = apiGetNetwork(action, params).finally(() => readsInFlight.delete(key));
+  readsInFlight.set(key, pending);
+  return pending;
+}
+
+async function apiGetNetwork(action, params) {
   if (isMock) return mockGet(action, params || {});
   let lastErr = null;
   for (let i = 0; i < GET_TRIES; i++) {
     if (i > 0) await sleep(400 * i);
     try {
       const qs = new URLSearchParams(Object.assign({ action }, params || {}, { _: Date.now() }));
-      const res = await fetch(CONFIG.GAS_URL + "?" + qs.toString());
+      if (!navigator.onLine) return { ok: false, error: "オフラインです" };
+      const res = await fetchWithTimeout(CONFIG.GAS_URL + "?" + qs.toString());
       const text = await res.text();
       return JSON.parse(text);
     } catch (err) {
@@ -150,6 +160,17 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+    // 本文を受け取るまでタイムアウトを有効にする。
+    const text = await response.text();
+    return { ok: response.ok, status: response.status, redirected: response.redirected, text: async () => text };
+  } finally { clearTimeout(timer); }
+}
+
 function postError(message, safeToRetry) {
   const err = new Error(message);
   err.safeToRetry = safeToRetry;
@@ -158,7 +179,7 @@ function postError(message, safeToRetry) {
 
 // Content-Type: text/plain にするとCORSのプリフライトが発生しない（GASの定石）
 async function postOnce(payload) {
-  const res = await fetch(CONFIG.GAS_URL, {
+  const res = await fetchWithTimeout(CONFIG.GAS_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
     body: JSON.stringify(payload),
@@ -212,8 +233,7 @@ async function apiPost(payload) {
 // 画面は即座にそれで描画してから、裏で最新版を取りに行く。
 
 const MASTERS_CACHE_KEY = "tfm_masters_cache";
-// マスタの取得は実測で8〜11秒かかる。GASは同じ利用者の処理を順番にしか実行しないので、
-// 画面を開くたびに走らせると他の読み込みまで待たされる。しばらくは取りに行かない
+// 画面を開くたびの重複取得を避ける。
 const MASTERS_TTL_MS = 60 * 60 * 1000;
 
 // 保存形式は { savedAt, data }。以前のキャッシュは中身が直に入っているので両方読めるようにする
@@ -256,7 +276,7 @@ async function loadMasters(onFresh) {
       if (!fresh || !fresh.ok) return null;
       const changed = JSON.stringify(fresh) !== JSON.stringify(cached);
       saveMastersCache(fresh);
-      if (changed && cached && onFresh) onFresh(fresh);
+      if (changed && onFresh) onFresh(fresh);
       return fresh;
     })
     .catch((err) => {
@@ -265,19 +285,17 @@ async function loadMasters(onFresh) {
     });
 
   if (cached) return cached;
-  const fresh = await fetching;
-  return fresh || Object.assign({ ok: true }, MASTERS_DEFAULT);
+  // 初回も同梱の候補で入力を始められる。取得できたら候補を更新する。
+  return Object.assign({ ok: true }, MASTERS_DEFAULT);
 }
 
 // スプレッドシート側のマスタを直したのに画面が古いまま、というときに使う。
 // 上の1時間を待たずに済ませたいだけなので、キャッシュを捨ててから取り直す
 async function refreshMasters() {
-  try {
-    localStorage.removeItem(MASTERS_CACHE_KEY);
-  } catch (err) {
-    console.warn("マスタキャッシュの削除に失敗（取得は続ける）", err);
-  }
-  return loadMasters();
+  const fresh = await apiGet("masters");
+  if (!fresh || !fresh.ok) throw new Error("マスタを取得できませんでした");
+  saveMastersCache(fresh);
+  return fresh;
 }
 
 // ---------- 使用回数の集計 ----------
@@ -413,22 +431,26 @@ function saveSprayHistoryCache(baseName, records) {
 // キャッシュがあれば待たずに返し、裏で取り直す。取れたら onFresh(records) を呼ぶ
 async function loadSprayHistory(baseName, onFresh) {
   const cached = readSprayHistoryCache(baseName);
-  if (cached && Date.now() - cached.savedAt < SPRAY_HISTORY_TTL_MS) return cached.records;
+  const withLocal = (records, savedAt) => mergeRemoteRecords(
+    storeRead("spray").filter((r) => r.拠点 === baseName), records, savedAt);
+  if (cached && Date.now() - cached.savedAt < SPRAY_HISTORY_TTL_MS) return withLocal(cached.records, cached.savedAt);
 
+  const startedAt = Date.now();
   const fetching = apiGet("sprays", { base: baseName })
     .then((res) => {
       if (!res || !res.ok) return null;
       const records = res.records || [];
       saveSprayHistoryCache(baseName, records);
-      if (cached && onFresh) onFresh(records);
-      return records;
+      const merged = withLocal(records, startedAt);
+      if (cached && onFresh) onFresh(merged);
+      return merged;
     })
     .catch((err) => {
       console.warn("散布履歴の取得に失敗（手元の分で続ける）", err);
       return null;
     });
 
-  if (cached) return cached.records;
+  if (cached) return withLocal(cached.records, cached.savedAt);
   return (await fetching) || [];
 }
 
@@ -465,6 +487,8 @@ function writeStore(store) {
     localStorage.setItem(STORE_KEY, JSON.stringify(store));
   } catch (err) {
     console.warn("記録ストアの保存に失敗", err);
+    toast("端末に保存できませんでした。空き容量を確認してください");
+    throw err;
   }
 }
 
@@ -490,16 +514,28 @@ function storeRead(kind) {
 }
 
 // 手元で作った記録を足す（送信を待たずに画面へ出すため）
-function storeAdd(kind, record) {
+function storeAdd(kind, record, payload) {
+  record._localChangedAt = Date.now();
   const store = readStore();
   store[kind] = (store[kind] || []).concat([record]);
   writeStore(store);
+  if (payload && !isMock) {
+    try {
+      if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;
+      enqueue(payload);
+    } catch (err) {
+      store[kind] = store[kind].filter((r) => r !== record);
+      writeStore(store);
+      toast("再送用の保存ができませんでした。入力を残しています");
+      throw err;
+    }
+  }
 }
 
 // 同じ記録を差し替える。無ければ何もしない
 function storePatch(kind, key, patch) {
   const store = readStore();
-  store[kind] = (store[kind] || []).map((r) => (recordKey(r) === key ? Object.assign({}, r, patch) : r));
+  store[kind] = (store[kind] || []).map((r) => (recordKey(r) === key ? Object.assign({}, r, patch, { _localChangedAt: Date.now() }) : r));
   writeStore(store);
 }
 
@@ -523,7 +559,7 @@ function storePrune(store) {
   limit.setDate(limit.getDate() - STORE_DAYS);
   const limitKey = formatDate(limit);
   KINDS.forEach((kind) => {
-    store[kind] = (store[kind] || []).filter((r) => recordDate(kind, r) >= limitKey);
+    store[kind] = (store[kind] || []).filter((r) => !r.記録ID || recordDate(kind, r) >= limitKey);
   });
   store.weather = (store.weather || []).filter((w) => String(w.日付 || "").slice(0, 10) >= limitKey);
   return store;
@@ -570,6 +606,8 @@ function cancelType(kind) {
 
 async function sendCancel(kind, id, userId, onDone) {
   const payload = { type: cancelType(kind), id, userId };
+  const current = storeRead(kind).find((r) => r.記録ID === id);
+  if (current && current._version) payload.expectedVersion = current._version;
   try {
     const res = await apiPostWithQueue(payload);
     if (!res.ok) toast("⚠ " + (res.error || "取消をサーバーに伝えられませんでした"));
@@ -583,6 +621,8 @@ async function sendCancel(kind, id, userId, onDone) {
 // 「予定」を「実施」に変える連絡。届かなければキューに残り、あとで送られる
 async function sendComplete(kind, id, userId, times, onDone) {
   const payload = Object.assign({ type: "completeSpray", id: id, userId: userId }, times || {});
+  const current = storeRead(kind).find((r) => r.記録ID === id);
+  if (current && current._version) payload.expectedVersion = current._version;
   try {
     const res = await apiPostWithQueue(payload);
     if (!res.ok) toast("⚠ " + (res.error || "実施をサーバーに伝えられませんでした"));
@@ -596,7 +636,13 @@ async function sendComplete(kind, id, userId, times, onDone) {
 // まだ送っていない記録を取り消したときは、キューに積まれた送信も取り下げる
 function dropQueuedRecord(clientId) {
   if (!clientId) return;
-  writeQueue(readQueue().filter((item) => (item.payload || {}).clientId !== clientId));
+  writeQueue(readQueue().filter((item) => {
+    if ((item.payload || {}).clientId !== clientId) return true;
+    // 一度でも送信を試したものはサーバーに届いている可能性がある。
+    // IDを確認してから取消を送る（画面を閉じてもこの意図を残す）。
+    if (item.attempted) { item.cancelRequested = true; return true; }
+    return false;
+  }));
 }
 
 // ---------- 同期 ----------
@@ -605,11 +651,16 @@ function dropQueuedRecord(clientId) {
 
 let syncing = false;
 let syncLabel = "";
+let syncError = "";
+const SYNC_INTERVAL_MS = 60 * 1000;
 
 // お試しモードでも同じ道を通す（mockGet/mockPostがサーバーの代わりになる）
-async function sync(onChange) {
+async function sync(onChange, force) {
   if (syncing) return;
+  if (!navigator.onLine && !isMock) { updateQueueBadge(); return; }
+  if (!force && !queueLength() && Date.now() - readStore().syncedAt < SYNC_INTERVAL_MS) return;
   syncing = true;
+  syncError = "";
   syncLabel = "同期中…";
   updateQueueBadge();
   try {
@@ -618,6 +669,7 @@ async function sync(onChange) {
     if (changed && onChange) onChange();
   } catch (err) {
     console.warn("同期に失敗", err);
+    syncError = "同期できませんでした。端末の記録を表示中";
   } finally {
     syncing = false;
     syncLabel = "";
@@ -630,13 +682,23 @@ async function sync(onChange) {
 // 裏で走るので遅くても画面は止まらない。
 // 気象も一緒に持ってきて、履歴を開くたびに取りに行かなくて済むようにする
 async function pullRecords() {
+  const startedAt = Date.now();
+  if (!isMock) {
+    const beforeStore = readStore();
+    const response = await apiGet("sync", { cursor: beforeStore.cursor || "" });
+    if (response && response.ok && response.protocol === 1) {
+      return applySyncResponse(response, beforeStore, startedAt);
+    }
+    // GASの更新前だけ旧APIで取り込む。失敗を空データとして保存しない。
+    if (!response || response.message !== GET_GREETING) throw new Error("同期を取得できませんでした");
+  }
   const since = new Date();
   since.setDate(since.getDate() - STORE_DAYS);
   const [res, weatherRes] = await Promise.all([
     apiGet("history", { days: STORE_DAYS }),
     apiGet("weatherRange", { from: formatDate(since), to: formatToday() }),
   ]);
-  if (!res || !res.ok) return false;
+  if (!res || !res.ok) throw new Error("記録を取得できませんでした");
 
   const fetched = { work: [], spray: [], growth: [] };
   (res.items || []).forEach((it) => {
@@ -651,26 +713,63 @@ async function pullRecords() {
   KINDS.forEach((kind) => {
     // まだ送れていない記録はサーバーに無いので、取り込んだ内容に足し戻す。
     // 送る前に取り消したものは送られないので、ここで落とす
-    const pending = (store[kind] || []).filter((r) => !r["記録ID"] && r.状態 !== "取消");
-    store[kind] = fetched[kind].concat(pending);
+    store[kind] = mergeRemoteRecords(store[kind] || [], fetched[kind], startedAt);
   });
   storePrune(store);
+  if (!weatherRes || !weatherRes.ok) throw new Error("気象データを取得できませんでした");
+  store.cursor = "";
   store.syncedAt = Date.now();
   writeStore(store);
 
   return JSON.stringify([KINDS.map((k) => store[k] || []), store.weather || []]) !== before;
 }
 
+function applySyncResponse(response, previous, startedAt) {
+  if (!Array.isArray(response.items) || !Array.isArray(response.deleted)) throw new Error("同期応答が不正です");
+  const store = readStore();
+  // 別タブが先に取り込み済みなら、古いカーソルの応答で巻き戻さない。
+  if (store.cursor !== previous.cursor || store.syncedAt !== previous.syncedAt) return false;
+  const before = JSON.stringify(store);
+  const keyOf = (kind, r) => kind + ":" + (kind === "weather" ? String(r.日付 || "").slice(0, 10) : r.記録ID);
+  KINDS.concat(["weather"]).forEach((kind) => {
+    const map = new Map();
+    if (!response.full) (previous[kind] || []).filter((r) => kind === "weather" || r.記録ID)
+      .forEach((r) => map.set(keyOf(kind, r), r));
+    response.deleted.forEach((key) => map.delete(key));
+    response.items.filter((r) => r._type === kind).forEach((r) => map.set(keyOf(kind, r), r));
+    const remote = [...map.values()];
+    store[kind] = kind === "weather" ? remote : mergeRemoteRecords(store[kind] || [], remote, startedAt);
+  });
+  storePrune(store);
+  // 応答より新しい端末変更を残した場合、次回は全量で版情報まで確定する。
+  // 差分カーソルだけ進めると、変更なしの行の版が古いまま残るため。
+  const changedDuringRead = KINDS.some((kind) => (store[kind] || []).some((r) => r._localChangedAt >= startedAt));
+  store.cursor = changedDuringRead ? "" : response.cursor;
+  store.syncedAt = Date.now();
+  writeStore(store);
+  return JSON.stringify(store) !== before;
+}
+
+// 通信中に入力された行・未送信の変更を、古い応答で消さない。
+function mergeRemoteRecords(local, remote, startedAt) {
+  const queue = readQueue();
+  const protectedRows = local.filter((r) => r._localChangedAt >= startedAt ||
+    queue.some((q) => q.payload.id === r.記録ID && !!r.記録ID ||
+      q.payload.clientId === r.clientId && !!r.clientId));
+  const same = (a, b) => (a.記録ID && a.記録ID === b.記録ID) || (a.clientId && a.clientId === b.clientId);
+  const pending = local.filter((r) => !r.記録ID && !remote.some((s) => same(r, s)) &&
+    !protectedRows.includes(r) && r.状態 !== "取消");
+  return remote.filter((r) => !protectedRows.some((s) => same(r, s))).concat(protectedRows, pending);
+}
+
 // オフライン等でsubmitが失敗したときに使う。送信キューに積んで later flush する
 async function apiPostWithQueue(payload) {
   if (CONFIG.APP_TOKEN) payload.token = CONFIG.APP_TOKEN;
   if (isMock) return mockPost(payload);
-  try {
-    return await postWithRetry(payload);
-  } catch (err) {
-    enqueue(payload);
-    return { ok: true, queued: true };
-  }
+  // 通信より先に永続化する。画面遷移で通信が切れても再送できる。
+  const item = enqueue(payload);
+  const results = await flushQueue();
+  return (results && results[queueKey(item)]) || { ok: true, queued: true };
 }
 
 // ---------- 送信キュー（電波が弱いハウス内でも記録できるようにする） ----------
@@ -678,44 +777,94 @@ async function apiPostWithQueue(payload) {
 const QUEUE_KEY = "tfm_pending_queue";
 
 function enqueue(payload) {
-  const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
-  q.push({ payload, savedAt: Date.now() });
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
-  updateQueueBadge();
+  const q = readQueue();
+  const existing = q.find((x) => payload.clientId && x.payload.clientId === payload.clientId && x.payload.type === payload.type);
+  if (existing) return existing;
+  const item = { payload, savedAt: Date.now(), queueId: newClientId() };
+  q.push(item);
+  writeQueue(q);
+  return item;
 }
 
 function queueLength() {
   return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]").length;
 }
 
-async function flushQueue() {
+let flushing = null;
+function flushQueue() {
+  if (flushing) return flushing;
+  const run = () => flushQueueUnlocked();
+  flushing = (navigator.locks ? navigator.locks.request("tfm-send", run) : run())
+    .finally(() => { flushing = null; });
+  return flushing;
+}
+
+async function flushQueueUnlocked() {
   if (isMock) return;
   if (!navigator.onLine) return;
-  const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
-  if (q.length === 0) return;
-  const remain = [];
+  const results = {};
+  const visited = new Set();
   let sentCount = 0;
-  for (const item of q) {
+  while (navigator.onLine) {
+    const queued = readQueue();
+    const item = queued.find((x, i) => !visited.has(queueKey(x)) && !x.blocked &&
+      !queued.slice(0, i).some((older) => sameQueueTarget(older.payload, x.payload)));
+    if (!item) break;
+    const key = queueKey(item);
+    visited.add(key);
+    updateQueueItem(key, { attempted: true });
     try {
       const data = await postWithRetry(item.payload);
+      results[key] = data;
       if (data.ok) {
         sentCount++;
-        // 手元の記録にサーバーの記録IDを書き戻して「未同期」を外す
-        storeMarkSynced(payloadKind(item.payload), item.payload.clientId, data.id, syncedStatus(item.payload));
+        const current = readQueue().find((x) => queueKey(x) === key);
+        acknowledgeQueued(item.payload, data, current && current.cancelRequested);
+        if (current && current.cancelRequested && data.id) {
+          enqueue({ type: cancelType(payloadKind(item.payload)), id: data.id, userId: item.payload.userId,
+            token: item.payload.token });
+        }
+        // 最新キューからこの1件だけ削除する。送信中に増えた記録を消さない。
+        writeQueue(readQueue().filter((x) => queueKey(x) !== key));
       } else {
-        // サーバーに届いたが受け付けられなかった。原因を残さないと
-        // 「未送信◯件」が消えない理由が分からなくなる
-        item.lastError = data.error || "サーバーが受け付けませんでした";
-        remain.push(item);
+        updateQueueItem(key, { lastError: data.error || "サーバーが受け付けませんでした", blocked: !!data.conflict });
       }
     } catch (err) {
-      item.lastError = err.message || "通信できませんでした";
-      remain.push(item); // まだオフライン、または送信が届かなかった。残す
+      updateQueueItem(key, { lastError: err.message || "通信できませんでした" });
+      break; // 通信不調時に全件ぶん待たない。次の同期で同じIDで再送する。
     }
   }
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(remain));
   updateQueueBadge();
+  if (onStoreChange) onStoreChange();
+  window.dispatchEvent(new Event("tfm-sent"));
   if (sentCount > 0) toast(`保留中だった記録 ${sentCount}件を送信しました`);
+  return results;
+}
+
+function sameQueueTarget(a, b) {
+  if (a.type === "feedLog" && b.type === "feedLog") return a.feedDate === b.feedDate;
+  return !!a.id && a.id === b.id;
+}
+
+function updateQueueItem(key, patch) {
+  writeQueue(readQueue().map((x) => queueKey(x) === key ? Object.assign({}, x, patch) : x));
+}
+
+function acknowledgeQueued(payload, data, cancelled) {
+  if (payload.type === "feedLog") {
+    const rows = JSON.parse(localStorage.getItem("tfm_feed_logs") || "[]");
+    rows.forEach((r) => {
+      if (r.clientId === payload.clientId) Object.assign(r, { 記録ID: data.id, 状態: "完了", _localChangedAt: Date.now() });
+    });
+    localStorage.setItem("tfm_feed_logs", JSON.stringify(rows));
+  } else {
+    storeMarkSynced(payloadKind(payload), payload.clientId, data.id, cancelled ? "取消" : syncedStatus(payload));
+    if (payload.id) {
+      const kind = /Spray|Pesticide/.test(payload.type) ? "spray" : /Growth/.test(payload.type) ? "growth" : "work";
+      const row = storeRead(kind).find((r) => r.記録ID === payload.id);
+      if (row) storePatch(kind, recordKey(row), { _awaitingRefresh: true });
+    }
+  }
 }
 
 // 未送信があるときは目立たせ、無いときは最終同期を控えめに出す。
@@ -735,11 +884,13 @@ function updateQueueBadge() {
   badge.classList.toggle("quiet", n === 0);
   if (n > 0) {
     badge.textContent = `📤 未送信 ${n}件（タップで中身を見る）`;
+  } else if (!navigator.onLine && !isMock) {
+    badge.textContent = "オフライン・端末の記録を表示中";
   } else if (syncLabel) {
     badge.textContent = "🔄 " + syncLabel;
   } else {
     const at = readStore().syncedAt;
-    badge.textContent = at ? "✓ 最終同期 " + timeLabel(new Date(at).toTimeString()) : "✓ 手元に保存中";
+    badge.textContent = syncError || (at ? "✓ 最終同期 " + formatDate(new Date(at)) + " " + timeLabel(new Date(at).toTimeString()) : "未同期・初回データを取得中");
   }
 
   if (n === 0) {
@@ -763,7 +914,7 @@ function writeQueue(q) {
 }
 
 function queueKey(item) {
-  return (item.savedAt || 0) + "|" + JSON.stringify(item.payload || {});
+  return item.queueId || (item.savedAt || 0) + "|" + JSON.stringify(item.payload || {});
 }
 
 function queueItemLabel(payload) {
@@ -835,7 +986,20 @@ function renderQueuePanel() {
       }
       // 並び順ではなく中身で照合する（再描画との行ズレで別の記録を捨てないため）
       const key = queueKey(item);
+      if (item.attempted && !item.blocked) {
+        toast("送信結果が未確認です。記録一覧の取消を使ってください");
+        return;
+      }
       writeQueue(readQueue().filter((x) => queueKey(x) !== key));
+      const store = readStore();
+      KINDS.forEach((kind) => {
+        store[kind] = (store[kind] || []).filter((r) => !(item.payload.clientId && r.clientId === item.payload.clientId));
+        store[kind].forEach((r) => { if (item.payload.id === r.記録ID) r._localChangedAt = 0; });
+      });
+      // 取り下げた楽観更新を、サーバーの全量で復元する。
+      store.cursor = "";
+      writeStore(store);
+      syncNow(true);
       renderQueuePanel();
       toast("未送信の記録を捨てました");
     });
@@ -858,16 +1022,37 @@ function renderQueuePanel() {
 // 各画面は onStoreChange に描き直す処理を入れて、取り込みが済んだら反映させる
 let onStoreChange = null;
 
-function syncNow() {
-  sync(() => { if (onStoreChange) onStoreChange(); });
+function syncNow(force) {
+  return sync(() => { if (onStoreChange) onStoreChange(); }, force === true);
 }
 
 window.addEventListener("online", syncNow);
+window.addEventListener("offline", updateQueueBadge);
+window.addEventListener("storage", (event) => {
+  if (event.key === STORE_KEY || event.key === QUEUE_KEY) {
+    updateQueueBadge();
+    if (onStoreChange) onStoreChange();
+  }
+});
+setInterval(() => {
+  if (document.visibilityState === "visible") syncNow();
+}, SYNC_INTERVAL_MS);
 window.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") syncNow(); // アプリに戻ったとき
 });
 window.addEventListener("DOMContentLoaded", () => {
   updateQueueBadge();
+  const badge = $("queue-badge");
+  if (badge && !$("sync-now")) {
+    const button = el("button", "btn-secondary", "今すぐ同期");
+    button.id = "sync-now";
+    button.type = "button";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try { await syncNow(true); } finally { button.disabled = false; }
+    });
+    badge.insertAdjacentElement("afterend", button);
+  }
   syncNow();
 });
 

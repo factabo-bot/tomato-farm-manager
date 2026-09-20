@@ -167,7 +167,7 @@ function render() {
     : loaded.records;
 
   $("empty-hint").hidden = records.length > 0;
-  setStatus(countLabel(records.length)); // しぼり込んだ結果の件数も出す
+  setStatus(readStore().syncedAt ? countLabel(records.length) : "端末の記録 " + records.length + "件・共有データは未取得");
   let lastDate = null;
   records.forEach((r) => {
     const date = state.tab === "work" ? r.作業日 : state.tab === "growth" ? r.調査日 : r.使用年月日;
@@ -234,6 +234,11 @@ async function loadUsage() {
 function renderUsage(base, records) {
   const list = $("record-list");
   list.innerHTML = "";
+  const cached = readSprayHistoryCache(base);
+  list.appendChild(el("p", "hint", cached
+    ? "履歴取得: " + formatDate(new Date(cached.savedAt)) + " " + timeLabel(new Date(cached.savedAt).toTimeString()) + "（他の端末の未同期記録は含みません）"
+    : "散布履歴は未取得です。使用回数はまだ確認できません"));
+  if (!cached) return;
   const buildings = buildingsOfBase(state.masters, base);
   const names = buildings.length ? buildings.map((b) => b.棟区画名) : [""];
 

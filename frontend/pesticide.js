@@ -44,7 +44,10 @@ async function init() {
   renderItems();
 
   // 手元のストアだけを見て即座に描く。取り込みが済んだら描き直す
-  onStoreChange = loadMyRecords;
+  onStoreChange = () => {
+    loadMyRecords();
+    if (state.masters && state.base) refreshSprayHistory();
+  };
   loadMyRecords();
 
   // キャッシュがあれば即座に描画し、最新版が届いて中身が変わっていたら描き直す
@@ -202,8 +205,17 @@ function updateUsageHint() {
     return;
   }
   const u = state.usage;
+  const historyCache = readSprayHistoryCache(state.base);
+  if (!historyCache) {
+    hint.hidden = false;
+    hint.className = "hint warn";
+    hint.textContent = "使用回数は未確認です。散布履歴の取得完了を待って確認してください";
+    return;
+  }
   const st = usageStatusOf(m, u);
   const parts = [];
+  parts.push("履歴取得 " + formatDate(new Date(historyCache.savedAt)) + " " + timeLabel(new Date(historyCache.savedAt).toTimeString()));
+  if (!navigator.onLine || Date.now() - historyCache.savedAt >= SPRAY_HISTORY_TTL_MS) parts.push("最新の共有記録は未確認");
   parts.push(st.limit
     ? "この作で" + st.used + "回使用（本剤は" + st.limit + "回まで）"
     : "この作で" + st.used + "回使用");
@@ -713,7 +725,7 @@ async function submit() {
     更新日時: nowTimestamp(),
     items: items,
   };
-  storeAdd("spray", saved);
+  storeAdd("spray", saved, payload);
 
   // 次回のために散布方法と容量を覚えておく
   localStorage.setItem(METHOD_KEY, JSON.stringify({ method: state.method, batchL: $("batch-volume").value }));

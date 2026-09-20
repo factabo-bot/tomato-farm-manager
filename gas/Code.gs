@@ -543,9 +543,14 @@ function checkToken_(data) {
 // doPost（type分岐）
 // ===================================================================
 function doPost(e) {
+  var lock = LockService.getScriptLock();
   try {
     var data = JSON.parse(e.postData.contents);
     if (!checkToken_(data)) return json_({ ok: false, error: "unauthorized" });
+    if (!lock.tryLock(10000)) return json_({ ok: false, error: "他の記録を保存中です。次の同期で再送します" });
+    // 重複照合と保存を同じロック内で行う。複数タブの再送でも二重登録しない。
+    var conflict = checkRecordVersion_(data);
+    if (conflict) return json_(conflict);
 
     // "pesticide"/"cancelPesticide" は旧フロント互換のため残す
     if (data.type === "spray" || data.type === "pesticide") return saveSpray_(data);
@@ -563,7 +568,29 @@ function doPost(e) {
     return saveWork_(data); // 無指定 or "record"
   } catch (err) {
     return json_({ ok: false, error: String(err) });
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
   }
+}
+
+// 新しい同期APIから取得した版だけを比較する。旧クライアントは従来どおり動く。
+function checkRecordVersion_(data) {
+  if (!data.expectedVersion || !data.id) return null;
+  var name = data.type === "cancelRecord" || data.type === "updateRecord" ? SHEET_WORK :
+    data.type === "cancelGrowth" ? SHEET_GROWTH :
+    data.type === "cancelSpray" || data.type === "completeSpray" ? SHEET_SPRAY : null;
+  if (!name) return null;
+  var row = syncRows_(name).filter(function (r) { return String(r["記録ID"]) === String(data.id); })[0];
+  if (row && (name === SHEET_SPRAY || name === SHEET_GROWTH)) {
+    row.items = syncRows_(name === SHEET_SPRAY ? SHEET_SPRAY_ITEMS : SHEET_GROWTH_ITEMS)
+      .filter(function (r) { return String(r["記録ID"]) === String(data.id); });
+  }
+  // 同じ取消の再送は成功扱いにできる。実施時刻などの変更は勝手に上書きしない。
+  if (row && /^cancel/.test(data.type) && row["状態"] === "取消") return { ok: true };
+  if (!row || syncHash_(row) !== data.expectedVersion) {
+    return { ok: false, conflict: true, error: "別の端末またはシートで変更されています。この操作を取り下げて同期し、内容を確認してください" };
+  }
+  return null;
 }
 
 // 足りない列を保存のついでに補う。
@@ -1293,6 +1320,7 @@ function doGet(e) {
   var action = params.action || "";
 
   if (action === "masters") return getMasters_();
+  if (action === "sync") return getSync_(params);
   if (action === "records") return getRecords_(params);
   if (action === "sprays" || action === "pesticides") return getSprays_(params);
   if (action === "mytoday") return getMyToday_(params);
@@ -1326,6 +1354,74 @@ function getMasters_() {
     feedRecipes: sheetToObjects_(ss, SHEET_FEED_RECIPE),
     feedRecipeItems: sheetToObjects_(ss, SHEET_FEED_RECIPE_ITEMS),
   });
+}
+
+// 一括同期。シートを直接編集・削除しても検出できるよう、更新時刻ではなく
+// 内容の指紋を比較する。シート読み取りは残るが、往復回数と転送量を減らす。
+function syncRows_(name) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) return [];
+  var values = sheet.getDataRange().getValues();
+  var headers = {};
+  (values[0] || []).forEach(function (h, i) { if (h) headers[h] = i; });
+  return values.slice(1).map(function (r) { return rowToObjectBySheet_(headers, r); });
+}
+
+function syncHash_(value) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, JSON.stringify(value), Utilities.Charset.UTF_8));
+}
+
+function getSync_(params) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return json_({ ok: false, error: "保存処理中です" });
+  try {
+    var since = new Date();
+    since.setDate(since.getDate() - 90);
+    var from = Utilities.formatDate(since, TZ, "yyyy-MM-dd");
+    var rows = [];
+    [
+      ["work", SHEET_WORK, "作業日", null],
+      ["spray", SHEET_SPRAY, "使用年月日", SHEET_SPRAY_ITEMS],
+      ["growth", SHEET_GROWTH, "調査日", SHEET_GROWTH_ITEMS],
+      ["weather", SHEET_WEATHER, "日付", null]
+    ].forEach(function (spec) {
+      var details = {};
+      if (spec[3]) syncRows_(spec[3]).forEach(function (r) {
+        var id = r["記録ID"];
+        if (!details[id]) details[id] = [];
+        details[id].push(r);
+      });
+      syncRows_(spec[1]).forEach(function (r) {
+        var date = String(r[spec[2]] || "").slice(0, 10);
+        var id = spec[0] === "weather" ? date : r["記録ID"];
+        if (!id || date < from || r["状態"] === "取消") return;
+        if (spec[3]) r.items = details[id] || [];
+        r._version = syncHash_(r);
+        r._type = spec[0];
+        rows.push({ key: spec[0] + ":" + id, data: r });
+      });
+    });
+    var cache = CacheService.getScriptCache();
+    var previous = null;
+    if (/^[a-f0-9-]{36}$/.test(params.cursor || "")) {
+      var saved = cache.get("sync-v1:" + params.cursor);
+      if (saved) previous = JSON.parse(saved);
+    }
+    var hashes = {};
+    var changed = [];
+    rows.forEach(function (r) {
+      hashes[r.key] = syncHash_(r.data);
+      if (!previous || previous[r.key] !== hashes[r.key]) changed.push(r.data);
+    });
+    var deleted = previous ? Object.keys(previous).filter(function (key) { return !hashes[key]; }) : [];
+    var cursor = Utilities.getUuid();
+    // キャッシュ容量を超えたら次回も全量。キャッシュは整合性の前提にしない。
+    var encoded = JSON.stringify(hashes);
+    if (encoded.length < 90000) cache.put("sync-v1:" + cursor, encoded, 21600);
+    else cursor = "";
+    return json_({ ok: true, protocol: 1, full: !previous, cursor: cursor, items: changed, deleted: deleted });
+  } finally { lock.releaseLock(); }
 }
 
 function sheetToObjects_(ss, name) {

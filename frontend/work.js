@@ -253,7 +253,7 @@ async function submit() {
     userId: payload.userId,
     備考: payload.note,
     状態: "未同期",
-  });
+  }, payload);
   toast("✅ 記録しました");
   resetForm();
   loadMyRecords();

@@ -1,6 +1,6 @@
 ﻿'use strict';
 
-const CACHE = 'tomato-farm-manager-v24';
+const CACHE = 'tomato-farm-manager-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -49,8 +49,7 @@ self.addEventListener('activate', function (e) {
   );
 });
 
-// ネットワーク優先・失敗時にキャッシュ（更新が即座に届き、オフラインでも開ける）
-// cache: 'no-cache' でHTTPキャッシュを素通りし、毎回サーバーに更新確認する。
+// インストール済みの画面は端末から即表示。更新は新しいSWのインストールで一式入れ替える。
 // GAS（script.google.com）宛のAPI通信はここでは扱わず素通しする
 // （他オリジンGETをキャッシュ経由で処理するとオフライン時に空レスポンスになりうるため）
 self.addEventListener('fetch', function (e) {
@@ -58,7 +57,9 @@ self.addEventListener('fetch', function (e) {
   if (e.request.url.indexOf(self.location.origin) !== 0) return;
 
   e.respondWith(
-    fetch(e.request, { cache: 'no-cache' })
+    caches.match(e.request, { ignoreSearch: true }).then(function (cached) {
+      if (cached) return cached;
+      return fetch(e.request, { cache: 'no-cache' })
       .then(function (res) {
         if (res.ok) {
           const copy = res.clone();
@@ -68,6 +69,7 @@ self.addEventListener('fetch', function (e) {
       })
       .catch(function () {
         return caches.match(e.request, { ignoreSearch: true });
-      })
+      });
+    })
   );
 });

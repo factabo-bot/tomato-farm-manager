@@ -145,16 +145,32 @@ function renderCrops() {
   if (current) sel.value = current;
 }
 
+let lastGrowthRequest = 0;
 async function loadLastGrowth() {
+  const request = ++lastGrowthRequest;
   if (!state.base || !state.building) return;
-  const res = await apiGet("lastGrowth", {
+  const params = {
     base: state.base,
     building: state.building,
     before: $("survey-date").value || formatToday(),
-  });
+  };
+  state.lastGrowth = storeRead("growth").filter((r) => r.状態 !== "取消" &&
+    r.拠点 === params.base && r["棟・区画"] === params.building && recordDate("growth", r) < params.before)
+    .sort((a, b) => recordDate("growth", b).localeCompare(recordDate("growth", a)))[0] || null;
+  $("last-info").textContent = state.lastGrowth ? "前回: " + state.lastGrowth.調査日 + "（端末の記録）" : "前回値を確認中…（入力できます）";
+  renderPlants();
+  if (state.lastGrowth && Date.now() - readStore().syncedAt < SYNC_INTERVAL_MS) return;
+  const res = await apiGet("lastGrowth", params);
+  if (request !== lastGrowthRequest) return;
+  if (!res.ok) {
+    $("last-info").textContent += "・最新データは未確認";
+    return;
+  }
+  const changed = JSON.stringify(state.lastGrowth) !== JSON.stringify(res.growth || null);
   state.lastGrowth = res.growth || null;
   $("last-info").textContent = state.lastGrowth ? "前回: " + state.lastGrowth.調査日 : "前回の調査なし";
-  renderPlants();
+  // 入力中のフォーカスを奪わない。次の通常描画で前回値も反映される。
+  if (changed && !$("plant-list").contains(document.activeElement)) renderPlants();
 }
 
 function lastItemOf(label) {
@@ -355,7 +371,7 @@ async function submit() {
     状態: "未同期",
     更新日時: nowTimestamp(),
     items: filled.map(plantToRow),
-  });
+  }, payload);
   toast("✅ 記録しました");
   resetForm();
   loadMyRecords();

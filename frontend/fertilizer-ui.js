@@ -895,6 +895,7 @@ function buildFeedLog() {
     "給液日": ev.date || feedToday(),
     "記録日時": new Date().toISOString(),
     "clientId": newClientId(),
+    "_localChangedAt": Date.now(),
     "状態": isMock ? "お試し" : "未同期",
     "給液量": rec.feedLPerPlant,
     "排液量": rec.drainLPerPlant,
@@ -995,6 +996,7 @@ async function sendFeedLog(row) {
     }
   } catch (err) {
     console.warn("給液記録を送れませんでした", err);
+    toast("給液記録の送信準備に失敗しました。端末の空き容量と未送信欄を確認してください");
   }
 }
 
@@ -1002,8 +1004,14 @@ async function sendFeedLog(row) {
 // マージの作法は pullRecords（common.js）に倣い、
 // 「サーバー分で置き換え、まだ送れていない手元の行だけ足し戻す」。
 // 手元にしか無い行を消さないことと、同じ給液日が二重に並ばないことの両立が目的
+let feedPulling = false;
+let feedPulledAt = 0;
 async function pullFeedLogs() {
   if (isMock) return;
+  if (feedPulling || !navigator.onLine || Date.now() - feedPulledAt < SYNC_INTERVAL_MS) return;
+  feedPulling = true;
+  const startedAt = Date.now();
+  try {
   const to = feedToday();
   const d = new Date();
   d.setDate(d.getDate() - 60);
@@ -1015,10 +1023,11 @@ async function pullFeedLogs() {
 
   const local = feedLogs();
   // 記録IDが無い＝まだサーバーに載っていない行
-  const pending = local.filter((r) => !r["記録ID"]);
+  const pending = local.filter((r) => !r["記録ID"] || r._localChangedAt >= startedAt ||
+    readQueue().some((q) => q.payload.clientId === r.clientId));
   const seen = {};
   const merged = [];
-  res.logs.concat(pending).forEach((r) => {
+  pending.concat(res.logs).forEach((r) => {
     const key = String(r["給液日"] || "");
     if (!key || seen[key]) return;   // 同じ給液日はサーバー側を優先（1日1行）
     seen[key] = true;
@@ -1034,8 +1043,12 @@ async function pullFeedLogs() {
   });
   merged.sort((a, b) => (String(a["給液日"]) < String(b["給液日"]) ? 1 : -1));
   writeLocal(FERT_LOG_KEY, merged);
+  feedPulledAt = Date.now();
   renderFeedLogList();
+  } finally { feedPulling = false; }
 }
+
+window.addEventListener("tfm-sent", renderFeedLogList);
 
 // 一覧。グラフは作らず、平均1行＋表で推移を読ませる
 function renderFeedLogList() {
