@@ -1,6 +1,6 @@
 ﻿'use strict';
 
-const CACHE = 'tomato-farm-manager-v30';
+const CACHE = 'tomato-farm-manager-v31';
 const ASSETS = [
   './',
   './index.html',
@@ -23,9 +23,11 @@ const ASSETS = [
   './fertilizer.js',
   './fertilizer-ui.js',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-maskable-512.png',
+  './icons/tomato-192.png',
+  './icons/tomato-512.png',
+  './icons/tomato-maskable-512.png',
+  './icons/apple-touch-icon.png',
+  './icons/favicon-32.png',
 ];
 
 self.addEventListener('install', function (e) {
