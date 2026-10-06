@@ -13,7 +13,7 @@ const MASTERS_DEFAULT = {
   // 防除・葉面散布は散布記録側で扱うため、作業分類には置かない。
   // トーン処理（トマトトーン＝植物成長調整剤）は着果の作業として作業分類に置いている
   workTypes: [
-    ["定植", "FALSE"], ["誘引", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
+    ["定植", "FALSE"], ["誘引", "FALSE"], ["つる下ろし", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
     ["トーン処理", "TRUE"], ["摘果", "FALSE"], ["収穫", "FALSE"], ["灌水", "FALSE"],
     ["清掃", "FALSE"], ["観察", "FALSE"], ["その他", "FALSE"],
   ].map(function (w, i) {

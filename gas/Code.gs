@@ -351,7 +351,7 @@ function seedMastersIfEmpty_(ss) {
   var workSheet = ss.getSheetByName(SHEET_MASTER_WORKTYPE);
   if (workSheet.getLastRow() < 2) {
     var works = [
-      ["定植", "FALSE"], ["誘引", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
+      ["定植", "FALSE"], ["誘引", "FALSE"], ["つる下ろし", "FALSE"], ["葉かき", "FALSE"], ["芽かき", "FALSE"],
       ["トーン処理", "TRUE"], ["摘果", "FALSE"], ["収穫", "FALSE"], ["灌水", "FALSE"],
       ["清掃", "FALSE"], ["観察", "FALSE"], ["その他", "FALSE"],
     ];
