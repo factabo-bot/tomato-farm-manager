@@ -42,6 +42,10 @@
 
 var TZ = "Asia/Tokyo";
 
+// 配備した版。tools/deploy.py がデプロイ後に ?action=version で読み、新しいコードが動いているか確かめる。
+// コードを変えてデプロイするときは必ず上げる（日付＋英字）
+var GAS_VERSION = "2026-10-06a";
+
 // 気象データの取得地点（千葉市緑区の代表座標。拠点ごとの個別座標は使わず全体で統一）
 var WEATHER_LAT = 35.5605;
 var WEATHER_LON = 140.1762;
@@ -1322,6 +1326,7 @@ function doGet(e) {
   var params = (e && e.parameter) || {};
   var action = params.action || "";
 
+  if (action === "version") return json_({ ok: true, version: GAS_VERSION });
   if (action === "masters") return getMasters_();
   if (action === "sync") return getSync_(params);
   if (action === "records") return getRecords_(params);
