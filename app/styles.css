@@ -925,42 +925,44 @@ button.age-chip {
 .age-legend span:first-child { margin-right: 4px; }
 .age-legend span:last-child { margin-left: 4px; }
 
-/* 列マップ（farm-work-log の配置図と同じく、列を横長のバーで縦に積む） */
+/* 列マップ。入口から見た向き（列が左右に並び、奥が上・手前が下）。
+   列の幅は押せる大きさ（46px）を下限にし、入りきらなければ横にスクロールする */
 .bench-head { margin: 14px 0 6px; }
 .bench-title { font-weight: 700; }
 .bench-bulk { gap: 6px; margin-bottom: 6px; }
-.bench-row {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
-  margin: 3px 0;
+.bench-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+}
+.bench-grid {
+  display: grid;
+  grid-template-rows: auto minmax(64px, auto) minmax(64px, auto);
+  gap: 4px 3px;
+  width: max-content;
+  min-width: 100%;
 }
 .bench-label {
-  flex: 0 0 26px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 4px;
-  font-size: 0.78rem;
+  text-align: center;
+  font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .bench-cell {
-  flex: 1 1 0;
   min-width: 0;
-  min-height: 40px;
+  min-height: 64px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 3px 4px;
-  padding: 3px 6px;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px;
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
-  font-size: 0.82rem;
-  text-align: left;
+  font-size: 0.8rem;
   cursor: pointer;
 }
 .bench-cell.age0 { background: var(--age0); border-color: transparent; }
@@ -973,16 +975,17 @@ button.age-chip {
 .bench-cell.age7 { background: var(--age7); border-color: transparent; color: var(--age7-text); font-weight: 600; }
 /* 記録に入れる列。色（経過）を隠さないよう、内側の太い枠で示す */
 .bench-cell.picked { box-shadow: inset 0 0 0 3px var(--accent-text); font-weight: 700; }
-.bench-pos { font-size: 0.7rem; opacity: 0.75; margin-right: 2px; }
-.bench-none { color: var(--faint); font-size: 0.75rem; }
+.bench-pos { font-size: 0.65rem; opacity: 0.75; }
+.bench-none { color: var(--faint); font-size: 0.72rem; }
 .bench-cell.age7 .bench-none { color: inherit; }
 .bench-days { font-variant-numeric: tabular-nums; }
 .mini {
   display: inline-block;
-  padding: 0 4px;
+  padding: 0 3px;
   border-radius: 3px;
-  font-size: 0.72rem;
-  line-height: 18px;
+  font-size: 0.68rem;
+  line-height: 16px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .mini.age0 { background: var(--age0); }
@@ -993,13 +996,15 @@ button.age-chip {
 .mini.age5 { background: var(--age5); }
 .mini.age6 { background: var(--age6); }
 .mini.age7 { background: var(--age7); color: var(--age7-text); font-weight: 600; }
-.bench-aisle { height: 8px; }
-.bench-center {
-  margin: 8px 0;
-  border-top: 1px dashed var(--line-strong);
-  padding-top: 2px;
+.bench-center-line {
+  justify-self: center;
+  width: 0;
+  border-left: 2px dashed var(--line-strong);
+}
+.bench-front {
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--muted);
+  margin-top: 2px;
 }
 .bench-count { margin-top: 4px; }

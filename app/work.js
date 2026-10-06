@@ -220,6 +220,9 @@ function ageStep(date) {
 function renderBench() {
   const area = $("bench-area");
   if (!area || !state.masters || !state.base) return;
+  // 押すたびに描き直すので、棟ごとの横スクロールの位置を覚えておいて戻す
+  const scrolls = {};
+  area.querySelectorAll(".bench-scroll").forEach((s) => { scrolls[s.dataset.building] = s.scrollLeft; });
   area.innerHTML = "";
   const last = lastDoneByCell();
   const heat = state.heatWork;
@@ -270,10 +273,26 @@ function renderBench() {
     addBulk("解除", () => selectRange(1, L.cols, false));
     area.appendChild(bulk);
 
+    // 入口から見た向きで描く：列は左右に並び、奥が上・手前が下。手前／奥に分かれない列は上下通しの1マス。
+    // 列の幅は指で押せる大きさを下限にし、入りきらない棟は横にスクロールさせる
+    const scroll = el("div", "bench-scroll");
+    scroll.dataset.building = b;
+    const grid = el("div", "bench-grid");
+    const template = [];
+    let gc = 0; // grid の列番号（通路の隙間も1列として数える）
     for (let col = 1; col <= L.cols; col++) {
-      const row = el("div", "bench-row");
-      row.appendChild(el("span", "bench-label", String(col)));
-      positionsOf(L, col).forEach((pos) => {
+      template.push("minmax(46px, 1fr)");
+      gc++;
+      const at = (node, row, span) => {
+        node.style.gridColumn = String(gc);
+        node.style.gridRow = span ? row + " / span " + span : String(row);
+        grid.appendChild(node);
+      };
+      at(el("span", "bench-label", String(col)), 1);
+      const split = positionsOf(L, col).length > 1;
+      // 上が奥、下が手前
+      const order = split ? ["奥", "手前"] : [""];
+      order.forEach((pos, i) => {
         const token = cellToken(b, col, pos);
         const cell = el("button", "bench-cell" + (state.cells.has(token) ? " picked" : ""));
         cell.type = "button";
@@ -286,7 +305,7 @@ function renderBench() {
             cell.appendChild(el("span", "bench-days", a.text + "日"));
             cell.title = "最後にやった日 " + date;
           } else {
-            cell.appendChild(el("span", "bench-none", "記録なし"));
+            cell.appendChild(el("span", "bench-none", "なし"));
           }
         } else {
           let any = false;
@@ -303,12 +322,26 @@ function renderBench() {
           state.cells.has(token) ? state.cells.delete(token) : state.cells.add(token);
           renderBench();
         });
-        row.appendChild(cell);
+        at(cell, split ? 2 + i : 2, split ? 0 : 2);
       });
-      area.appendChild(row);
-      if (L.centerAfter === col) area.appendChild(el("div", "bench-center", "中央通路"));
-      else if ((L.aisleAfter || []).includes(col)) area.appendChild(el("div", "bench-aisle"));
+      // 列の後ろの通路。中央通路は広めに取り、点線で示す
+      if (col < L.cols && (L.centerAfter === col || (L.aisleAfter || []).includes(col))) {
+        const center = L.centerAfter === col;
+        template.push(center ? "18px" : "8px");
+        gc++;
+        if (center) {
+          const line = el("div", "bench-center-line");
+          line.style.gridColumn = String(gc);
+          line.style.gridRow = "1 / span 3";
+          grid.appendChild(line);
+        }
+      }
     }
+    grid.style.gridTemplateColumns = template.join(" ");
+    scroll.appendChild(grid);
+    area.appendChild(scroll);
+    area.appendChild(el("div", "bench-front", "↓ 手前（入口側）"));
+    if (scrolls[b]) scroll.scrollLeft = scrolls[b];
     const n = [...state.cells].filter((c) => parseCell(c).building === b).length;
     area.appendChild(el("p", "hint bench-count", n ? `${b}：${n}列を選んでいます` : `${b}：列を選んでいません（選ばずに記録すると、経過には数えません）`));
   });
