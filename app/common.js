@@ -126,6 +126,8 @@ function setTheme(theme) {
 }
 
 function applyTheme() {
+  // 画面のない環境（テストのvmなど）では何もしない
+  if (typeof document === "undefined" || !document.documentElement || typeof window === "undefined" || !window.matchMedia) return;
   const t = getTheme();
   if (t === "auto") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
@@ -135,7 +137,9 @@ function applyTheme() {
 }
 
 applyTheme();
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+if (typeof window !== "undefined" && window.matchMedia) {
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+}
 
 const isMock = !CONFIG.GAS_URL;
 
@@ -269,10 +273,18 @@ const MASTERS_CACHE_KEY = "tfm_masters_cache";
 const MASTERS_TTL_MS = 60 * 60 * 1000;
 
 // 保存形式は { savedAt, data }。以前のキャッシュは中身が直に入っているので両方読めるようにする
+// 中身のあるマスタか。GASが別のコードに差し替わっていた時（2026-10-06）、{ok:true} だけの返事を
+// マスタとして保存し、拠点も作業も空の画面が1時間続いた。拠点の一覧が無いものはマスタとみなさない
+function isUsableMasters(m) {
+  return !!(m && m.ok !== false && Array.isArray(m.bases) && m.bases.length > 0);
+}
+
 function readMastersCache() {
   try {
     const raw = JSON.parse(localStorage.getItem(MASTERS_CACHE_KEY) || "null");
     if (!raw) return { data: null, savedAt: 0 };
+    const data = raw.data || raw;
+    if (!isUsableMasters(data)) return { data: null, savedAt: 0 };
     if (raw.data) return { data: raw.data, savedAt: raw.savedAt || 0 };
     return { data: raw, savedAt: 0 }; // 旧形式。取得時刻が分からないので古い扱い
   } catch (err) {
@@ -305,7 +317,7 @@ async function loadMasters(onFresh) {
 
   const fetching = apiGet("masters")
     .then((fresh) => {
-      if (!fresh || !fresh.ok) return null;
+      if (!isUsableMasters(fresh)) return null;
       const changed = JSON.stringify(fresh) !== JSON.stringify(cached);
       saveMastersCache(fresh);
       if (changed && onFresh) onFresh(fresh);
@@ -325,7 +337,7 @@ async function loadMasters(onFresh) {
 // 上の1時間を待たずに済ませたいだけなので、キャッシュを捨ててから取り直す
 async function refreshMasters() {
   const fresh = await apiGet("masters");
-  if (!fresh || !fresh.ok) throw new Error("マスタを取得できませんでした");
+  if (!isUsableMasters(fresh)) throw new Error("マスタを取得できませんでした");
   saveMastersCache(fresh);
   return fresh;
 }

@@ -2,6 +2,8 @@
 
     python tools/deploy.py           # 確認してから送る
     python tools/deploy.py --check   # エディタ上のコードとの照合だけ（送らない）
+    python tools/deploy.py --overwrite-editor
+        # エディタ上のコードが取り違えなどで明らかに違うと分かっているときだけ使う（照合を飛ばして上書き）
 
 手順:
   1. エディタ上の今のコードを取り寄せ、git の履歴にあるどれかの版と同じか確かめる。
@@ -100,12 +102,16 @@ def main():
             return
     else:
         sha = matches_history(remote)
-        if not sha:
+        if not sha and "--overwrite-editor" in sys.argv:
+            (WORK / "editor_version.gs").write_text(remote, encoding="utf-8")
+            print("エディタ上のコードはどの版とも違うが、--overwrite-editor 指定なので上書きする（元は .deploy/editor_version.gs に控えた）")
+        elif not sha:
             diff_path = WORK / "editor_version.gs"
             diff_path.write_text(remote, encoding="utf-8")
             sys.exit("エディタ上のコードが git のどの版とも違います。エディタで直接直された可能性があるので止めます。\n"
                      "取り寄せたコード: " + str(diff_path))
-        print("エディタ上のコードは git の版 %s と同じ（直接の書き換えなし）" % sha[:7])
+        else:
+            print("エディタ上のコードは git の版 %s と同じ（直接の書き換えなし）" % sha[:7])
         if "--check" in sys.argv:
             return
 
