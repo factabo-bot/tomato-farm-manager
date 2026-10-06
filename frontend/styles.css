@@ -1,28 +1,61 @@
+/* 見た目はNotionに寄せる（白地・墨色の文字・細い線）。
+   ただしハウスの中で手袋のまま押すので、押せる部分の高さは変えない。
+   日なたで読めるよう、補足の文字と線はNotionより少し濃くしてある */
+:root {
+  --bg: #ffffff;
+  --text: #37352f;
+  --muted: rgba(55, 53, 47, 0.72);
+  --faint: rgba(55, 53, 47, 0.5);
+  --line: rgba(55, 53, 47, 0.12);
+  --line-strong: rgba(55, 53, 47, 0.24);
+  --hover: rgba(55, 53, 47, 0.06);
+  --callout: #f7f6f3;
+  --blue: #2383e2;
+  --blue-dark: #0b6bcb;
+  --blue-bg: #e7f3f8;
+  --green: #448361;
+  --green-text: #2b593f;
+  --green-bg: #edf3ec;
+  --red: #d44c47;
+  --red-text: #a3302b;
+  --red-bg: #fdebec;
+  --orange: #d9730d;
+  --orange-text: #a95606;
+  --orange-bg: #fbecdd;
+  --yellow: #cb912f;
+  --yellow-text: #7a5a14;
+  --yellow-bg: #fbf3db;
+  color-scheme: light;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 [hidden] { display: none !important; }
 
 body {
-  font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
-  background: #f5f5f0;
-  color: #333;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
   max-width: 480px;
   margin: 0 auto;
   padding-bottom: 40px;
 }
 
 header {
-  background: #2e7d32;
-  color: #fff;
-  padding: 12px 16px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 18px 16px 0;
+  border-bottom: 1px solid var(--line);
 }
-header h1 { font-size: 1.2rem; }
+header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
 .header-sub {
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  margin-top: 4px;
-  opacity: 0.9;
+  margin-top: 2px;
+  color: var(--muted);
 }
 
 main { padding: 12px; }
@@ -30,29 +63,30 @@ main { padding: 12px; }
 section { margin-bottom: 18px; }
 
 h2 {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
+  font-weight: 600;
   margin-bottom: 8px;
-  color: #2e7d32;
+  color: var(--text);
 }
 
 label {
   display: block;
   font-size: 0.85rem;
-  color: #555;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 
 .req {
   font-size: 0.75rem;
-  color: #c62828;
+  color: var(--red);
   font-weight: normal;
 }
 
 .law-hint {
-  background: #fff3cd;
-  color: #8a6d00;
+  background: var(--yellow-bg);
+  color: var(--text);
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 0.8rem;
 }
 
@@ -66,7 +100,7 @@ label {
   min-height: 38px;
   padding: 6px 12px;
   font-size: 0.88rem;
-  border-radius: 18px;
+  border-radius: 999px;
 }
 
 /* 資材が農薬か肥料かを一目で分かるようにするバッジ */
@@ -75,17 +109,17 @@ label {
   font-size: 0.72rem;
   font-weight: bold;
   padding: 3px 8px;
-  border-radius: 10px;
+  border-radius: 4px;
   margin-right: 8px;
   white-space: nowrap;
 }
 .mat-badge.is-pest {
-  background: #fde0dc;
-  color: #b71c1c;
+  background: var(--red-bg);
+  color: var(--red-text);
 }
 .mat-badge.is-other {
-  background: #e3efe3;
-  color: #2e7d32;
+  background: var(--green-bg);
+  color: var(--green-text);
 }
 
 /* その作で何回使ったか。上限に達したもの・成分の通算が尽きたものは赤くする */
@@ -94,18 +128,18 @@ label {
   font-size: 0.72rem;
   font-weight: bold;
   padding: 3px 8px;
-  border-radius: 10px;
+  border-radius: 4px;
   margin-left: 8px;
   white-space: nowrap;
-  background: #eceff1;
-  color: #37474f;
+  background: rgba(55, 53, 47, 0.08);
+  color: var(--text);
 }
 .use-badge.is-full {
-  background: #b71c1c;
+  background: var(--red);
   color: #fff;
 }
 .hint.warn {
-  color: #b71c1c;
+  color: var(--red-text);
   font-weight: bold;
 }
 
@@ -116,14 +150,14 @@ label {
 .usage-title {
   font-size: 0.8rem;
   font-weight: bold;
-  color: #555;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 .usage-row {
   display: flex;
   align-items: center;
   padding: 3px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--line);
 }
 .usage-row .grow {
   flex: 1 1 auto;
@@ -144,9 +178,9 @@ label {
   gap: 8px;
 }
 .plant-card {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   padding: 12px;
   margin-bottom: 12px;
 }
@@ -165,7 +199,7 @@ label {
 .prev-note {
   flex: 1 1 auto;
   font-size: 0.75rem;
-  color: #2e7d32;
+  color: var(--green-text);
 }
 .num-row {
   display: flex;
@@ -177,7 +211,7 @@ label {
 .num-label {
   flex: 0 0 150px;
   font-size: 0.85rem;
-  color: #555;
+  color: var(--muted);
   margin: 0;
 }
 .num-input {
@@ -187,20 +221,20 @@ label {
 }
 .num-diff {
   font-size: 0.78rem;
-  color: #2e7d32;
+  color: var(--green-text);
 }
 .num-hint {
   flex: 1 1 100%;
   font-size: 0.72rem;
-  color: #999;
+  color: var(--faint);
   padding-left: 150px;
 }
 /* 株カード内の項目グループの見出し */
 .group-label {
   font-size: 0.78rem;
-  font-weight: bold;
-  color: #2e7d32;
-  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
   padding-bottom: 3px;
   margin: 14px 0 8px;
 }
@@ -209,11 +243,12 @@ label {
   width: 100%;
   min-height: 40px;
   margin-top: 10px;
-  background: #f0f4f0;
-  border: 1px dashed #9bb89b;
-  border-radius: 8px;
-  color: #2e7d32;
+  background: var(--callout);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
   font-size: 0.85rem;
+  font-family: inherit;
   cursor: pointer;
 }
 /* 開花段位と収穫段位の差（目安6段から外れたら色を変える） */
@@ -221,8 +256,8 @@ label {
   font-size: 0.8rem;
   padding: 4px 0 0 150px;
 }
-.truss-gap.ok { color: #2e7d32; }
-.truss-gap.warn { color: #b26a00; }
+.truss-gap.ok { color: var(--green-text); }
+.truss-gap.warn { color: var(--orange-text); }
 
 .visual-row {
   margin-top: 10px;
@@ -230,7 +265,7 @@ label {
 .visual-label {
   display: block;
   font-size: 0.85rem;
-  color: #555;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 
@@ -238,49 +273,50 @@ label {
 .spray-link {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px dashed #cfcfcf;
+  border-top: 1px solid var(--line);
 }
 .spray-status {
   margin-top: 10px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 0.85rem;
   line-height: 1.5;
 }
-.spray-status.checking { background: #eee; color: #666; }
-.spray-status.found { background: #e3efe3; color: #1b5e20; }
-.spray-status.missing { background: #fff3cd; color: #8a6d00; }
+.spray-status.checking { background: var(--callout); color: var(--muted); }
+.spray-status.found { background: var(--green-bg); color: var(--text); }
+.spray-status.missing { background: var(--yellow-bg); color: var(--text); }
 .spray-status-head { font-weight: bold; }
 .spray-status-row { margin-top: 4px; }
 .spray-status .btn-secondary {
   min-height: 48px;
-  line-height: 44px;
+  line-height: 46px;
   font-size: 1rem;
   margin-top: 10px;
-  background: #fff;
+  background: var(--bg);
 }
 
 /* 棟ごとの散布量の合計 */
 .total-line {
   text-align: right;
   font-weight: bold;
-  color: #2e7d32;
+  color: var(--text);
   padding: 6px 4px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--line);
 }
 .num-unit {
   font-size: 0.85rem;
-  color: #555;
+  color: var(--muted);
 }
 
 /* 資材を選ぶ一覧。datalistはスマホで中身が見えないので置き換えた */
 .picker {
   max-height: 260px;
   overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
   margin-top: 6px;
+  box-shadow: 0 4px 12px rgba(15, 15, 15, 0.08);
 }
 .picker-row {
   display: flex;
@@ -289,20 +325,22 @@ label {
   min-height: 52px;
   padding: 8px 10px;
   border: none;
-  border-bottom: 1px solid #eee;
-  background: #fff;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
   text-align: left;
   font-size: 0.92rem;
   font-family: inherit;
   cursor: pointer;
 }
 .picker-row:last-child { border-bottom: none; }
-.picker-row.active { background: #e8f5e9; }
+.picker-row:active { background: var(--hover); }
+.picker-row.active { background: var(--blue-bg); }
 .picker-row .sub {
   display: block;
   margin-left: 0;
   font-size: 0.75rem;
-  color: #888;
+  color: var(--muted);
 }
 
 /* 調製表。これが散布前の指示書になる */
@@ -310,17 +348,17 @@ label {
   display: flex;
   align-items: center;
   padding: 8px 10px;
-  border-bottom: 1px solid #eee;
-  background: #fff;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
   font-size: 0.9rem;
 }
-.mix-row:first-child { border-radius: 10px 10px 0 0; }
-.mix-row:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+.mix-row:first-child { border-radius: 6px 6px 0 0; }
+.mix-row:last-child { border-radius: 0 0 6px 6px; border-bottom: none; }
 .mix-header {
-  background: #eef4ee;
-  color: #2e7d32;
+  background: var(--callout);
+  color: var(--muted);
   font-size: 0.78rem;
-  font-weight: bold;
+  font-weight: 600;
 }
 .mix-name { flex: 1 1 auto; min-width: 0; }
 .mix-num {
@@ -331,12 +369,12 @@ label {
 
 /* 予定を実施に変えるボタン */
 .item .del.done {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--green-bg);
+  color: var(--green-text);
 }
 .item .del.sheet {
-  background: #eef2f7;
-  color: #37474f;
+  background: var(--blue-bg);
+  color: var(--blue-dark);
 }
 
 /* はかり方の選択。数値欄より広く取る */
@@ -348,24 +386,25 @@ label {
 
 /* 調製早見表。タンクの前で見るので、量る数字を大きく出す */
 .mix-sheet {
-  background: #fff;
-  border: 2px solid #2e7d32;
-  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--orange);
+  border-radius: 6px;
   padding: 14px;
   margin-bottom: 16px;
 }
 .mix-sheet h2 { margin-bottom: 4px; }
 .sheet-sub {
   font-size: 0.8rem;
-  color: #777;
+  color: var(--muted);
   margin-bottom: 12px;
 }
 .sheet-big {
   margin: 14px 0 6px;
   font-size: 0.85rem;
-  font-weight: bold;
-  color: #2e7d32;
-  border-bottom: 1px solid #cfe0cf;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
   padding-bottom: 4px;
 }
 .sheet-row {
@@ -384,23 +423,24 @@ label {
   flex: 0 0 auto;
   font-size: 1.25rem;
   font-weight: bold;
-  color: #e65100;
+  color: var(--orange-text);
   font-variant-numeric: tabular-nums;
 }
 .sheet-note {
   margin-top: 8px;
   font-size: 0.82rem;
-  color: #8a6d00;
-  background: #fff3cd;
-  border-radius: 8px;
+  color: var(--text);
+  background: var(--yellow-bg);
+  border-radius: 6px;
   padding: 8px 10px;
 }
 
 .ppe-hint {
-  background: #fde0dc;
-  color: #b71c1c;
+  background: var(--red-bg);
+  color: var(--red-text);
+  font-weight: 600;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 0.78rem;
   margin-top: 6px;
 }
@@ -415,18 +455,20 @@ label {
   min-height: 48px;
   padding: 8px 16px;
   font-size: 1rem;
-  border: 2px solid #bbb;
-  border-radius: 10px;
-  background: #fff;
-  color: #333;
+  font-family: inherit;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
   cursor: pointer;
   flex: 1 1 auto;
 }
+.btn:active { background: var(--hover); }
 .btn.active {
-  background: #2e7d32;
-  border-color: #2e7d32;
+  background: var(--blue);
+  border-color: var(--blue);
   color: #fff;
-  font-weight: bold;
+  font-weight: 600;
 }
 
 .grid-2 {
@@ -441,11 +483,18 @@ input, select, textarea {
   min-height: 48px;
   padding: 0 10px;
   font-size: 1rem;
-  border: 2px solid #bbb;
-  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   font-family: inherit;
-  background: #fff;
+  background: var(--bg);
+  color: var(--text);
 }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.25);
+}
+::placeholder { color: var(--faint); }
 textarea {
   min-height: 64px;
   padding: 10px;
@@ -458,8 +507,9 @@ textarea {
   line-height: 56px;
   text-align: center;
   font-size: 1.1rem;
-  font-weight: bold;
-  border-radius: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 6px;
   cursor: pointer;
   margin-top: 8px;
   text-decoration: none;
@@ -467,43 +517,47 @@ textarea {
   border: none;
 }
 .btn-primary {
-  background: #e65100;
+  background: var(--blue);
   color: #fff;
 }
+.btn-primary:active { background: var(--blue-dark); }
 .btn-secondary {
-  background: #fff;
-  color: #2e7d32;
-  border: 2px dashed #2e7d32;
-  line-height: 52px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  line-height: 54px;
 }
+.btn-secondary:active { background: var(--hover); }
 .shortcut { margin-top: 10px; }
 
 .item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   padding: 10px 12px;
   margin-bottom: 6px;
   font-size: 0.92rem;
 }
 .item .sub {
-  color: #888;
+  color: var(--muted);
   font-size: 0.8rem;
   margin-left: 8px;
 }
-.item .del {
+.item .del,
+.plant-head .del {
   flex: 0 0 auto;
   margin-left: 8px;
   border: none;
-  background: #eee;
-  border-radius: 8px;
+  background: rgba(55, 53, 47, 0.08);
+  border-radius: 6px;
   padding: 8px 12px;
   cursor: pointer;
-  color: #c62828;
-  font-weight: bold;
+  color: var(--red-text);
+  font-weight: 600;
+  font-family: inherit;
 }
 
 .weather-row {
@@ -513,12 +567,12 @@ textarea {
   padding: 6px 4px;
   margin: 10px 0 4px;
   font-size: 0.82rem;
-  color: #555;
-  border-bottom: 1px solid #ddd;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
 }
 .weather-date {
-  font-weight: bold;
-  color: #2e7d32;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .history-item.cancelled {
@@ -526,7 +580,7 @@ textarea {
   text-decoration: line-through;
 }
 .cancelled-label {
-  color: #c62828;
+  color: var(--red-text);
   font-size: 0.75rem;
   font-weight: bold;
   text-decoration: none;
@@ -534,14 +588,15 @@ textarea {
 }
 
 /* 履歴の検索結果の状態。押した手応えと、待つべきかどうかが分かるようにする */
+.search-status:empty { display: none; }
 .search-status {
   margin-top: 8px;
   padding: 8px 10px;
-  background: #eef4ee;
-  border-radius: 8px;
+  background: var(--callout);
+  border-radius: 6px;
   font-size: 0.85rem;
-  color: #2e7d32;
-  font-weight: bold;
+  color: var(--text);
+  font-weight: 600;
   text-align: center;
 }
 
@@ -552,22 +607,23 @@ textarea {
 .tab {
   flex: 1;
   min-height: 44px;
-  border: 2px solid #2e7d32;
-  background: #fff;
-  color: #2e7d32;
-  border-radius: 10px;
-  font-weight: bold;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 6px;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 0.95rem;
   cursor: pointer;
 }
 .tab.active {
-  background: #2e7d32;
+  background: var(--blue);
+  border-color: var(--blue);
   color: #fff;
 }
 
 .summary-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 14px;
+  background: var(--bg);
 }
 .summary-row {
   display: flex;
@@ -577,31 +633,33 @@ textarea {
 .summary-tile {
   flex: 1;
   text-align: center;
-  background: #e8f5e9;
-  border-radius: 10px;
+  background: var(--callout);
+  border-radius: 6px;
   padding: 14px 0;
 }
 .summary-num {
   display: block;
   font-size: 1.8rem;
-  font-weight: bold;
-  color: #2e7d32;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 .summary-label {
   font-size: 0.8rem;
-  color: #555;
+  color: var(--muted);
 }
 
+/* 設定は区切り線の下に、地の上へそのまま置く */
 .settings-box {
-  background: #fff;
-  border-radius: 10px;
-  padding: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
 }
 
+/* Notionのビュー切替のように、選んでいる画面だけ下線を引く */
 .mode-nav {
   display: flex;
-  gap: 4px;
-  margin-top: 10px;
+  gap: 2px;
+  margin-top: 12px;
 }
 /* 6項目に増やしたので min-width: 0 が要る。
    これが無いとリンクの中身が縮まず、ナビがページ全体を横に押し広げる */
@@ -609,36 +667,38 @@ textarea {
   flex: 1 1 0;
   min-width: 0;
   text-align: center;
-  padding: 10px 2px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  padding: 10px 2px 11px;
+  border-radius: 4px 4px 0 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
   text-decoration: none;
-  font-weight: bold;
-  font-size: 0.7rem;
+  font-weight: 500;
+  font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
 }
+.mode-nav a:active { background: var(--hover); }
 .mode-nav a.current {
-  background: #fff;
-  color: #2e7d32;
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--text);
 }
 
 .queue-badge {
   display: inline-block;
-  background: #fff3cd;
-  color: #8a6d00;
-  border-radius: 16px;
+  background: var(--yellow-bg);
+  color: var(--yellow-text);
+  border-radius: 6px;
   padding: 10px 14px;
   font-size: 0.85rem;
-  font-weight: bold;
+  font-weight: 600;
   margin-bottom: 12px;
   cursor: pointer;
 }
 /* 未送信が無いときは同期状況を控えめに出す（送れているかは常に見える状態にしておく） */
 .queue-badge.quiet {
   background: transparent;
-  color: #999;
+  color: var(--faint);
   font-weight: normal;
   padding: 4px 2px;
 }
@@ -646,26 +706,26 @@ textarea {
 /* まだサーバーに送れていない記録。手元にはあることが分かるようにする */
 .item.pending {
   border-style: dashed;
-  border-color: #d8b45a;
-  background: #fffdf6;
+  border-color: var(--yellow);
+  background: #fffdf7;
 }
 .pending-mark {
   flex: 0 0 auto;
   margin-left: 8px;
   font-size: 0.72rem;
-  font-weight: bold;
-  color: #8a6d00;
-  background: #fff3cd;
-  border-radius: 10px;
+  font-weight: 600;
+  color: var(--yellow-text);
+  background: var(--yellow-bg);
+  border-radius: 4px;
   padding: 3px 8px;
   white-space: nowrap;
 }
 
 /* 未送信の中身。溜まったまま消えないときに、何が残っているか確かめて捨てるための欄 */
 .queue-panel {
-  background: #fff8e1;
-  border: 1px solid #ffe082;
-  border-radius: 10px;
+  background: var(--yellow-bg);
+  border: 1px solid rgba(203, 145, 47, 0.35);
+  border-radius: 6px;
   padding: 10px;
   margin-bottom: 12px;
 }
@@ -677,18 +737,18 @@ textarea {
   display: block;
   margin-left: 0;
   margin-top: 2px;
-  color: #8a6d00;
+  color: var(--yellow-text);
 }
 .queue-panel .btn-secondary {
   min-height: 48px;
-  line-height: 44px;
+  line-height: 46px;
   font-size: 0.95rem;
   margin-top: 4px;
 }
 
 .hint {
   font-size: 0.8rem;
-  color: #888;
+  color: var(--muted);
   margin-top: 6px;
 }
 
@@ -697,10 +757,11 @@ textarea {
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
-  background: #333;
+  background: #2f2f2f;
   color: #fff;
   padding: 12px 20px;
-  border-radius: 24px;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(15, 15, 15, 0.2);
   font-size: 0.95rem;
   white-space: nowrap;
   z-index: 10;

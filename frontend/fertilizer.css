@@ -12,30 +12,30 @@
 .fert-stat {
   flex: 1 1 140px;
   min-width: 0;
-  background: #f5f7f5;
-  border-radius: 8px;
+  background: var(--callout);
+  border-radius: 6px;
   padding: 10px 10px;
 }
 .fert-stat-label {
   display: block;
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
 }
 .fert-stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #2e7d32;
+  color: var(--green-text);
   line-height: 1.2;
 }
 .fert-stat-unit {
   font-size: 12px;
-  color: #666;
+  color: var(--muted);
   margin-left: 2px;
 }
 .fert-stat-note {
   display: block;
   font-size: 11px;
-  color: #666;
+  color: var(--muted);
   margin-top: 2px;
   overflow-wrap: anywhere;
   line-height: 1.4;
@@ -50,20 +50,20 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.fert-warn-danger { background: #fdecea; border-left: 4px solid #c62828; color: #8e1b13; }
-.fert-warn-warn   { background: #fff6e5; border-left: 4px solid #ef6c00; color: #8a4b00; }
-.fert-warn-info   { background: #eef4fb; border-left: 4px solid #1565c0; color: #10457e; }
+.fert-warn-danger { background: var(--red-bg); border-left: 4px solid var(--red); color: var(--red-text); }
+.fert-warn-warn   { background: var(--orange-bg); border-left: 4px solid var(--orange); color: var(--orange-text); }
+.fert-warn-info   { background: var(--blue-bg); border-left: 4px solid var(--blue); color: var(--blue-dark); }
 
 /* pHは「5.5〜6.5に入りやすい」のような文になるので、ECより小さい字で出す */
 .fert-ph-value { font-size: 15px; line-height: 1.3; display: block; }
-.fert-ph-ok   { color: #2e7d32; }
-.fert-ph-high { color: #ef6c00; }
-.fert-ph-low  { color: #1565c0; }
+.fert-ph-ok   { color: var(--green-text); }
+.fert-ph-high { color: var(--orange-text); }
+.fert-ph-low  { color: var(--blue-dark); }
 /* まだ何も入っていないとき。予測が出ているように見せない */
-.fert-ph-none { color: #999; }
+.fert-ph-none { color: var(--faint); }
 
-.fert-inline-warn { color: #c62828; font-weight: 600; }
-.fert-inline-ok   { color: #2e7d32; }
+.fert-inline-warn { color: var(--red-text); font-weight: 600; }
+.fert-inline-ok   { color: var(--green-text); }
 
 /* ---- 表 ---- */
 .fert-table-wrap { overflow-x: auto; }
@@ -79,7 +79,7 @@
 .fert-toggle {
   font-size: 11px;
   font-weight: normal;
-  color: #666;
+  color: var(--muted);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -95,13 +95,13 @@
 .fert-table th {
   text-align: left;
   font-weight: 600;
-  color: #555;
-  border-bottom: 2px solid #ddd;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-strong);
   padding: 5px 4px;
   white-space: nowrap;
 }
 .fert-table td {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--line);
   padding: 5px 4px;
   white-space: nowrap;
 }
@@ -112,20 +112,20 @@
   width: 34%;
 }
 .fert-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.fert-table td.sub { color: #888; font-size: 12px; }
-.fert-row-sub td { color: #888; background: #fafafa; }
+.fert-table td.sub { color: var(--muted); font-size: 12px; }
+.fert-row-sub td { color: var(--muted); background: var(--callout); }
 
-.fert-below   { color: #1565c0; font-weight: 600; }
-.fert-above   { color: #ef6c00; font-weight: 600; }
-.fert-inrange { color: #2e7d32; }
+.fert-below   { color: var(--blue-dark); font-weight: 600; }
+.fert-above   { color: var(--orange-text); font-weight: 600; }
+.fert-inrange { color: var(--green-text); }
 
 /* 固定した元素は太字にして、自動調整されたものと区別する */
-.fert-locked { font-weight: 700; color: #2e7d32; }
+.fert-locked { font-weight: 700; color: var(--green-text); }
 
 /* ---- 規模の試算 ---- */
 .fert-scale {
-  background: #f5f7f5;
-  border-radius: 8px;
+  background: var(--callout);
+  border-radius: 6px;
   padding: 8px 10px;
   margin-top: 10px;
 }
@@ -137,24 +137,24 @@
   padding: 3px 0;
   font-size: 13px;
 }
-.fert-scale-label { color: #555; }
+.fert-scale-label { color: var(--muted); }
 .fert-scale-value { font-weight: 600; text-align: right; }
 /* 「ピーク」「平均」の見出し行 */
 .fert-scale-head { margin-top: 6px; }
 .fert-scale-head:first-child { margin-top: 0; }
 .fert-scale-head .fert-scale-label {
   font-weight: 700;
-  color: #2e7d32;
+  color: var(--green-text);
   font-size: 12px;
 }
 
 /* ---- タンク ---- */
 .fert-tank {
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   padding: 10px;
   margin-bottom: 12px;
-  background: #fff;
+  background: var(--bg);
 }
 .fert-tank-head {
   display: flex;
@@ -163,13 +163,13 @@
   flex-wrap: wrap;
   margin-bottom: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--line);
 }
 .fert-tank-name {
   font-weight: 700;
   font-size: 16px;
   border: none;
-  border-bottom: 1px dashed #bbb;
+  border-bottom: 1px dashed var(--line-strong);
   background: transparent;
   width: 5.5em;
   padding: 2px 0;
@@ -179,7 +179,7 @@
   margin-left: auto;
   border: none;
   background: transparent;
-  color: #c62828;
+  color: var(--red-text);
   font-size: 12px;
   cursor: pointer;
 }
@@ -206,7 +206,7 @@
 .fert-item-row .del {
   border: none;
   background: transparent;
-  color: #c62828;
+  color: var(--red-text);
   font-size: 18px;
   padding: 0 6px;
   cursor: pointer;
@@ -214,14 +214,14 @@
 /* タンクの箱の中に出す警告。計算結果まで見に行かなくても気づけるようにする */
 /* 注意書きだが警告ではないもの。グレーのhintだと読み飛ばすので色を付ける */
 .hint.warn {
-  color: #8e1b13;
+  color: var(--red-text);
 }
 
 /* 中和酸が持ち込むイオン量。ここを見落とすと組成が狂うので目立たせる */
 .fert-acid-gain {
-  background: #fff4e5;
-  border-left: 4px solid #ed6c02;
-  color: #7a3e00;
+  background: var(--orange-bg);
+  border-left: 4px solid var(--orange);
+  color: var(--orange-text);
   border-radius: 4px;
   padding: 6px 8px;
   margin: 6px 0 2px;
@@ -238,28 +238,28 @@
   text-align: left;
   padding: 14px 16px;
   margin-bottom: 10px;
-  border: 1px solid #cfd8dc;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
   cursor: pointer;
   font-family: inherit;
 }
 
 .mode-card:active {
-  background: #eef3f5;
+  background: var(--hover);
 }
 
 .mode-card-title {
   display: block;
   font-size: 16px;
   font-weight: 700;
-  color: #22303a;
+  color: var(--text);
 }
 
 .mode-card-sub {
   display: block;
   font-size: 12px;
-  color: #778;
+  color: var(--muted);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -274,10 +274,10 @@
 
 .mode-back {
   flex: 0 0 auto;
-  border: 1px solid #cfd8dc;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #456;
+  background: var(--bg);
+  color: var(--text);
   font-size: 13px;
   padding: 7px 10px;
   cursor: pointer;
@@ -289,7 +289,7 @@
   min-width: 0;
   font-size: 15px;
   font-weight: 700;
-  color: #22303a;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -299,10 +299,10 @@
 /* 性質の違う作業を番号付きのグループに分ける。
    毎回は触らないもの（前提・逆算・実測EC）は details で畳んでおく */
 .fert-group {
-  border: 1px solid #dfe4e6;
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   margin-bottom: 14px;
-  background: #fff;
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -315,7 +315,7 @@
   cursor: pointer;
   padding: 13px 14px;
   list-style: none;
-  background: #f5f7f8;
+  background: var(--callout);
 }
 
 /* 既定の三角マーカーを消して、自前の▸▾に置き換える */
@@ -331,18 +331,18 @@
 
 .fert-group-head::after {
   content: "▸";
-  color: #8a9aa3;
+  color: var(--faint);
   flex: 0 0 auto;
   font-size: 13px;
 }
 .fert-group[open] .fert-group-head::after { content: "▾"; }
 
-.fert-group[open] > summary { border-bottom: 1px solid #e8ecee; }
+.fert-group[open] > summary { border-bottom: 1px solid var(--line); }
 
 .fert-group-title {
   font-size: 15px;
   font-weight: 700;
-  color: #22303a;
+  color: var(--text);
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -350,7 +350,7 @@
 .fert-group-sub {
   font-size: 11px;
   font-weight: 400;
-  color: #8a9aa3;
+  color: var(--faint);
   flex: 1 1 auto;
   min-width: 0;
   text-align: right;
@@ -361,7 +361,7 @@
 
 /* 番号。畳んだ見出しと、開いたままの見出し（h2）の両方で使う */
 .fert-group-num {
-  color: #2e7d32;
+  color: var(--green-text);
   font-weight: 700;
   flex: 0 0 auto;
   margin-right: 2px;
@@ -375,7 +375,7 @@
 .fert-group-body > section > h3 {
   font-size: 14px;
   margin: 14px 0 6px;
-  color: #37474f;
+  color: var(--text);
 }
 .fert-group-body > section:first-of-type > h3 { margin-top: 8px; }
 
@@ -388,7 +388,7 @@
 
 /* 3モード共通の処方バンド。いまどの処方の話をしているかを示す */
 .fert-context {
-  background: #f5f7f8;
+  background: var(--callout);
   border-radius: 6px;
   padding: 10px 12px;
   margin-bottom: 12px;
@@ -401,7 +401,7 @@
   gap: 10px;
   margin: 16px 0 12px;
   font-size: 12px;
-  color: #8a9aa3;
+  color: var(--faint);
 }
 
 .fert-or::before,
@@ -409,13 +409,13 @@
   content: "";
   flex: 1 1 auto;
   height: 1px;
-  background: #e0e4e6;
+  background: var(--line);
 }
 
 .fert-context-line {
   font-size: 13px;
   font-weight: 600;
-  color: #22303a;
+  color: var(--text);
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
@@ -429,7 +429,7 @@
 }
 
 .fert-ev-cell {
-  background: #f5f7f8;
+  background: var(--callout);
   border-radius: 6px;
   padding: 8px 10px;
   min-width: 0;
@@ -437,30 +437,30 @@
 
 .fert-ev-label {
   font-size: 11px;
-  color: #667;
+  color: var(--muted);
 }
 
 .fert-ev-value {
   font-size: 19px;
   font-weight: 700;
-  color: #22303a;
+  color: var(--text);
   line-height: 1.3;
 }
 
 .fert-ev-unit {
   font-size: 11px;
   font-weight: 400;
-  color: #889;
+  color: var(--faint);
   margin-left: 3px;
 }
 
 /* 助言。level で色を変える。actionが「次に何をするか」の行 */
 .fert-advice {
-  border-left: 4px solid #ccc;
+  border-left: 4px solid var(--line-strong);
   border-radius: 4px;
   padding: 8px 10px;
   margin: 8px 0;
-  background: #fafafa;
+  background: var(--callout);
 }
 
 .fert-advice-topic {
@@ -482,10 +482,10 @@
   line-height: 1.5;
 }
 
-.fert-advice-danger { border-left-color: #c62828; background: #fdecea; color: #8e1b13; }
-.fert-advice-warn   { border-left-color: #ed6c02; background: #fff4e5; color: #7a3e00; }
-.fert-advice-info   { border-left-color: #0288d1; background: #e8f4fb; color: #01579b; }
-.fert-advice-ok     { border-left-color: #2e7d32; background: #edf7ed; color: #1b5e20; }
+.fert-advice-danger { border-left-color: var(--red); background: var(--red-bg); color: var(--red-text); }
+.fert-advice-warn   { border-left-color: var(--orange); background: var(--orange-bg); color: var(--orange-text); }
+.fert-advice-info   { border-left-color: var(--blue); background: var(--blue-bg); color: var(--blue-dark); }
+.fert-advice-ok     { border-left-color: var(--green); background: var(--green-bg); color: var(--green-text); }
 
 .fert-details {
   margin: 10px 0;
@@ -494,7 +494,7 @@
 
 .fert-details > summary {
   cursor: pointer;
-  color: #567;
+  color: var(--muted);
   padding: 4px 0;
 }
 
@@ -503,9 +503,9 @@
 }
 
 .fert-tank-warn {
-  background: #fdecea;
-  border-left: 4px solid #c62828;
-  color: #8e1b13;
+  background: var(--red-bg);
+  border-left: 4px solid var(--red);
+  color: var(--red-text);
   border-radius: 4px;
   padding: 6px 8px;
   margin: 6px 0 2px;
