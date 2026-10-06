@@ -1,6 +1,6 @@
 ﻿'use strict';
 
-const CACHE = 'tomato-farm-manager-v29';
+const CACHE = 'tomato-farm-manager-v30';
 const ASSETS = [
   './',
   './index.html',
@@ -31,7 +31,11 @@ const ASSETS = [
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE)
-      .then(function (c) { return c.addAll(ASSETS); })
+      // cache:'reload' でブラウザのHTTPキャッシュを素通りする。GitHub Pages は max-age=600 なので、
+      // 素の addAll だと直前に開いた画面の古いHTMLが新しい版のキャッシュに混ざる（2026-10-06 作業画面で発生）
+      .then(function (c) {
+        return c.addAll(ASSETS.map(function (u) { return new Request(u, { cache: 'reload' }); }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });
