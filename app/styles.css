@@ -872,3 +872,75 @@ textarea {
 
 /* 押せない間は薄くして、押せる状態と見分けられるようにする */
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.45; cursor: default; }
+
+/* 作業の経過（最後にやってからの日数）。farm-work-log と同じく、新しいほど寒色・古いほど暖色の8段階。
+   7日以上だけ濃い赤＋白字にして「手が回っていない場所」を目立たせる */
+:root {
+  --age0: #d3e5ef; --age1: #dcecf2; --age2: #dbeddb; --age3: #f7efc8;
+  --age4: #f8dfb5; --age5: #f6c9a8; --age6: #f2aea3; --age7: #c4433c; --age7-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --age0: #1f3344; --age1: #1f3a3f; --age2: #233a2c; --age3: #3f3a1f;
+    --age4: #4a3a20; --age5: #52321f; --age6: #5c2b26; --age7: #b23a33; --age7-text: #ffffff;
+  }
+}
+:root[data-theme="dark"] {
+  --age0: #1f3344; --age1: #1f3a3f; --age2: #233a2c; --age3: #3f3a1f;
+  --age4: #4a3a20; --age5: #52321f; --age6: #5c2b26; --age7: #b23a33; --age7-text: #ffffff;
+}
+.age-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.age-place {
+  flex: 0 0 64px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding-top: 6px;
+}
+.age-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+button.age-chip {
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.age-chip.age0 { background: var(--age0); }
+.age-chip.age1 { background: var(--age1); }
+.age-chip.age2 { background: var(--age2); }
+.age-chip.age3 { background: var(--age3); }
+.age-chip.age4 { background: var(--age4); }
+.age-chip.age5 { background: var(--age5); }
+.age-chip.age6 { background: var(--age6); }
+.age-chip.age7 { background: var(--age7); color: var(--age7-text); font-weight: 600; }
+.age-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.age-legend .age-chip {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+}
+.age-legend span:first-child { margin-right: 4px; }
+.age-legend span:last-child { margin-left: 4px; }

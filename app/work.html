@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261006f">
+<link rel="stylesheet" href="styles.css?v=20261006g">
 </head>
 <body>
 <header>
@@ -49,8 +49,20 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
     <div id="building-bulk" class="btn-row"></div>
   </section>
 
+  <!-- farm-work-log の進捗ボードから持ってきた見方。棟ごとに「最後にやってから何日か」を色で並べ、
+       次に手を入れる場所を探す。押すとその棟と作業が下で選ばれる -->
   <section>
-    <h2>③ 作業</h2>
+    <h2>作業の経過</h2>
+    <div id="age-board"></div>
+    <div class="age-legend" aria-hidden="true">
+      <span>今日</span>
+      <span class="age-chip age0"></span><span class="age-chip age1"></span><span class="age-chip age2"></span><span class="age-chip age3"></span><span class="age-chip age4"></span><span class="age-chip age5"></span><span class="age-chip age6"></span><span class="age-chip age7"></span>
+      <span>7日以上</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>③ 作業（複数選べます）</h2>
     <div id="work-buttons" class="btn-row"></div>
     <textarea id="work-detail" placeholder="作業内容を記入" hidden></textarea>
 
@@ -103,10 +115,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006f"></script>
-<script src="masters-default.js?v=20261006f"></script>
-<script src="common.js?v=20261006f"></script>
-<script src="work.js?v=20261006f"></script>
+<script src="config.js?v=20261006g"></script>
+<script src="masters-default.js?v=20261006g"></script>
+<script src="common.js?v=20261006g"></script>
+<script src="work.js?v=20261006g"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

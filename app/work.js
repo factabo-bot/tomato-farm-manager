@@ -4,7 +4,7 @@ const state = {
   masters: null,
   base: null,
   buildings: new Set(), // 収穫などで複数の棟をまとめて回ることがあるので複数選択
-  workType: null,
+  workTypes: new Set(), // その日にやった作業をまとめて記録するので複数選択
   profile: getProfile(),
   checking: null, // 確認中の散布区分（"防除" / "葉面散布"）。未確認のときは null
 };
@@ -31,10 +31,12 @@ async function init() {
     state.masters = fresh;
     renderBases();
     renderWorkTypes();
+    renderAgeBoard();
   });
 
   renderBases();
   renderWorkTypes();
+  renderAgeBoard();
 }
 
 function renderBases() {
@@ -49,6 +51,7 @@ function renderBases() {
       state.base = name;
       state.buildings.clear(); // 拠点が変われば棟の選択も外す
       renderBases();
+      renderAgeBoard();
     });
     box.appendChild(btn);
   });
@@ -111,15 +114,102 @@ function renderWorkTypes() {
   const box = $("work-buttons");
   box.innerHTML = "";
   activeWorkTypes().forEach((w) => {
-    const btn = el("button", "btn" + (w.作業名 === state.workType ? " active" : ""), w.作業名);
+    const name = w.作業名;
+    const btn = el("button", "btn" + (state.workTypes.has(name) ? " active" : ""), name);
     btn.type = "button";
     btn.addEventListener("click", () => {
-      state.workType = w.作業名;
+      state.workTypes.has(name) ? state.workTypes.delete(name) : state.workTypes.add(name);
       renderWorkTypes();
-      $("work-detail").hidden = w.作業名 !== "その他";
     });
     box.appendChild(btn);
   });
+  $("work-detail").hidden = !state.workTypes.has("その他");
+}
+
+// 選んだ作業を、マスタの表示順で「誘引、葉かき」のように1つにまとめる。
+// 1件の記録にするのは、開始・終了時刻を作業ごとに分けられず、分けると時間を二重に数えるため
+function joinedWorkTypes() {
+  return activeWorkTypes().map((w) => w.作業名).filter((n) => state.workTypes.has(n)).join(PURPOSE_SEPARATOR);
+}
+
+// ---------- 作業の経過（farm-work-log の進捗ボードの見方を棟単位で） ----------
+
+const MS_DAY = 24 * 60 * 60 * 1000;
+
+function daysAgo(dateStr) {
+  return Math.round((new Date(formatToday() + "T00:00:00") - new Date(dateStr + "T00:00:00")) / MS_DAY);
+}
+
+// 「棟|作業」→ 最後にやった日。棟・作業はどちらも「、」区切りで複数入っていることがある
+function lastDoneMap() {
+  const map = new Map();
+  const put = (building, work, date) => {
+    if (!building || !work || !date) return;
+    const key = building + "|" + work;
+    if (!map.has(key) || map.get(key) < date) map.set(key, date);
+  };
+  const split = (s) => String(s || "").split(PURPOSE_SEPARATOR).map((x) => x.trim()).filter(Boolean);
+
+  storeRead("work").forEach((r) => {
+    if (r.状態 === "取消" || r.拠点 !== state.base) return;
+    const date = recordDate("work", r);
+    split(r["棟・区画"]).forEach((b) => split(r.作業分類).forEach((w) => put(b, w, date)));
+  });
+  // 防除・葉面散布は散布記録から。予定のまま（まだ撒いていない）は数えない
+  storeRead("spray").forEach((r) => {
+    if (r.状態 === "取消" || r.状態 === "予定" || r.拠点 !== state.base) return;
+    const date = recordDate("spray", r);
+    ["防除", "葉面散布"].forEach((k) => {
+      if (matchesKubun(r, k)) split(r["棟・区画"]).forEach((b) => put(b, k, date));
+    });
+  });
+  return map;
+}
+
+function renderAgeBoard() {
+  const box = $("age-board");
+  if (!box || !state.masters || !state.base) return;
+  box.innerHTML = "";
+  const last = lastDoneMap();
+  // 「その他」は中身がばらばらなので並べない。散布の2つは作業の後ろに付ける
+  const works = activeWorkTypes().map((w) => w.作業名).filter((n) => n !== "その他").concat(["防除", "葉面散布"]);
+  const workNames = new Set(activeWorkTypes().map((w) => w.作業名));
+  let any = false;
+
+  buildingsOfBase(state.masters, state.base).forEach((b) => {
+    const name = b.棟区画名;
+    const chips = [];
+    works.forEach((w) => {
+      const date = last.get(name + "|" + w);
+      if (!date) return; // 一度も記録のない作業は並べない（定植などで真っ赤が並ぶのを避ける）
+      const days = Math.max(0, daysAgo(date));
+      const step = Math.min(days, 7);
+      const chip = el("button", "age-chip age" + step, `${w} ${days >= 7 ? "7+" : days}日`);
+      chip.type = "button";
+      chip.title = "最後にやった日 " + date;
+      // 散布は散布画面で記録するので、押しても作業には入れない（棟だけ選ぶ）
+      chip.addEventListener("click", () => {
+        state.buildings.clear();
+        state.buildings.add(name);
+        if (workNames.has(w)) state.workTypes.add(w);
+        renderBuildings();
+        renderWorkTypes();
+        toast(workNames.has(w) ? `${name}・${w}を選びました` : `${name}を選びました（${w}は散布画面で記録）`);
+      });
+      chips.push(chip);
+    });
+    const row = el("div", "age-row");
+    row.appendChild(el("div", "age-place", name));
+    const wrap = el("div", "age-chips");
+    if (chips.length === 0) wrap.appendChild(el("span", "hint", "記録なし"));
+    chips.forEach((c) => wrap.appendChild(c));
+    row.appendChild(wrap);
+    box.appendChild(row);
+    if (chips.length) any = true;
+  });
+  if (!any) {
+    box.insertBefore(el("p", "hint", "作業を記録すると、棟ごとに「最後にやってから何日か」がここに並びます"), box.firstChild);
+  }
 }
 
 // ---------- 防除・葉面散布の確認（散布記録は散布画面が持つので、ここでは有無だけ見る） ----------
@@ -212,8 +302,8 @@ function renderSprayStatus(list, kubun, date) {
 async function submit() {
   if (!state.base) return toast("拠点を選択してください");
   if (state.buildings.size === 0) return toast("棟・区画を選択してください");
-  if (!state.workType) return toast("作業を選択してください");
-  if (state.workType === "その他" && !$("work-detail").value.trim()) {
+  if (state.workTypes.size === 0) return toast("作業を選択してください");
+  if (state.workTypes.has("その他") && !$("work-detail").value.trim()) {
     return toast("作業内容を記入してください");
   }
 
@@ -223,7 +313,7 @@ async function submit() {
     base: state.base,
     // 複数の棟をまとめて回った場合は「1号棟、2号棟」のように1つの記録にまとめる
     building: [...state.buildings].join(PURPOSE_SEPARATOR),
-    workType: state.workType,
+    workType: joinedWorkTypes(),
     workDetail: $("work-detail").value.trim(),
     startTime: $("start-time").value,
     endTime: $("end-time").value,
@@ -273,7 +363,7 @@ function computeDuration() {
 }
 
 function resetForm() {
-  state.workType = null;
+  state.workTypes.clear();
   $("work-detail").value = "";
   $("work-detail").hidden = true;
   $("start-time").value = "";
@@ -295,6 +385,7 @@ function todayMine(kind) {
 
 function loadMyRecords() {
   renderMyRecords(todayMine("work"), todayMine("spray"));
+  renderAgeBoard();
   refreshSprayStatus(); // 散布が増減したら確認欄も追従させる
 }
 
