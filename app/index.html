@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
 <meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006c">
+<link rel="stylesheet" href="styles.css?v=20261006e">
 </head>
 <body>
 <header>
@@ -62,6 +62,14 @@
     <div id="today-list"></div>
   </section>
 
+  <!-- Chromeのメニューの「ホーム画面に追加」は同じサイト（factabo-bot.github.io）に別のアプリが
+       入っていると「インストール済み」としか出さない。ページからの呼び出しは別の経路なので、ここに入口を置く -->
+  <section id="install-box" class="settings-box" hidden>
+    <h2>アプリとしてインストール</h2>
+    <button id="install-app" class="btn-secondary" type="button" disabled>インストール</button>
+    <p id="install-status" class="hint">準備を確認しています…</p>
+  </section>
+
   <section class="settings-box">
     <h2>表示名の設定</h2>
     <div class="grid-2">
@@ -83,7 +91,7 @@
 <script src="config.js?v=20261006c"></script>
 <script src="masters-default.js?v=20261006d"></script>
 <script src="common.js?v=20261006c"></script>
-<script src="index.js?v=20261006c"></script>
+<script src="index.js?v=20261006e"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

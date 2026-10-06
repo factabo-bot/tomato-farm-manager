@@ -2,7 +2,45 @@
 
 const profile = getProfile();
 
+// ページからのインストール。Chromeのメニューは同じオリジンに別のPWA（Eri's Routine・潅水）が
+// 入っているだけで「インストール済み」と出して先に進めないので、beforeinstallprompt を受けて自前のボタンから呼ぶ
+let installPrompt = null;
+let installPromptSeen = false; // 一度でも受け取ったか（押した後に「受け付けていません」と上書きしないため）
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  installPromptSeen = true;
+  $("install-box").hidden = false;
+  $("install-app").disabled = false;
+  $("install-status").textContent = "押すとホーム画面にアプリとして入ります";
+});
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  $("install-app").disabled = true;
+  $("install-status").textContent = "インストールしました。ホーム画面のアイコンから開いてください";
+});
+
 init();
+initInstall();
+
+function initInstall() {
+  if (isStandalone) return; // アプリとして開いているときは出さない
+  $("install-box").hidden = false;
+  $("install-app").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    installPrompt = null;
+    $("install-app").disabled = true;
+    if (choice.outcome !== "accepted") $("install-status").textContent = "取りやめました。開き直すともう一度押せます";
+  });
+  // 数秒待ってもイベントが来ないときは、Chromeがこのページを「入れられない」と判断している
+  setTimeout(() => {
+    if (installPromptSeen) return;
+    $("install-status").textContent = "Chromeがインストールを受け付けていません（このアプリがすでに端末に入っているときも、この表示になります）";
+  }, 5000);
+}
 
 async function init() {
   $("date-display").textContent = formatToday();

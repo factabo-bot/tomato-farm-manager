@@ -773,3 +773,6 @@ textarea {
   max-width: 90%;
   text-align: center;
 }
+
+/* 押せない間は薄くして、押せる状態と見分けられるようにする */
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.45; cursor: default; }
