@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
-const source = fs.readFileSync('frontend/common.js', 'utf8');
+const source = fs.readFileSync('app/common.js', 'utf8');
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function client(storage = new Map()) {
   const listeners = {};
@@ -194,7 +194,7 @@ test('installed app shell is returned from cache without waiting for network', a
     caches: { match: async () => cached },
     fetch: async () => { calls++; return new Promise(() => {}); }
   });
-  vm.runInContext(fs.readFileSync('frontend/sw.js', 'utf8'), c);
+  vm.runInContext(fs.readFileSync('app/sw.js', 'utf8'), c);
   let response;
   listeners.fetch({ request: { method: 'GET', url: 'https://app.invalid/work.html' }, respondWith: value => { response = value; } });
   assert.equal(await response, cached); assert.equal(calls, 0);

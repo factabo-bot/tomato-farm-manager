@@ -12,7 +12,7 @@
 
 ## 構成
 
-- `frontend/`：Vanilla HTML/CSS/JS（ビルドなし）。GitHub Pagesで公開する
+- `app/`：Vanilla HTML/CSS/JS（ビルドなし）。GitHub Pagesで公開する
 - `gas/Code.gs`：Google Apps Script製バックエンド。Googleスプレッドシートをデータベースとして使う
 - `docs/セットアップ手順.md`：導入手順
 

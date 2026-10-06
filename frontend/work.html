@@ -2,112 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>作業記録 - トマト栽培管理</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
-<meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006c">
-</head>
-<body>
-<header>
-  <h1>トマト栽培管理</h1>
-  <div class="header-sub">
-    <span id="date-display"></span>
-    <span id="user-info"></span>
-  </div>
-  <nav class="mode-nav">
-    <a href="index.html">ホーム</a>
-    <a href="work.html" class="current">作業</a>
-    <a href="pesticide.html">散布</a>
-    <a href="growth.html">生育</a>
-    <a href="fertilizer.html">養液</a>
-    <a href="history.html">履歴</a>
-  </nav>
-</header>
-
-<main>
-  <div id="queue-badge" class="queue-badge" hidden></div>
-
-  <section>
-    <h2>作業日</h2>
-    <input type="date" id="work-date" class="date-input">
-  </section>
-
-  <section>
-    <h2>① 拠点</h2>
-    <div id="base-buttons" class="btn-row"><span class="hint">読み込み中…</span></div>
-  </section>
-
-  <section>
-    <h2>② 棟・区画（複数選べます）</h2>
-    <div id="building-buttons" class="btn-row"></div>
-    <div id="building-bulk" class="btn-row"></div>
-  </section>
-
-  <section>
-    <h2>③ 作業</h2>
-    <div id="work-buttons" class="btn-row"></div>
-    <textarea id="work-detail" placeholder="作業内容を記入" hidden></textarea>
-
-    <!-- 農薬・葉面散布肥料の散布は散布記録側だけで扱う（作業記録にも書くと1回の防除が
-         2件になり、あとで作業時間を合計したときに二重に数えてしまうため）。
-         ここは記録するボタンではなく、記録済みかどうかの確認と散布画面への入口 -->
-    <div class="spray-link">
-      <p class="hint">農薬・葉面散布肥料をまいた日は「散布」画面に記録します。押すと記録済みか確認できます</p>
-      <div class="btn-row">
-        <button id="check-pest" class="btn chip" type="button">防除</button>
-        <button id="check-foliar" class="btn chip" type="button">葉面散布</button>
-      </div>
-      <div id="spray-status" hidden></div>
-    </div>
-  </section>
-
-  <section class="grid-2">
-    <div>
-      <label>開始時刻</label>
-      <input type="time" id="start-time">
-    </div>
-    <div>
-      <label>終了時刻</label>
-      <input type="time" id="end-time">
-    </div>
-  </section>
-
-  <section class="grid-2">
-    <div>
-      <label>数量</label>
-      <input type="number" id="quantity" placeholder="例: 120" inputmode="decimal">
-    </div>
-    <div>
-      <label>単位</label>
-      <input type="text" id="quantity-unit" placeholder="例: 株、kg">
-    </div>
-  </section>
-
-  <section>
-    <textarea id="note" placeholder="備考（任意）：気づいたこと、課題など"></textarea>
-    <button id="submit" class="btn-primary" type="button">記録</button>
-  </section>
-
-  <section>
-    <h2>今日の記録</h2>
-    <div id="my-records"></div>
-    <p class="hint">間違えたときは「取消」を2回タップで取り消せます（作業記録は当日分のみ）</p>
-  </section>
-</main>
-
-<div id="toast" hidden></div>
-
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="work.js?v=20261006c"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>移転しました - トマト栽培管理</title>
+<meta name="robots" content="noindex">
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-}
+// アプリは /app/ に移った。開いた画面・ハッシュ・パラメータを保ったまま送る
+location.replace(location.href.replace('/frontend/', '/app/'));
 </script>
+</head>
+<body style="font-family:sans-serif;padding:24px;color:#37352f">
+<p>トマト栽培管理は新しい場所に移りました。</p>
+<p><a href="../app/">新しい場所を開く</a></p>
 </body>
 </html>

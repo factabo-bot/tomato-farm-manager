@@ -2,86 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>生育調査 - トマト栽培管理</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
-<meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006c">
-</head>
-<body>
-<header>
-  <h1>トマト栽培管理</h1>
-  <div class="header-sub">
-    <span id="date-display"></span>
-    <span id="user-info"></span>
-  </div>
-  <nav class="mode-nav">
-    <a href="index.html">ホーム</a>
-    <a href="work.html">作業</a>
-    <a href="pesticide.html">散布</a>
-    <a href="growth.html" class="current">生育</a>
-    <a href="fertilizer.html">養液</a>
-    <a href="history.html">履歴</a>
-  </nav>
-</header>
-
-<main>
-  <div id="queue-badge" class="queue-badge" hidden></div>
-
-  <p class="hint law-hint">週1回、同じ株を測ると推移が読めます。茎径は<strong>生長点から15cm下</strong>で測ると値がぶれません。器具がない日は目視だけでも記録できます。</p>
-
-  <section>
-    <h2>調査日</h2>
-    <input type="date" id="survey-date" class="date-input">
-  </section>
-
-  <section>
-    <h2>拠点</h2>
-    <div id="base-buttons" class="btn-row"><span class="hint">読み込み中…</span></div>
-  </section>
-
-  <section>
-    <h2>棟・区画</h2>
-    <div id="building-buttons" class="btn-row"></div>
-  </section>
-
-  <section>
-    <h2>農作物の種類</h2>
-    <select id="crop-select"></select>
-  </section>
-
-  <section>
-    <div class="section-head">
-      <h2>調査株</h2>
-      <span class="hint" id="last-info"></span>
-    </div>
-    <div id="plant-list"></div>
-    <button id="add-plant" class="btn-secondary" type="button">＋ 株を追加</button>
-  </section>
-
-  <section>
-    <textarea id="note" placeholder="所感（任意）：全体の印象、気になったことなど"></textarea>
-    <button id="submit" class="btn-primary" type="button">記録</button>
-  </section>
-
-  <section>
-    <h2>今日の調査</h2>
-    <div id="my-records"></div>
-  </section>
-</main>
-
-<div id="toast" hidden></div>
-
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="growth.js?v=20261006c"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>移転しました - トマト栽培管理</title>
+<meta name="robots" content="noindex">
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-}
+// アプリは /app/ に移った。開いた画面・ハッシュ・パラメータを保ったまま送る
+location.replace(location.href.replace('/frontend/', '/app/'));
 </script>
+</head>
+<body style="font-family:sans-serif;padding:24px;color:#37352f">
+<p>トマト栽培管理は新しい場所に移りました。</p>
+<p><a href="../app/">新しい場所を開く</a></p>
 </body>
 </html>

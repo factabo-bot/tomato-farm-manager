@@ -2,85 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>履歴 - トマト栽培管理</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
-<meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006c">
-</head>
-<body>
-<header>
-  <h1>トマト栽培管理</h1>
-  <div class="header-sub">
-    <span id="date-display"></span>
-    <span id="user-info"></span>
-  </div>
-  <nav class="mode-nav">
-    <a href="index.html">ホーム</a>
-    <a href="work.html">作業</a>
-    <a href="pesticide.html">散布</a>
-    <a href="growth.html">生育</a>
-    <a href="fertilizer.html">養液</a>
-    <a href="history.html" class="current">履歴</a>
-  </nav>
-</header>
-
-<main>
-  <section>
-    <div class="tab-row">
-      <button id="tab-work" class="tab active" type="button">作業記録</button>
-      <button id="tab-spray" class="tab" type="button">散布記録</button>
-      <button id="tab-growth" class="tab" type="button">生育調査</button>
-      <button id="tab-usage" class="tab" type="button">使用回数</button>
-    </div>
-  </section>
-
-  <section class="grid-2" id="period-box">
-    <div>
-      <label>期間（から）</label>
-      <input type="date" id="from-date">
-    </div>
-    <div>
-      <label>期間（まで）</label>
-      <input type="date" id="to-date">
-    </div>
-  </section>
-
-  <section>
-    <label>拠点</label>
-    <select id="base-filter">
-      <option value="">すべて</option>
-    </select>
-  </section>
-
-  <section id="purpose-filter-box" hidden>
-    <label>目的でしぼる</label>
-    <input type="text" id="purpose-filter" placeholder="例: 尻腐れ、コナジラミ">
-  </section>
-
-  <section>
-    <button id="search" class="btn-primary" type="button">表示</button>
-    <div id="search-status" class="search-status"></div>
-  </section>
-
-  <section>
-    <div id="record-list"></div>
-    <p class="hint" id="empty-hint" hidden>この条件の記録はありません</p>
-  </section>
-</main>
-
-<div id="toast" hidden></div>
-
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="history.js?v=20261006c"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>移転しました - トマト栽培管理</title>
+<meta name="robots" content="noindex">
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-}
+// アプリは /app/ に移った。開いた画面・ハッシュ・パラメータを保ったまま送る
+location.replace(location.href.replace('/frontend/', '/app/'));
 </script>
+</head>
+<body style="font-family:sans-serif;padding:24px;color:#37352f">
+<p>トマト栽培管理は新しい場所に移りました。</p>
+<p><a href="../app/">新しい場所を開く</a></p>
 </body>
 </html>

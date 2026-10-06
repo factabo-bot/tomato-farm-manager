@@ -4,7 +4,7 @@
 #   .\test\run.ps1 -Only engine 計算エンジンだけ（速い）
 #   .\test\run.ps1 -Verbose     失敗した行だけでなく全出力を見る
 #
-# frontend をそのままテストすると config.js の GAS_URL が本番を向いていて、
+# app をそのままテストすると config.js の GAS_URL が本番を向いていて、
 # テストが本番のスプレッドシートに書きに行ってしまう。
 # _work/ にコピーして GAS_URL を空にし（＝お試しモード）、そこを対象にする。
 
@@ -25,10 +25,10 @@ $chrome = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $chrome) { Write-Error "Chrome が見つかりません"; exit 1 }
 
-# --- frontend を _work にコピーし、GAS_URL を空にする ---
+# --- app を _work にコピーし、GAS_URL を空にする ---
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 New-Item -ItemType Directory -Force $work | Out-Null
-Copy-Item (Join-Path $root "frontend\*") $work -Recurse -Force
+Copy-Item (Join-Path $root "app\*") $work -Recurse -Force
 @'
 const CONFIG = { GAS_URL: "", APP_TOKEN: "" };
 '@ | Out-File (Join-Path $work "config.js") -Encoding utf8

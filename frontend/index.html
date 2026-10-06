@@ -2,92 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>トマト栽培管理</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
-<meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006c">
-</head>
-<body>
-<header>
-  <h1>トマト栽培管理</h1>
-  <div class="header-sub">
-    <span id="date-display"></span>
-    <span id="user-info"></span>
-  </div>
-  <nav class="mode-nav">
-    <a href="index.html" class="current">ホーム</a>
-    <a href="work.html">作業</a>
-    <a href="pesticide.html">散布</a>
-    <a href="growth.html">生育</a>
-    <a href="fertilizer.html">養液</a>
-    <a href="history.html">履歴</a>
-  </nav>
-</header>
-
-<main>
-  <div id="queue-badge" class="queue-badge" hidden></div>
-
-  <section class="summary-card">
-    <h2>今日の記録</h2>
-    <div class="summary-row">
-      <div class="summary-tile">
-        <span class="summary-num" id="work-count">0</span>
-        <span class="summary-label">作業記録</span>
-      </div>
-      <div class="summary-tile">
-        <span class="summary-num" id="spray-count">0</span>
-        <span class="summary-label">散布記録</span>
-      </div>
-      <div class="summary-tile">
-        <span class="summary-num" id="growth-count">0</span>
-        <span class="summary-label">生育調査</span>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <a href="work.html" class="btn-primary shortcut">作業記録</a>
-    <a href="pesticide.html" class="btn-secondary shortcut">散布記録</a>
-    <a href="growth.html" class="btn-secondary shortcut">生育調査</a>
-    <a href="fertilizer.html#daily" class="btn-secondary shortcut">給液記録</a>
-    <a href="fertilizer.html#design" class="btn-secondary shortcut">養液処方</a>
-    <a href="history.html" class="btn-secondary shortcut">履歴</a>
-  </section>
-
-  <section>
-    <h2>今日の記録一覧</h2>
-    <div id="today-list"></div>
-  </section>
-
-  <section class="settings-box">
-    <h2>表示名の設定</h2>
-    <div class="grid-2">
-      <input type="text" id="display-name-input" placeholder="記録者として表示する名前">
-      <button id="save-name" class="btn-secondary" type="button">保存</button>
-    </div>
-    <p class="hint">複数人で使う場合、この端末で記録する人の名前を設定してください</p>
-  </section>
-
-  <section class="settings-box">
-    <h2>マスタの取り直し</h2>
-    <button id="refresh-masters" class="btn-secondary" type="button">マスタを取り直す</button>
-    <p class="hint">スプレッドシートの資材・拠点などを足したのに画面が古いままのときに押す。ふだんは1時間ごとに自動で取り直しているので、急がないなら押さなくてよい</p>
-  </section>
-</main>
-
-<div id="toast" hidden></div>
-
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="index.js?v=20261006c"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>移転しました - トマト栽培管理</title>
+<meta name="robots" content="noindex">
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
-}
+// アプリは /app/ に移った。開いた画面・ハッシュ・パラメータを保ったまま送る
+location.replace(location.href.replace('/frontend/', '/app/'));
 </script>
+</head>
+<body style="font-family:sans-serif;padding:24px;color:#37352f">
+<p>トマト栽培管理は新しい場所に移りました。</p>
+<p><a href="../app/">新しい場所を開く</a></p>
 </body>
 </html>

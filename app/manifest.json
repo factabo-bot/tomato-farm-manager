@@ -3,7 +3,6 @@
   "short_name": "トマト栽培管理",
   "description": "作業記録・農薬散布記録を記録するトマト栽培管理アプリ",
   "lang": "ja",
-  "id": "./?app=tomato-farm-manager-2",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
