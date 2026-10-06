@@ -30,7 +30,93 @@
   --yellow: #cb912f;
   --yellow-text: #7a5a14;
   --yellow-bg: #fbf3db;
+  --yellow-border: rgba(203, 145, 47, 0.35);
+  /* 文字を明るく見せたい色（差し色の文字・下線）。ライトでは差し色そのもの */
+  --accent-text: #1e3a5f;
+  --fill-soft: rgba(55, 53, 47, 0.08);
+  --pending-bg: #fffdf7;
+  --focus-ring: rgba(30, 58, 95, 0.2);
+  --toast-bg: #2f2f2f;
+  --shadow: rgba(15, 15, 15, 0.08);
+  --tab-h: 56px;
   color-scheme: light;
+}
+
+/* ダーク。端末の設定に合わせる「自動」のときと、設定で「ダーク」を選んだときの両方に当てる。
+   中身は同じなので、変えるときは2か所そろえる */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #191919;
+    --text: rgba(255, 255, 255, 0.87);
+    --muted: rgba(255, 255, 255, 0.62);
+    --faint: rgba(255, 255, 255, 0.42);
+    --line: rgba(255, 255, 255, 0.1);
+    --line-strong: rgba(255, 255, 255, 0.22);
+    --hover: rgba(255, 255, 255, 0.06);
+    --callout: #252525;
+    --accent: #2f5a8f;
+    --accent-dark: #244a78;
+    --accent-bg: #1f2b3a;
+    --accent-text: #8fb3e0;
+    --blue: #529cca;
+    --blue-dark: #7fb5dc;
+    --blue-bg: #1f2d38;
+    --green: #6aa582;
+    --green-text: #8fc5a2;
+    --green-bg: #22302a;
+    --red: #e06c6c;
+    --red-text: #f08f8a;
+    --red-bg: #3a2323;
+    --orange: #d9893d;
+    --orange-text: #f0a55c;
+    --orange-bg: #3a2c1e;
+    --yellow: #cfa24a;
+    --yellow-text: #e0c27a;
+    --yellow-bg: #3a3222;
+    --yellow-border: rgba(207, 162, 74, 0.35);
+    --fill-soft: rgba(255, 255, 255, 0.08);
+    --pending-bg: #2a2620;
+    --focus-ring: rgba(143, 179, 224, 0.3);
+    --toast-bg: #3a3a3a;
+    --shadow: rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #191919;
+  --text: rgba(255, 255, 255, 0.87);
+  --muted: rgba(255, 255, 255, 0.62);
+  --faint: rgba(255, 255, 255, 0.42);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.22);
+  --hover: rgba(255, 255, 255, 0.06);
+  --callout: #252525;
+  --accent: #2f5a8f;
+  --accent-dark: #244a78;
+  --accent-bg: #1f2b3a;
+  --accent-text: #8fb3e0;
+  --blue: #529cca;
+  --blue-dark: #7fb5dc;
+  --blue-bg: #1f2d38;
+  --green: #6aa582;
+  --green-text: #8fc5a2;
+  --green-bg: #22302a;
+  --red: #e06c6c;
+  --red-text: #f08f8a;
+  --red-bg: #3a2323;
+  --orange: #d9893d;
+  --orange-text: #f0a55c;
+  --orange-bg: #3a2c1e;
+  --yellow: #cfa24a;
+  --yellow-text: #e0c27a;
+  --yellow-bg: #3a3222;
+  --yellow-border: rgba(207, 162, 74, 0.35);
+  --fill-soft: rgba(255, 255, 255, 0.08);
+  --pending-bg: #2a2620;
+  --focus-ring: rgba(143, 179, 224, 0.3);
+  --toast-bg: #3a3a3a;
+  --shadow: rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,13 +131,13 @@ body {
   -webkit-font-smoothing: antialiased;
   max-width: 480px;
   margin: 0 auto;
-  padding-bottom: 40px;
+  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 32px);
 }
 
 header {
   background: var(--bg);
   color: var(--text);
-  padding: 18px 16px 0;
+  padding: 12px 16px 10px;
   border-bottom: 1px solid var(--line);
 }
 header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -59,7 +145,6 @@ header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  margin-top: 2px;
   color: var(--muted);
 }
 
@@ -136,7 +221,7 @@ label {
   border-radius: 4px;
   margin-left: 8px;
   white-space: nowrap;
-  background: rgba(55, 53, 47, 0.08);
+  background: var(--fill-soft);
   color: var(--text);
 }
 .use-badge.is-full {
@@ -321,7 +406,7 @@ label {
   border-radius: 6px;
   background: var(--bg);
   margin-top: 6px;
-  box-shadow: 0 4px 12px rgba(15, 15, 15, 0.08);
+  box-shadow: 0 4px 12px var(--shadow);
 }
 .picker-row {
   display: flex;
@@ -379,7 +464,7 @@ label {
 }
 .item .del.sheet {
   background: var(--accent-bg);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* はかり方の選択。数値欄より広く取る */
@@ -497,7 +582,7 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.2);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 ::placeholder { color: var(--faint); }
 textarea {
@@ -556,7 +641,7 @@ textarea {
   flex: 0 0 auto;
   margin-left: 8px;
   border: none;
-  background: rgba(55, 53, 47, 0.08);
+  background: var(--fill-soft);
   border-radius: 6px;
   padding: 8px 12px;
   cursor: pointer;
@@ -660,11 +745,21 @@ textarea {
   padding-top: 16px;
 }
 
-/* Notionのビュー切替のように、選んでいる画面だけ下線を引く */
+/* 画面の切替は親指の届く画面下に固定する。HTMLではヘッダーの中にあるが、見た目だけ下へ出す。
+   選んでいる画面は、上の線と差し色の文字で示す */
 .mode-nav {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  z-index: 5;
   display: flex;
   gap: 2px;
-  margin-top: 12px;
+  padding: 0 4px env(safe-area-inset-bottom);
+  background: var(--bg);
+  border-top: 1px solid var(--line-strong);
 }
 /* 6項目に増やしたので min-width: 0 が要る。
    これが無いとリンクの中身が縮まず、ナビがページ全体を横に押し広げる */
@@ -672,9 +767,10 @@ textarea {
   flex: 1 1 0;
   min-width: 0;
   text-align: center;
-  padding: 10px 2px 11px;
-  border-radius: 4px 4px 0 0;
-  border-bottom: 2px solid transparent;
+  height: var(--tab-h);
+  line-height: calc(var(--tab-h) - 2px);
+  padding: 0 2px;
+  border-top: 2px solid transparent;
   color: var(--muted);
   text-decoration: none;
   font-weight: 500;
@@ -684,9 +780,9 @@ textarea {
 }
 .mode-nav a:active { background: var(--hover); }
 .mode-nav a.current {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-top-color: var(--accent-text);
 }
 
 .queue-badge {
@@ -712,7 +808,7 @@ textarea {
 .item.pending {
   border-style: dashed;
   border-color: var(--yellow);
-  background: #fffdf7;
+  background: var(--pending-bg);
 }
 .pending-mark {
   flex: 0 0 auto;
@@ -729,7 +825,7 @@ textarea {
 /* 未送信の中身。溜まったまま消えないときに、何が残っているか確かめて捨てるための欄 */
 .queue-panel {
   background: var(--yellow-bg);
-  border: 1px solid rgba(203, 145, 47, 0.35);
+  border: 1px solid var(--yellow-border);
   border-radius: 6px;
   padding: 10px;
   margin-bottom: 12px;
@@ -760,13 +856,13 @@ textarea {
 #toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 16px);
   transform: translateX(-50%);
-  background: #2f2f2f;
+  background: var(--toast-bg);
   color: #fff;
   padding: 12px 20px;
   border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(15, 15, 15, 0.2);
+  box-shadow: 0 6px 20px var(--shadow);
   font-size: 0.95rem;
   white-space: nowrap;
   z-index: 10;

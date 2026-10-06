@@ -105,6 +105,38 @@ function setDisplayName(name) {
   localStorage.setItem("tfm_displayName", name);
 }
 
+// ---------- 表示（自動／ライト／ダーク） ----------
+// 先読みは各HTMLの<head>にある（描画前に当てないと一瞬白く光る）。ここは切替と、上部の帯の色合わせ
+
+function getTheme() {
+  try {
+    const t = localStorage.getItem("tfm_theme");
+    return t === "light" || t === "dark" ? t : "auto";
+  } catch (e) {
+    return "auto";
+  }
+}
+
+function setTheme(theme) {
+  try {
+    if (theme === "auto") localStorage.removeItem("tfm_theme");
+    else localStorage.setItem("tfm_theme", theme);
+  } catch (e) { /* 保存できなくても、この画面には当てる */ }
+  applyTheme();
+}
+
+function applyTheme() {
+  const t = getTheme();
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  const dark = t === "dark" || (t === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = dark ? "#191919" : "#ffffff";
+}
+
+applyTheme();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+
 const isMock = !CONFIG.GAS_URL;
 
 // ---------- API通信 ----------

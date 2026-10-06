@@ -8,12 +8,15 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
 <meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006e">
-<link rel="stylesheet" href="fertilizer.css?v=20261006c">
+<script>
+// 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
+try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="styles.css?v=20261006f">
+<link rel="stylesheet" href="fertilizer.css?v=20261006f">
 </head>
 <body>
 <header>
-  <h1>トマト栽培管理</h1>
   <div class="header-sub">
     <span id="date-display"></span>
     <span id="user-info"></span>
@@ -405,12 +408,12 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="fertilizers-chem.js?v=20261006c"></script>
-<script src="fertilizer.js?v=20261006c"></script>
-<script src="fertilizer-ui.js?v=20261006c"></script>
+<script src="config.js?v=20261006f"></script>
+<script src="masters-default.js?v=20261006f"></script>
+<script src="common.js?v=20261006f"></script>
+<script src="fertilizers-chem.js?v=20261006f"></script>
+<script src="fertilizer.js?v=20261006f"></script>
+<script src="fertilizer-ui.js?v=20261006f"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');

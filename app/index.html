@@ -8,11 +8,14 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
 <meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006e">
+<script>
+// 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
+try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="styles.css?v=20261006f">
 </head>
 <body>
 <header>
-  <h1>トマト栽培管理</h1>
   <div class="header-sub">
     <span id="date-display"></span>
     <span id="user-info"></span>
@@ -71,6 +74,16 @@
   </section>
 
   <section class="settings-box">
+    <h2>画面の明るさ</h2>
+    <div id="theme-buttons" class="btn-row">
+      <button class="btn" type="button" data-theme-value="auto">自動</button>
+      <button class="btn" type="button" data-theme-value="light">ライト</button>
+      <button class="btn" type="button" data-theme-value="dark">ダーク</button>
+    </div>
+    <p class="hint">自動はスマホの設定（ダークモードかどうか）に合わせます</p>
+  </section>
+
+  <section class="settings-box">
     <h2>表示名の設定</h2>
     <div class="grid-2">
       <input type="text" id="display-name-input" placeholder="記録者として表示する名前">
@@ -88,10 +101,10 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006c"></script>
-<script src="masters-default.js?v=20261006d"></script>
-<script src="common.js?v=20261006c"></script>
-<script src="index.js?v=20261006e"></script>
+<script src="config.js?v=20261006f"></script>
+<script src="masters-default.js?v=20261006f"></script>
+<script src="common.js?v=20261006f"></script>
+<script src="index.js?v=20261006f"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

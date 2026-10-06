@@ -65,6 +65,14 @@ async function init() {
     }
   });
 
+  const themeButtons = document.querySelectorAll("#theme-buttons .btn");
+  const markTheme = () => themeButtons.forEach((b) => b.classList.toggle("active", b.dataset.themeValue === getTheme()));
+  themeButtons.forEach((b) => b.addEventListener("click", () => {
+    setTheme(b.dataset.themeValue);
+    markTheme();
+  }));
+  markTheme();
+
   $("save-name").addEventListener("click", () => {
     const name = $("display-name-input").value.trim();
     if (!name) return toast("名前を入力してください");
