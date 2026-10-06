@@ -5,6 +5,8 @@ const state = {
   base: null,
   buildings: new Set(), // 収穫などで複数の棟をまとめて回ることがあるので複数選択
   workTypes: new Set(), // その日にやった作業をまとめて記録するので複数選択
+  cells: new Set(), // 選んだ列。「2号棟-9手前」の形（棟-列番号＋手前／奥）
+  heatWork: null, // 列マップの色に使う作業（最後に選んだもの）
   profile: getProfile(),
   checking: null, // 確認中の散布区分（"防除" / "葉面散布"）。未確認のときは null
 };
@@ -31,12 +33,12 @@ async function init() {
     state.masters = fresh;
     renderBases();
     renderWorkTypes();
-    renderAgeBoard();
+    renderBench();
   });
 
   renderBases();
   renderWorkTypes();
-  renderAgeBoard();
+  renderBench();
 }
 
 function renderBases() {
@@ -51,7 +53,7 @@ function renderBases() {
       state.base = name;
       state.buildings.clear(); // 拠点が変われば棟の選択も外す
       renderBases();
-      renderAgeBoard();
+      renderBench();
     });
     box.appendChild(btn);
   });
@@ -102,6 +104,9 @@ function renderBuildings() {
 
   // 場所を選び直したら、表示中の散布記録の確認結果も新しい場所で出し直す
   refreshSprayStatus();
+  // 外した棟の列は選択から落とす
+  [...state.cells].forEach((c) => { if (!state.buildings.has(parseCell(c).building)) state.cells.delete(c); });
+  renderBench();
 }
 
 function activeWorkTypes() {
@@ -118,8 +123,15 @@ function renderWorkTypes() {
     const btn = el("button", "btn" + (state.workTypes.has(name) ? " active" : ""), name);
     btn.type = "button";
     btn.addEventListener("click", () => {
-      state.workTypes.has(name) ? state.workTypes.delete(name) : state.workTypes.add(name);
+      if (state.workTypes.has(name)) {
+        state.workTypes.delete(name);
+        if (state.heatWork === name) state.heatWork = lastHeatableWork();
+      } else {
+        state.workTypes.add(name);
+        if (name !== "その他") state.heatWork = name;
+      }
       renderWorkTypes();
+      renderBench();
     });
     box.appendChild(btn);
   });
@@ -132,84 +144,185 @@ function joinedWorkTypes() {
   return activeWorkTypes().map((w) => w.作業名).filter((n) => state.workTypes.has(n)).join(PURPOSE_SEPARATOR);
 }
 
-// ---------- 作業の経過（farm-work-log の進捗ボードの見方を棟単位で） ----------
+// ---------- 列マップとヒートマップ（farm-work-log の配置図を移したもの） ----------
 
 const MS_DAY = 24 * 60 * 60 * 1000;
+// 列の中に並べる作業の略字。葉かきと葉面散布がどちらも「葉」になるので、散布は「散」にする
+const WORK_ABBR = { つる下ろし: "つ", トーン処理: "ト", 葉面散布: "散" };
+const SPRAY_WORKS = ["防除", "葉面散布"];
 
 function daysAgo(dateStr) {
   return Math.round((new Date(formatToday() + "T00:00:00") - new Date(dateStr + "T00:00:00")) / MS_DAY);
 }
 
-// 「棟|作業」→ 最後にやった日。棟・作業はどちらも「、」区切りで複数入っていることがある
-function lastDoneMap() {
+function splitList(s) {
+  return String(s || "").split(PURPOSE_SEPARATOR).map((x) => x.trim()).filter(Boolean);
+}
+
+function benchLayout(building) {
+  return BENCH_LAYOUT[state.base + "|" + building] || null;
+}
+
+function positionsOf(L, col) {
+  return (L.splitCols || []).includes(col) ? L.splitPositions : [""];
+}
+
+function cellToken(building, col, pos) {
+  return building + "-" + col + (pos || "");
+}
+
+function parseCell(token) {
+  const m = String(token).match(/^(.*)-(\d+)(.*)$/);
+  return m ? { building: m[1], col: Number(m[2]), pos: m[3] } : { building: "", col: 0, pos: "" };
+}
+
+// 最後に選んだ作業が外されたとき、残っている作業から色に使うものを選び直す
+function lastHeatableWork() {
+  const rest = [...state.workTypes].filter((w) => w !== "その他");
+  return rest.length ? rest[rest.length - 1] : null;
+}
+
+// 「列|作業」→ 最後にやった日。列を選んで記録した作業だけを数える（列のない昔の記録は数えない＝2026-10-06 ユーザー判断）。
+// 散布は棟全体に撒くので、散布記録はその棟の全部の列に当てる
+function lastDoneByCell() {
   const map = new Map();
-  const put = (building, work, date) => {
-    if (!building || !work || !date) return;
-    const key = building + "|" + work;
+  const put = (cell, work, date) => {
+    if (!date) return;
+    const key = cell + "|" + work;
     if (!map.has(key) || map.get(key) < date) map.set(key, date);
   };
-  const split = (s) => String(s || "").split(PURPOSE_SEPARATOR).map((x) => x.trim()).filter(Boolean);
-
   storeRead("work").forEach((r) => {
-    if (r.状態 === "取消" || r.拠点 !== state.base) return;
+    if (r.状態 === "取消" || r.拠点 !== state.base || !r.列) return;
     const date = recordDate("work", r);
-    split(r["棟・区画"]).forEach((b) => split(r.作業分類).forEach((w) => put(b, w, date)));
+    splitList(r.列).forEach((cell) => splitList(r.作業分類).forEach((w) => put(cell, w, date)));
   });
-  // 防除・葉面散布は散布記録から。予定のまま（まだ撒いていない）は数えない
   storeRead("spray").forEach((r) => {
     if (r.状態 === "取消" || r.状態 === "予定" || r.拠点 !== state.base) return;
     const date = recordDate("spray", r);
-    ["防除", "葉面散布"].forEach((k) => {
-      if (matchesKubun(r, k)) split(r["棟・区画"]).forEach((b) => put(b, k, date));
+    splitList(r["棟・区画"]).forEach((b) => {
+      const L = benchLayout(b);
+      if (!L) return;
+      for (let col = 1; col <= L.cols; col++) {
+        positionsOf(L, col).forEach((pos) => {
+          SPRAY_WORKS.forEach((k) => { if (matchesKubun(r, k)) put(cellToken(b, col, pos), k, date); });
+        });
+      }
     });
   });
   return map;
 }
 
-function renderAgeBoard() {
-  const box = $("age-board");
-  if (!box || !state.masters || !state.base) return;
-  box.innerHTML = "";
-  const last = lastDoneMap();
-  // 「その他」は中身がばらばらなので並べない。散布の2つは作業の後ろに付ける
-  const works = activeWorkTypes().map((w) => w.作業名).filter((n) => n !== "その他").concat(["防除", "葉面散布"]);
-  const workNames = new Set(activeWorkTypes().map((w) => w.作業名));
-  let any = false;
+function ageStep(date) {
+  const days = Math.max(0, daysAgo(date));
+  return { days, step: Math.min(days, 7), text: days >= 7 ? "7+" : String(days) };
+}
 
-  buildingsOfBase(state.masters, state.base).forEach((b) => {
-    const name = b.棟区画名;
-    const chips = [];
-    works.forEach((w) => {
-      const date = last.get(name + "|" + w);
-      if (!date) return; // 一度も記録のない作業は並べない（定植などで真っ赤が並ぶのを避ける）
-      const days = Math.max(0, daysAgo(date));
-      const step = Math.min(days, 7);
-      const chip = el("button", "age-chip age" + step, `${w} ${days >= 7 ? "7+" : days}日`);
-      chip.type = "button";
-      chip.title = "最後にやった日 " + date;
-      // 散布は散布画面で記録するので、押しても作業には入れない（棟だけ選ぶ）
-      chip.addEventListener("click", () => {
-        state.buildings.clear();
-        state.buildings.add(name);
-        if (workNames.has(w)) state.workTypes.add(w);
-        renderBuildings();
-        renderWorkTypes();
-        toast(workNames.has(w) ? `${name}・${w}を選びました` : `${name}を選びました（${w}は散布画面で記録）`);
-      });
-      chips.push(chip);
-    });
-    const row = el("div", "age-row");
-    row.appendChild(el("div", "age-place", name));
-    const wrap = el("div", "age-chips");
-    if (chips.length === 0) wrap.appendChild(el("span", "hint", "記録なし"));
-    chips.forEach((c) => wrap.appendChild(c));
-    row.appendChild(wrap);
-    box.appendChild(row);
-    if (chips.length) any = true;
-  });
-  if (!any) {
-    box.insertBefore(el("p", "hint", "作業を記録すると、棟ごとに「最後にやってから何日か」がここに並びます"), box.firstChild);
+function renderBench() {
+  const area = $("bench-area");
+  if (!area || !state.masters || !state.base) return;
+  area.innerHTML = "";
+  const last = lastDoneByCell();
+  const heat = state.heatWork;
+  const allWorks = activeWorkTypes().map((w) => w.作業名).filter((n) => n !== "その他").concat(SPRAY_WORKS);
+
+  $("bench-caption").textContent = heat
+    ? `色＝「${heat}」を最後にやってからの日数。押した列が記録に入ります`
+    : "作業を選ぶと、その作業の経過日数で塗ります。いまは列ごとに全作業の経過（略字＋日数）を出しています。押した列が記録に入ります";
+
+  const buildings = buildingsOfBase(state.masters, state.base).map((b) => b.棟区画名).filter((n) => state.buildings.has(n));
+  if (buildings.length === 0) {
+    area.appendChild(el("p", "hint", "② で棟を選ぶと、ここに列が出ます"));
+    return;
   }
+
+  buildings.forEach((b) => {
+    const L = benchLayout(b);
+    const head = el("div", "bench-head");
+    head.appendChild(el("span", "bench-title", b));
+    area.appendChild(head);
+    if (!L) {
+      area.appendChild(el("p", "hint", "この棟は列の並びが未登録です（列を選ばずに記録できます）"));
+      return;
+    }
+
+    // 一括選択。中央通路のある棟は左右半分も選べる
+    const bulk = el("div", "btn-row bench-bulk");
+    const selectRange = (from, to, on) => {
+      for (let col = from; col <= to; col++) {
+        positionsOf(L, col).forEach((pos) => {
+          const c = cellToken(b, col, pos);
+          on ? state.cells.add(c) : state.cells.delete(c);
+        });
+      }
+      renderBench();
+    };
+    const addBulk = (label, fn) => {
+      const btn = el("button", "btn chip", label);
+      btn.type = "button";
+      btn.addEventListener("click", fn);
+      bulk.appendChild(btn);
+    };
+    if (L.centerAfter) {
+      addBulk(`左半分（1〜${L.centerAfter}）`, () => selectRange(1, L.centerAfter, true));
+      addBulk(`右半分（${L.centerAfter + 1}〜${L.cols}）`, () => selectRange(L.centerAfter + 1, L.cols, true));
+    }
+    addBulk("すべて", () => selectRange(1, L.cols, true));
+    addBulk("解除", () => selectRange(1, L.cols, false));
+    area.appendChild(bulk);
+
+    for (let col = 1; col <= L.cols; col++) {
+      const row = el("div", "bench-row");
+      row.appendChild(el("span", "bench-label", String(col)));
+      positionsOf(L, col).forEach((pos) => {
+        const token = cellToken(b, col, pos);
+        const cell = el("button", "bench-cell" + (state.cells.has(token) ? " picked" : ""));
+        cell.type = "button";
+        if (pos) cell.appendChild(el("span", "bench-pos", pos));
+        if (heat) {
+          const date = last.get(token + "|" + heat);
+          if (date) {
+            const a = ageStep(date);
+            cell.classList.add("age" + a.step);
+            cell.appendChild(el("span", "bench-days", a.text + "日"));
+            cell.title = "最後にやった日 " + date;
+          } else {
+            cell.appendChild(el("span", "bench-none", "記録なし"));
+          }
+        } else {
+          let any = false;
+          allWorks.forEach((w) => {
+            const date = last.get(token + "|" + w);
+            if (!date) return;
+            const a = ageStep(date);
+            cell.appendChild(el("span", "mini age" + a.step, (WORK_ABBR[w] || w.charAt(0)) + a.text));
+            any = true;
+          });
+          if (!any) cell.appendChild(el("span", "bench-none", "−"));
+        }
+        cell.addEventListener("click", () => {
+          state.cells.has(token) ? state.cells.delete(token) : state.cells.add(token);
+          renderBench();
+        });
+        row.appendChild(cell);
+      });
+      area.appendChild(row);
+      if (L.centerAfter === col) area.appendChild(el("div", "bench-center", "中央通路"));
+      else if ((L.aisleAfter || []).includes(col)) area.appendChild(el("div", "bench-aisle"));
+    }
+    const n = [...state.cells].filter((c) => parseCell(c).building === b).length;
+    area.appendChild(el("p", "hint bench-count", n ? `${b}：${n}列を選んでいます` : `${b}：列を選んでいません（選ばずに記録すると、経過には数えません）`));
+  });
+}
+
+// 選んだ列を、棟の並び・列番号・手前→奥の順に並べて1つの文字列にする
+function joinedCells() {
+  const order = buildingsOfBase(state.masters, state.base).map((b) => b.棟区画名);
+  return [...state.cells]
+    .map(parseCell)
+    .filter((c) => state.buildings.has(c.building))
+    .sort((a, b) => order.indexOf(a.building) - order.indexOf(b.building) || a.col - b.col || (a.pos === "奥") - (b.pos === "奥"))
+    .map((c) => cellToken(c.building, c.col, c.pos))
+    .join(PURPOSE_SEPARATOR);
 }
 
 // ---------- 防除・葉面散布の確認（散布記録は散布画面が持つので、ここでは有無だけ見る） ----------
@@ -313,6 +426,7 @@ async function submit() {
     base: state.base,
     // 複数の棟をまとめて回った場合は「1号棟、2号棟」のように1つの記録にまとめる
     building: [...state.buildings].join(PURPOSE_SEPARATOR),
+    columns: joinedCells(),
     workType: joinedWorkTypes(),
     workDetail: $("work-detail").value.trim(),
     startTime: $("start-time").value,
@@ -332,6 +446,7 @@ async function submit() {
     記録日時: nowTimestamp(),
     拠点: payload.base,
     "棟・区画": payload.building,
+    列: payload.columns,
     作業分類: payload.workType,
     作業詳細: payload.workDetail,
     開始時刻: payload.startTime,
@@ -364,6 +479,8 @@ function computeDuration() {
 
 function resetForm() {
   state.workTypes.clear();
+  state.cells.clear();
+  state.heatWork = null;
   $("work-detail").value = "";
   $("work-detail").hidden = true;
   $("start-time").value = "";
@@ -372,6 +489,7 @@ function resetForm() {
   $("quantity-unit").value = "";
   $("note").value = "";
   renderWorkTypes();
+  renderBench();
 }
 
 // 今日ぶんの自分の記録をストアから取り出す
@@ -385,7 +503,7 @@ function todayMine(kind) {
 
 function loadMyRecords() {
   renderMyRecords(todayMine("work"), todayMine("spray"));
-  renderAgeBoard();
+  renderBench();
   refreshSprayStatus(); // 散布が増減したら確認欄も追従させる
 }
 
@@ -401,7 +519,7 @@ function renderMyRecords(work, sprays) {
 
   const rows = work.map((r) => ({
     time: timeLabel(r.記録日時),
-    label: `${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
+    label: `${r["棟・区画"]}${r.列 ? "（" + splitList(r.列).length + "列）" : ""} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
     rec: r,
     kind: "work",
   }));

@@ -1209,6 +1209,7 @@ function mockSaveWork(payload) {
     記録日時: nowStr,
     拠点: payload.base,
     "棟・区画": payload.building || "",
+    列: payload.columns || "",
     作業分類: payload.workType,
     作業詳細: payload.workDetail || "",
     開始時刻: payload.startTime || "",
