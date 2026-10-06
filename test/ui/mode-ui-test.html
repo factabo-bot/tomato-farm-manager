@@ -43,7 +43,7 @@ setTimeout(function () {
   click("mode-daily");
   ok("mode-menu が消える", !visible("mode-menu"));
   ok("mode-bar が出る", visible("mode-bar"));
-  ok("モード名が出る", D().getElementById("mode-title").textContent.indexOf("日々") >= 0,
+  ok("モード名が出る", D().getElementById("mode-title").textContent.indexOf("給液記録") >= 0,
      D().getElementById("mode-title").textContent);
   ok("評価セクションが見える", visible("sec-evaluate"));
   ok("処方コンテキストも見える（3モード共通）", visible("fert-context"));
@@ -143,9 +143,9 @@ setTimeout(function () {
       click("mode-daily");
       const empty = D().getElementById("recipe-summary").textContent;
       ok("処方が空だと警告が出る", empty.indexOf("処方が空") >= 0, empty.slice(0, 40).trim());
-      ok("処方をつくるへのボタンがある",
+      ok("養液処方へのボタンがある",
          Array.prototype.some.call(D().querySelectorAll("#recipe-summary button"),
-           function (b) { return b.textContent.indexOf("処方をつくる") >= 0; }));
+           function (b) { return b.textContent.indexOf("養液処方") >= 0; }));
       // それでも排液率の判定は動く（窒素だけ出ない）
       const fe = D().getElementById("ev-feed");
       fe.value = "0.5";
@@ -161,8 +161,8 @@ setTimeout(function () {
       // 案内するのは、いま居る場所を指して行けと言うのと同じ
       click("mode-design");
       const emptyDesign = D().getElementById("recipe-summary").textContent;
-      ok("designでは「処方をつくるへ」を出さない",
-         emptyDesign.indexOf("処方をつくるへ") < 0, emptyDesign.trim().slice(0, 30));
+      ok("designでは「養液処方へ」を出さない",
+         emptyDesign.indexOf("養液処方へ") < 0, emptyDesign.trim().slice(0, 30));
       ok("designでは肥料を入れるよう促す", emptyDesign.indexOf("原液タンクに肥料を入れる") >= 0);
       ok("肥料も原水も空ならpHは判定しない",
          D().getElementById("res-ph").textContent === "—",

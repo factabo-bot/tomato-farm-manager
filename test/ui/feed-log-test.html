@@ -79,7 +79,7 @@ setTimeout(function () {
     setTimeout(function () {
       ok("2回目で上書きされる", Number(logs()[0]["排液量"]) === 0.22, logs()[0]["排液量"]);
       ok("件数は増えない", logs().length === 1, "n=" + logs().length);
-      ok("ボタンが元に戻る", D().getElementById("ev-save").textContent === "この内容で記録する");
+      ok("ボタンが元に戻る", D().getElementById("ev-save").textContent === "記録");
 
       head("4. 別の日は別の行になる");
       set("ev-date", "2026-09-01");

@@ -32,9 +32,9 @@ const MICRO_LABEL = {
 // 保存済みの状態に mode が無くても loadState の Object.assign で "" になるので、
 // 更新後の初回は自然にモード選択から始まる
 const FERT_MODES = {
-  daily: "日々の記録と評価",
-  design: "処方をつくる",
-  cost: "コストを見る",
+  daily: "給液記録",
+  design: "養液処方",
+  cost: "肥料コスト",
 };
 
 function defaultState() {
@@ -761,7 +761,7 @@ function renderRecipeSummary() {
       state.mode === "daily"
         ? "処方が空です。窒素施用量は出ませんが、排液率と排液ECの判定は動きます"
         : "処方が空です。肥料を入れないとコストは計算できません"));
-    const btn = el("button", "btn-secondary", "処方をつくるへ");
+    const btn = el("button", "btn-secondary", "養液処方へ");
     btn.type = "button";
     btn.addEventListener("click", () => switchMode("design"));
     box.appendChild(btn);
@@ -924,7 +924,7 @@ function resetSaveButton() {
   const btn = $("ev-save");
   if (!btn) return;
   btn.dataset.arm = "";
-  btn.textContent = "この内容で記録する";
+  btn.textContent = "記録";
 }
 
 function saveFeedLog() {
@@ -1063,7 +1063,7 @@ function renderFeedLogList() {
 
   if (list.length === 0) {
     box.appendChild(el("p", "hint",
-      "まだ記録がありません。上の欄を埋めて「この内容で記録する」を押すと、ここに溜まっていきます"));
+      "まだ記録がありません。上の欄を埋めて「記録」を押すと、ここに溜まっていきます"));
     return;
   }
   const R = FertilizerCalc.round;

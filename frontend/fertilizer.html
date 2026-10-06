@@ -6,8 +6,8 @@
 <title>養液設計 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006b">
-<link rel="stylesheet" href="fertilizer.css?v=20261006b">
+<link rel="stylesheet" href="styles.css?v=20261006c">
+<link rel="stylesheet" href="fertilizer.css?v=20261006c">
 </head>
 <body>
 <header>
@@ -33,15 +33,15 @@
   <section id="mode-menu" hidden>
     <h2>何をしますか</h2>
     <button id="mode-daily" class="mode-card" type="button">
-      <span class="mode-card-title">日々の記録と評価</span>
+      <span class="mode-card-title">給液記録</span>
       <span class="mode-card-sub">給液量と排液ECを入れて、次の一手を出す／毎日・ハウスで</span>
     </button>
     <button id="mode-design" class="mode-card" type="button">
-      <span class="mode-card-title">処方をつくる</span>
+      <span class="mode-card-title">養液処方</span>
       <span class="mode-card-sub">タンクの配合・原水・pH調整・逆算／就農前の設計、年に数回</span>
     </button>
     <button id="mode-cost" class="mode-card" type="button">
-      <span class="mode-card-title">コストを見る</span>
+      <span class="mode-card-title">肥料コスト</span>
       <span class="mode-card-sub">肥料代と調製の頻度／事業計画・資材の発注</span>
     </button>
     <p class="hint">次に開いたときは、最後に使ったモードが直接出ます</p>
@@ -60,7 +60,7 @@
     <div id="recipe-summary"></div>
   </section>
 
-  <!-- ============ 日々の記録と評価 ============ -->
+  <!-- ============ 給液記録 ============ -->
   <section id="sec-evaluate" data-mode="daily">
     <h2>実測から評価する</h2>
     <div class="num-row">
@@ -105,7 +105,7 @@
       <p class="hint">pHは評価計算には使いませんが、記録には残ります。給液pHは混入機の調子、排液pHは根圏の状態を示す別々の指標です</p>
     </details>
 
-    <button id="ev-save" class="btn-primary" type="button">この内容で記録する</button>
+    <button id="ev-save" class="btn-primary" type="button">記録</button>
 
     <details class="fert-details">
       <summary>目標値（自分の圃場に合わせて変える）</summary>
@@ -145,7 +145,7 @@
     <button id="feed-log-more" class="btn-secondary" type="button" hidden>もっと見る</button>
   </section>
 
-  <!-- ============ 処方をつくる ============ -->
+  <!-- ============ 養液処方 ============ -->
   <!-- 性質の違う作業が混ざるので、番号を振ってグループに分ける。
        主な流れは ② 目標から配合を出す → ③ 配合 → ④ 結果。
        畳むのは ① 前提（一度決めたら動かさない）と ⑤ 実測EC（EC計を持ってから）だけ。
@@ -369,7 +369,7 @@
     <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
   </section>
 
-  <!-- ============ コストを見る ============ -->
+  <!-- ============ 肥料コスト ============ -->
   <section id="sec-cost" data-mode="cost">
     <h2>肥料コストと調製の頻度</h2>
     <p class="hint">株数と給液量を入れると、タンクが何日持つか・年間いくらかかるかを出します。<strong>価格は通販の掲載価格から換算した概算</strong>で、処方どうしの差を見る用途に留めてください</p>
@@ -403,12 +403,12 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006b"></script>
-<script src="masters-default.js?v=20261006b"></script>
-<script src="common.js?v=20261006b"></script>
-<script src="fertilizers-chem.js?v=20261006b"></script>
-<script src="fertilizer.js?v=20261006b"></script>
-<script src="fertilizer-ui.js?v=20261006b"></script>
+<script src="config.js?v=20261006c"></script>
+<script src="masters-default.js?v=20261006c"></script>
+<script src="common.js?v=20261006c"></script>
+<script src="fertilizers-chem.js?v=20261006c"></script>
+<script src="fertilizer.js?v=20261006c"></script>
+<script src="fertilizer-ui.js?v=20261006c"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');

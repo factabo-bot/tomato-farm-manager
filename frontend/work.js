@@ -195,7 +195,7 @@ function renderSprayStatus(list, kubun, date) {
   if (hits.length === 0) {
     box.className = "spray-status missing";
     box.appendChild(el("div", "spray-status-head", `${when}の${placeLabel()}に${kubun}の散布記録はまだありません`));
-    box.appendChild(sprayLink("散布画面で入力する", date, kubun));
+    box.appendChild(sprayLink("散布記録へ", date, kubun));
     return;
   }
 
@@ -206,7 +206,7 @@ function renderSprayStatus(list, kubun, date) {
     const time = timeLabel(r.開始時刻);
     box.appendChild(el("div", "spray-status-row", `${time ? time + " " : ""}${r["棟・区画"]} / ${names || "（資材未登録）"}`));
   });
-  box.appendChild(sprayLink("散布画面で追加・修正する", date, kubun));
+  box.appendChild(sprayLink("散布記録へ", date, kubun));
 }
 
 async function submit() {
