@@ -141,7 +141,7 @@ async function apiGetNetwork(action, params) {
     }
   }
   console.warn("読み込みに失敗", action, lastErr);
-  toast("⚠ 読み込めませんでした（" + action + "）。通信を確かめて開き直してください");
+  toast("読み込めませんでした（" + action + "）。通信を確かめて開き直してください");
   return { ok: false, error: "読み込めませんでした" };
 }
 
@@ -587,7 +587,7 @@ async function sendRecord(kind, payload, onDone) {
     } else if (!res.ok) {
       // サーバーに届いたが受け付けられなかった。理由を残して気づけるようにする
       storePatch(kind, "c:" + payload.clientId, { 状態: "送信エラー", 送信エラー: res.error || "" });
-      toast("⚠ " + (res.error || "記録を保存できませんでした"));
+      toast((res.error || "記録を保存できませんでした"));
     }
   } catch (err) {
     console.error(err);
@@ -610,7 +610,7 @@ async function sendCancel(kind, id, userId, onDone) {
   if (current && current._version) payload.expectedVersion = current._version;
   try {
     const res = await apiPostWithQueue(payload);
-    if (!res.ok) toast("⚠ " + (res.error || "取消をサーバーに伝えられませんでした"));
+    if (!res.ok) toast((res.error || "取消をサーバーに伝えられませんでした"));
   } catch (err) {
     console.error(err);
   }
@@ -625,7 +625,7 @@ async function sendComplete(kind, id, userId, times, onDone) {
   if (current && current._version) payload.expectedVersion = current._version;
   try {
     const res = await apiPostWithQueue(payload);
-    if (!res.ok) toast("⚠ " + (res.error || "実施をサーバーに伝えられませんでした"));
+    if (!res.ok) toast((res.error || "実施をサーバーに伝えられませんでした"));
   } catch (err) {
     console.error(err);
   }
@@ -883,11 +883,11 @@ function updateQueueBadge() {
   badge.hidden = false;
   badge.classList.toggle("quiet", n === 0);
   if (n > 0) {
-    badge.textContent = `📤 未送信 ${n}件（タップで中身を見る）`;
+    badge.textContent = `未送信 ${n}件（タップで中身を見る）`;
   } else if (!navigator.onLine && !isMock) {
     badge.textContent = "オフライン・端末の記録を表示中";
   } else if (syncLabel) {
-    badge.textContent = "🔄 " + syncLabel;
+    badge.textContent = syncLabel;
   } else {
     const at = readStore().syncedAt;
     badge.textContent = syncError || (at ? "✓ 最終同期 " + formatDate(new Date(at)) + " " + timeLabel(new Date(at).toTimeString()) : "未同期・初回データを取得中");
@@ -923,15 +923,15 @@ function queueItemLabel(payload) {
       .map((it) => it.materialName || it.pesticideName)
       .filter(Boolean)
       .join("・");
-    return `🧪 ${payload.useDate || ""} ${payload.base || ""} / ${names || "散布"}`;
+    return `${payload.useDate || ""} ${payload.base || ""} / ${names || "散布"}`;
   }
   if (payload.type === "growth") {
-    return `📏 ${payload.surveyDate || ""} ${payload.base || ""} / 生育調査 ${(payload.items || []).length}株`;
+    return `${payload.surveyDate || ""} ${payload.base || ""} / 生育調査 ${(payload.items || []).length}株`;
   }
   if (payload.type === "feedLog") {
-    return `🧫 ${payload.feedDate || ""} / 給液 ${payload.feedL || "?"}L・排液EC ${payload.drainEc || "?"}`;
+    return `${payload.feedDate || ""} / 給液 ${payload.feedL || "?"}L・排液EC ${payload.drainEc || "?"}`;
   }
-  return `📝 ${payload.workDate || ""} ${payload.base || ""} / ${payload.workType || "作業"}`;
+  return `${payload.workDate || ""} ${payload.base || ""} / ${payload.workType || "作業"}`;
 }
 
 function ensureQueuePanel() {
@@ -1007,7 +1007,7 @@ function renderQueuePanel() {
     panel.appendChild(row);
   });
 
-  const retry = el("button", "btn-secondary", "📤 いま送信を試す");
+  const retry = el("button", "btn-secondary", "いま送信を試す");
   retry.type = "button";
   retry.addEventListener("click", async () => {
     retry.disabled = true;

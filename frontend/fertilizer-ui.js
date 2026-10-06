@@ -248,7 +248,7 @@ function renderTanks() {
     // このタンクで既に起きている衝突。計算結果まで見に行かなくても分かるよう箱の中に出す
     FertilizerCalc.tankConflicts(tank).forEach((c) => {
       box.appendChild(el("div", "fert-tank-warn",
-        `⚠ ${TANK_ROLE_LABEL[c.a]}と${TANK_ROLE_LABEL[c.b]}が同居しています。${c.label}`));
+        `${TANK_ROLE_LABEL[c.a]}と${TANK_ROLE_LABEL[c.b]}が同居しています。${c.label}`));
     });
 
     // 追加行
@@ -335,7 +335,7 @@ function renderWaterBalance() {
     note.textContent = "";
     note.className = "";
   } else if (b.errorPct > 5) {
-    note.textContent = ` ⚠ ${FertilizerCalc.round(b.errorPct, 1)}% ずれています。測っていない項目がありませんか`;
+    note.textContent = ` ${FertilizerCalc.round(b.errorPct, 1)}% ずれています。測っていない項目がありませんか`;
     note.className = "fert-inline-warn";
   } else {
     note.textContent = " ✓ 釣り合っています";
@@ -638,7 +638,7 @@ function runBuildTarget() {
     const ref = REFERENCE_RANGES.ions[k];
     const tr = el("tr");
     const isFixed = fixed[k] !== undefined;
-    tr.appendChild(el("td", "", `${isFixed ? "🔒 " : ""}${k} ${ION_LABEL[k] || ""}`));
+    tr.appendChild(el("td", "", `${k} ${ION_LABEL[k] || ""}${isFixed ? "（固定）" : ""}`));
     const cell = el("td", "num" + (isFixed ? " fert-locked" : ""), FertilizerCalc.round(r.target[k], 2));
     tr.appendChild(cell);
     tr.appendChild(el("td", "num sub", ref ? `${ref.min}〜${ref.max}` : "—"));
@@ -688,7 +688,7 @@ function renderAcidResult(req) {
   }
   if (req.anion === "SO4") {
     box.appendChild(el("p", "hint warn",
-      "⚠️ 硫酸は2価。H⁺ 1 meq あたり SO4 は 0.5 mmol です。Caと同じタンクに入れると石膏が沈殿します"));
+      "硫酸は2価。H⁺ 1 meq あたり SO4 は 0.5 mmol です。Caと同じタンクに入れると石膏が沈殿します"));
   }
   box.appendChild(el("p", "hint",
     "増えた分は処方から差し引いてください。差し引かないと" + label + "が狙いより多くなります"));
@@ -709,7 +709,7 @@ function renderDilutionSolve() {
     return;
   }
   if (!r.dilution) {
-    box.appendChild(el("p", "hint warn", "⚠️ " + r.reason));
+    box.appendChild(el("p", "hint warn", r.reason));
     return;
   }
   const d = R(r.dilution, 0);
@@ -720,7 +720,7 @@ function renderDilutionSolve() {
   // 混入機には可動範囲がある。外れていたら倍率ではなく配合を変える話になる
   if (r.dilution < 50 || r.dilution > 500) {
     box.appendChild(el("p", "hint warn",
-      "⚠️ 液肥混入機の可動範囲を外れています（ドサトロン DR06GL は 1:500〜1:50＝50〜500倍）。"
+      "液肥混入機の可動範囲を外れています（ドサトロン DR06GL は 1:500〜1:50＝50〜500倍）。"
       + "この場合は倍率ではなく原液の配合そのものを変えることになります"));
   }
   if (r.waterCationMeq > 0) {
@@ -759,8 +759,8 @@ function renderRecipeSummary() {
     }
     box.appendChild(el("p", "hint warn",
       state.mode === "daily"
-        ? "⚠️ 処方が空です。窒素施用量は出ませんが、排液率と排液ECの判定は動きます"
-        : "⚠️ 処方が空です。肥料を入れないとコストは計算できません"));
+        ? "処方が空です。窒素施用量は出ませんが、排液率と排液ECの判定は動きます"
+        : "処方が空です。肥料を入れないとコストは計算できません"));
     const btn = el("button", "btn-secondary", "処方をつくるへ");
     btn.type = "button";
     btn.addEventListener("click", () => switchMode("design"));
@@ -943,7 +943,7 @@ function saveFeedLog() {
   if (!replaced) list.push(row);
   list.sort((a, b) => (String(a["給液日"]) < String(b["給液日"]) ? 1 : -1));
   writeLocal(FERT_LOG_KEY, list);
-  toast(replaced ? "✅ " + row["給液日"] + " の記録を上書きしました" : "✅ 記録しました");
+  toast(replaced ? "✓ " + row["給液日"] + " の記録を上書きしました" : "✓ 記録しました");
   renderFeedLogList();
   sendFeedLog(row);
   return true;
@@ -1158,7 +1158,7 @@ function renderScaleRef() {
   box.appendChild(el("p", "hint",
     "論文が直接書くのは「給液量0.5〜1.2 L/株」の範囲だけ。月別の値は窒素施用量(表3)を培養液のNO3-N濃度で割った逆算値で、実測表ではない"));
   box.appendChild(el("p", "hint warn",
-    "⚠️ 大玉の値。中玉・ミニでは変わる。株あたりなので栽植密度が違う計画に移すときはm²あたりに直すこと（この試験は3.0株/m²＝1.1〜3.6 L/m²/日）"));
+    "大玉の値。中玉・ミニでは変わる。株あたりなので栽植密度が違う計画に移すときはm²あたりに直すこと（この試験は3.0株/m²＝1.1〜3.6 L/m²/日）"));
   box.appendChild(el("p", "hint",
     "参考：夏秋作ミニトマトなら8月に2,500 mL/株/日まで要る（研報53号）。作型が違うので越冬長期どりには使わない"));
 }
@@ -1313,7 +1313,7 @@ function renderTargetBalance() {
     note.className = "";
   } else if (b.errorPct > 1) {
     const over = b.diff > 0 ? "陽" : "陰";
-    note.textContent = ` ⚠ ${over}が ${FertilizerCalc.round(Math.abs(b.diff), 2)} meq/L 多い`;
+    note.textContent = ` ${over}が ${FertilizerCalc.round(Math.abs(b.diff), 2)} meq/L 多い`;
     note.className = "fert-inline-warn";
   } else {
     note.textContent = " ✓ 釣り合っています";
@@ -1596,7 +1596,7 @@ async function saveRecipe(asNew) {
     renderRecipeSelect();
     toast(`処方「${name}」を保存しました`);
   } else {
-    toast("⚠ " + ((res && res.error) || "保存できませんでした"));
+    toast(((res && res.error) || "保存できませんでした"));
   }
 }
 
@@ -1615,7 +1615,7 @@ async function deleteRecipe() {
     renderRecipeSelect();
     toast("処方を削除しました");
   } else {
-    toast("⚠ " + ((res && res.error) || "削除できませんでした"));
+    toast(((res && res.error) || "削除できませんでした"));
   }
 }
 

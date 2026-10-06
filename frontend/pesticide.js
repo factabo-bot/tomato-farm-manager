@@ -228,7 +228,7 @@ function updateUsageHint() {
   if (u.since) parts.push("作の開始 " + u.since + " から");
   hint.hidden = false;
   hint.className = "hint" + (st.full ? " warn" : "");
-  hint.textContent = (st.full ? "⚠ 上限に達しています。" : "") + parts.join(" ／ ");
+  hint.textContent = (st.full ? "上限に達しています。" : "") + parts.join(" ／ ");
 }
 
 // ---------- 棟ごとの散布量 ----------
@@ -436,7 +436,7 @@ function updatePpeHint() {
   const hint = $("ppe-hint");
   if (isPesticide(m) && m["必要な保護具"]) {
     hint.hidden = false;
-    hint.textContent = "⚠ 必要な保護具（目安。使用前にラベルで要確認）: " + m["必要な保護具"];
+    hint.textContent = "必要な保護具（目安。使用前にラベルで要確認）: " + m["必要な保護具"];
   } else {
     hint.hidden = true;
   }
@@ -602,7 +602,7 @@ function showMixSheet(rec) {
   const count = Number(rec.調製回数) || 0;
   const plan = batchPlan(total, batch);
 
-  box.appendChild(el("h2", "", "🧪 調製早見表"));
+  box.appendChild(el("h2", "", "調製早見表"));
   box.appendChild(el("div", "sheet-sub",
     `${rec.使用年月日}　${rec.拠点}　${rec["棟別散布量"] || rec["棟・区画"] || ""}`));
 
@@ -730,7 +730,7 @@ async function submit() {
   // 次回のために散布方法と容量を覚えておく
   localStorage.setItem(METHOD_KEY, JSON.stringify({ method: state.method, batchL: $("batch-volume").value }));
 
-  toast("✅ 予定として保存しました");
+  toast("✓ 予定として保存しました");
   resetForm();
   loadMyRecords();
   showMixSheet(saved); // そのままタンクの前で見られるように出す

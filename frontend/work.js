@@ -194,19 +194,19 @@ function renderSprayStatus(list, kubun, date) {
 
   if (hits.length === 0) {
     box.className = "spray-status missing";
-    box.appendChild(el("div", "spray-status-head", `⚠ ${when}の${placeLabel()}に${kubun}の散布記録はまだありません`));
-    box.appendChild(sprayLink("🧪 散布画面で入力する", date, kubun));
+    box.appendChild(el("div", "spray-status-head", `${when}の${placeLabel()}に${kubun}の散布記録はまだありません`));
+    box.appendChild(sprayLink("散布画面で入力する", date, kubun));
     return;
   }
 
   box.className = "spray-status found";
-  box.appendChild(el("div", "spray-status-head", `✅ ${when}の${kubun}は散布記録に登録済みです`));
+  box.appendChild(el("div", "spray-status-head", `✓ ${when}の${kubun}は散布記録に登録済みです`));
   hits.forEach((r) => {
     const names = (r.items || []).map((it) => it.資材名).filter(Boolean).join("・");
     const time = timeLabel(r.開始時刻);
     box.appendChild(el("div", "spray-status-row", `${time ? time + " " : ""}${r["棟・区画"]} / ${names || "（資材未登録）"}`));
   });
-  box.appendChild(sprayLink("🧪 散布画面で追加・修正する", date, kubun));
+  box.appendChild(sprayLink("散布画面で追加・修正する", date, kubun));
 }
 
 async function submit() {
@@ -254,7 +254,7 @@ async function submit() {
     備考: payload.note,
     状態: "未同期",
   }, payload);
-  toast("✅ 記録しました");
+  toast("✓ 記録しました");
   resetForm();
   loadMyRecords();
 
@@ -310,7 +310,7 @@ function renderMyRecords(work, sprays) {
 
   const rows = work.map((r) => ({
     time: timeLabel(r.記録日時),
-    label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
+    label: `${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
     rec: r,
     kind: "work",
   }));
@@ -320,7 +320,7 @@ function renderMyRecords(work, sprays) {
     const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
     rows.push({
       time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
-      label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
+      label: `${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
       rec: r,
       kind: "spray",
     });

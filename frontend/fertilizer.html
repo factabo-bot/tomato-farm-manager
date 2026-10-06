@@ -6,23 +6,23 @@
 <title>養液設計 - トマト栽培管理</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ffffff">
-<link rel="stylesheet" href="styles.css?v=20261006a">
-<link rel="stylesheet" href="fertilizer.css?v=20261006a">
+<link rel="stylesheet" href="styles.css?v=20261006b">
+<link rel="stylesheet" href="fertilizer.css?v=20261006b">
 </head>
 <body>
 <header>
-  <h1>🍅 トマト栽培管理</h1>
+  <h1>トマト栽培管理</h1>
   <div class="header-sub">
     <span id="date-display"></span>
     <span id="user-info"></span>
   </div>
   <nav class="mode-nav">
-    <a href="index.html">🏠 ホーム</a>
-    <a href="work.html">📝 作業</a>
-    <a href="pesticide.html">🧪 散布</a>
-    <a href="growth.html">📏 生育</a>
-    <a href="fertilizer.html" class="current">🧫 養液</a>
-    <a href="history.html">📋 履歴</a>
+    <a href="index.html">ホーム</a>
+    <a href="work.html">作業</a>
+    <a href="pesticide.html">散布</a>
+    <a href="growth.html">生育</a>
+    <a href="fertilizer.html" class="current">養液</a>
+    <a href="history.html">履歴</a>
   </nav>
 </header>
 
@@ -33,15 +33,15 @@
   <section id="mode-menu" hidden>
     <h2>何をしますか</h2>
     <button id="mode-daily" class="mode-card" type="button">
-      <span class="mode-card-title">📓 日々の記録と評価</span>
+      <span class="mode-card-title">日々の記録と評価</span>
       <span class="mode-card-sub">給液量と排液ECを入れて、次の一手を出す／毎日・ハウスで</span>
     </button>
     <button id="mode-design" class="mode-card" type="button">
-      <span class="mode-card-title">🧪 処方をつくる</span>
+      <span class="mode-card-title">処方をつくる</span>
       <span class="mode-card-sub">タンクの配合・原水・pH調整・逆算／就農前の設計、年に数回</span>
     </button>
     <button id="mode-cost" class="mode-card" type="button">
-      <span class="mode-card-title">💰 コストを見る</span>
+      <span class="mode-card-title">コストを見る</span>
       <span class="mode-card-sub">肥料代と調製の頻度／事業計画・資材の発注</span>
     </button>
     <p class="hint">次に開いたときは、最後に使ったモードが直接出ます</p>
@@ -272,7 +272,7 @@
     <h2><span class="fert-group-num">③</span>配合を確かめる・直す</h2>
     <p class="hint">カルシウムと硫酸／リン酸は同じタンクに入れると沈殿します。分けてください</p>
     <div id="tank-list"></div>
-    <button id="auto-split" class="btn-secondary" type="button">🔀 タンクを自動で分ける</button>
+    <button id="auto-split" class="btn-secondary" type="button">タンクを自動で分ける</button>
     <button id="add-tank" class="btn-secondary" type="button">＋ タンクを増やす</button>
   </section>
 
@@ -365,7 +365,7 @@
   </section>
 
   <section id="sec-export" data-mode="design">
-    <button id="copy-result" class="btn-secondary" type="button">📋 計算結果をコピー</button>
+    <button id="copy-result" class="btn-secondary" type="button">計算結果をコピー</button>
     <button id="reset-all" class="btn-secondary" type="button">入力をリセット</button>
   </section>
 
@@ -394,7 +394,7 @@
       <span class="num-unit">日</span>
     </div>
     <p class="hint"><strong>タンク容量はピークで、費用は平均で見ます。</strong>1つの値で兼ねると、タンクが足りないか費用を数割多く見積もるかのどちらかになります</p>
-    <p class="hint">⚠ 入れるのは<strong>吸水量ではなく給液量</strong>です。排液率30〜35%を確保するため、実際に作る液は作物が吸う量より2〜5割多くなります</p>
+    <p class="hint">入れるのは<strong>吸水量ではなく給液量</strong>です。排液率30〜35%を確保するため、実際に作る液は作物が吸う量より2〜5割多くなります</p>
     <button id="scale-preset" class="btn-secondary" type="button">促成長期どりの給液量を入れる</button>
     <div id="scale-ref"></div>
     <div id="cost-result"></div>
@@ -403,12 +403,12 @@
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20260904b"></script>
-<script src="masters-default.js?v=20260918b"></script>
-<script src="common.js?v=20260918b"></script>
-<script src="fertilizers-chem.js?v=20260904b"></script>
-<script src="fertilizer.js?v=20260904b"></script>
-<script src="fertilizer-ui.js?v=20260904b"></script>
+<script src="config.js?v=20261006b"></script>
+<script src="masters-default.js?v=20261006b"></script>
+<script src="common.js?v=20261006b"></script>
+<script src="fertilizers-chem.js?v=20261006b"></script>
+<script src="fertilizer.js?v=20261006b"></script>
+<script src="fertilizer-ui.js?v=20261006b"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');

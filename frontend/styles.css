@@ -10,6 +10,11 @@
   --line-strong: rgba(55, 53, 47, 0.24);
   --hover: rgba(55, 53, 47, 0.06);
   --callout: #f7f6f3;
+  /* 差し色。押すボタン・選んでいる項目・画面切替の下線だけに使う */
+  --accent: #1e3a5f;
+  --accent-dark: #132842;
+  --accent-bg: #e8eef6;
+  /* 青は「情報」「低い」の意味の色として残す（養液の判定など） */
   --blue: #2383e2;
   --blue-dark: #0b6bcb;
   --blue-bg: #e7f3f8;
@@ -335,7 +340,7 @@ label {
 }
 .picker-row:last-child { border-bottom: none; }
 .picker-row:active { background: var(--hover); }
-.picker-row.active { background: var(--blue-bg); }
+.picker-row.active { background: var(--accent-bg); }
 .picker-row .sub {
   display: block;
   margin-left: 0;
@@ -373,8 +378,8 @@ label {
   color: var(--green-text);
 }
 .item .del.sheet {
-  background: var(--blue-bg);
-  color: var(--blue-dark);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 /* はかり方の選択。数値欄より広く取る */
@@ -465,8 +470,8 @@ label {
 }
 .btn:active { background: var(--hover); }
 .btn.active {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
@@ -491,8 +496,8 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.25);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.2);
 }
 ::placeholder { color: var(--faint); }
 textarea {
@@ -517,10 +522,10 @@ textarea {
   border: none;
 }
 .btn-primary {
-  background: var(--blue);
+  background: var(--accent);
   color: #fff;
 }
-.btn-primary:active { background: var(--blue-dark); }
+.btn-primary:active { background: var(--accent-dark); }
 .btn-secondary {
   background: var(--bg);
   color: var(--text);
@@ -617,8 +622,8 @@ textarea {
   cursor: pointer;
 }
 .tab.active {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 
@@ -673,15 +678,15 @@ textarea {
   color: var(--muted);
   text-decoration: none;
   font-weight: 500;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   white-space: nowrap;
   overflow: hidden;
 }
 .mode-nav a:active { background: var(--hover); }
 .mode-nav a.current {
-  color: var(--text);
+  color: var(--accent);
   font-weight: 600;
-  border-bottom-color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
 .queue-badge {

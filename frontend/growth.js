@@ -372,7 +372,7 @@ async function submit() {
     更新日時: nowTimestamp(),
     items: filled.map(plantToRow),
   }, payload);
-  toast("✅ 記録しました");
+  toast("✓ 記録しました");
   resetForm();
   loadMyRecords();
 

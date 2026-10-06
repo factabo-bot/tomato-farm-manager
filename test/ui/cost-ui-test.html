@@ -93,13 +93,13 @@ setTimeout(function () {
       const vals = {};
       trs.forEach(function (tr) {
         const td = tr.querySelectorAll("td");
-        const key = td[0].textContent.replace("🔒 ", "").split(" ")[0];
+        const key = td[0].textContent.split(" ")[0];
         vals[key] = td[1].textContent;
       });
       out.push("       " + Object.keys(vals).map(function (k) { return k + "=" + vals[k]; }).join(" "));
       ok("Caは固定値6のまま", vals.Ca === "6", vals.Ca);
-      ok("固定した行に鍵マークが付く",
-         trs[1].textContent.indexOf("🔒") >= 0 || Array.prototype.some.call(trs, function (t) { return t.textContent.indexOf("🔒") >= 0; }));
+      ok("固定した行に（固定）が付く",
+         trs[1].textContent.indexOf("（固定）") >= 0 || Array.prototype.some.call(trs, function (t) { return t.textContent.indexOf("（固定）") >= 0; }));
 
       // 逆算に流す
       const applyBtn = Array.prototype.slice.call(box.querySelectorAll("button"))

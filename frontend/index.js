@@ -66,7 +66,7 @@ function renderTodayList(work, spray, growth) {
 
   work.forEach((r) => items.push({
     time: timeLabel(r.記録日時),
-    label: `📝 ${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
+    label: `${r["棟・区画"]} / ${r.作業分類}${r.作業詳細 ? "（" + r.作業詳細 + "）" : ""}`,
   }));
 
   // 散布記録は資材名を並べて表示する（散布区分＝防除／葉面散布も添える）
@@ -75,7 +75,7 @@ function renderTodayList(work, spray, growth) {
     const kubun = r.散布区分 ? `[${r.散布区分}] ` : "";
     items.push({
       time: timeLabel(r.開始時刻) || timeLabel(r.更新日時),
-      label: `🧪 ${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
+      label: `${kubun}${r["棟・区画"]} / ${names || "（資材未登録）"}`,
     });
   });
 
@@ -83,7 +83,7 @@ function renderTodayList(work, spray, growth) {
     const n = (r.items || []).length;
     items.push({
       time: timeLabel(r.更新日時),
-      label: `📏 ${r["棟・区画"]} / 生育調査 ${n}株`,
+      label: `${r["棟・区画"]} / 生育調査 ${n}株`,
     });
   });
 
