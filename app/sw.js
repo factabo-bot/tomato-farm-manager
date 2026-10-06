@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'tomato-farm-manager-app-v40';
+const CACHE = 'tomato-farm-manager-app-v41';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,12 @@ const ASSETS = [
   './icons/tomato-clear-512.png',
   './icons/apple-touch-icon-clear.png',
   './icons/favicon-clear-32.png',
+  './icons/tab-home.png',
+  './icons/tab-work.png',
+  './icons/tab-spray.png',
+  './icons/tab-growth.png',
+  './icons/tab-fertilizer.png',
+  './icons/tab-history.png',
 ];
 
 self.addEventListener('install', function (e) {

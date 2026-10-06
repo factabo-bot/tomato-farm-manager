@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261006j">
+<link rel="stylesheet" href="styles.css?v=20261006k">
 </head>
 <body>
 <header>
@@ -21,12 +21,12 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
     <span id="user-info"></span>
   </div>
   <nav class="mode-nav">
-    <a href="index.html">ホーム</a>
-    <a href="work.html">作業</a>
-    <a href="pesticide.html">散布</a>
-    <a href="growth.html">生育</a>
-    <a href="fertilizer.html">養液</a>
-    <a href="history.html" class="current">履歴</a>
+    <a href="index.html"><span class="tab-icon ti-home" aria-hidden="true"></span>ホーム</a>
+    <a href="work.html"><span class="tab-icon ti-work" aria-hidden="true"></span>作業</a>
+    <a href="pesticide.html"><span class="tab-icon ti-spray" aria-hidden="true"></span>散布</a>
+    <a href="growth.html"><span class="tab-icon ti-growth" aria-hidden="true"></span>生育</a>
+    <a href="fertilizer.html"><span class="tab-icon ti-fertilizer" aria-hidden="true"></span>養液</a>
+    <a href="history.html" class="current"><span class="tab-icon ti-history" aria-hidden="true"></span>履歴</a>
   </nav>
 </header>
 
@@ -76,10 +76,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006j"></script>
-<script src="masters-default.js?v=20261006j"></script>
-<script src="common.js?v=20261006j"></script>
-<script src="history.js?v=20261006j"></script>
+<script src="config.js?v=20261006k"></script>
+<script src="masters-default.js?v=20261006k"></script>
+<script src="common.js?v=20261006k"></script>
+<script src="history.js?v=20261006k"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

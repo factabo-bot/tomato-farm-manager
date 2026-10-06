@@ -768,13 +768,18 @@ textarea {
   min-width: 0;
   text-align: center;
   height: var(--tab-h);
-  line-height: calc(var(--tab-h) - 2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1.2;
   padding: 0 2px;
   border-top: 2px solid transparent;
   color: var(--muted);
   text-decoration: none;
   font-weight: 500;
-  font-size: 0.85rem;
+  font-size: 0.72rem;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -1008,3 +1013,19 @@ button.age-chip {
   margin-top: 2px;
 }
 .bench-count { margin-top: 4px; }
+
+/* タブのアイコン。画像は形（アルファ）だけを使い、色は文字色に合わせて塗る（選択中は差し色、ダークでも追従） */
+.tab-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  background-color: currentColor;
+  -webkit-mask: var(--tab-icon) center / contain no-repeat;
+  mask: var(--tab-icon) center / contain no-repeat;
+}
+.ti-home { --tab-icon: url(icons/tab-home.png); }
+.ti-work { --tab-icon: url(icons/tab-work.png); }
+.ti-spray { --tab-icon: url(icons/tab-spray.png); }
+.ti-growth { --tab-icon: url(icons/tab-growth.png); }
+.ti-fertilizer { --tab-icon: url(icons/tab-fertilizer.png); }
+.ti-history { --tab-icon: url(icons/tab-history.png); }
