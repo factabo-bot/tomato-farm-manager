@@ -932,8 +932,14 @@ button.age-chip {
 
 /* 列マップ。入口から見た向き（列が左右に並び、奥が上・手前が下）。
    列の幅は押せる大きさ（46px）を下限にし、入りきらなければ横にスクロールする */
-.bench-head { margin: 14px 0 6px; }
+.bench-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
 .bench-title { font-weight: 700; }
+.bench-count { font-size: 0.8rem; color: var(--muted); }
 .bench-bulk { gap: 6px; margin-bottom: 6px; }
 .bench-scroll {
   overflow-x: auto;
@@ -980,39 +986,17 @@ button.age-chip {
 .bench-cell.age7 { background: var(--age7); border-color: transparent; color: var(--age7-text); font-weight: 600; }
 /* 記録に入れる列。色（経過）を隠さないよう、内側の太い枠で示す */
 .bench-cell.picked { box-shadow: inset 0 0 0 3px var(--accent-text); font-weight: 700; }
+/* 色の無い状態（作業を選ぶ前）では枠だけだと目立たないので、薄く塗る */
+.bench-cell.picked:not([class*="age"]) { background: var(--accent-bg); }
 .bench-pos { font-size: 0.65rem; opacity: 0.75; }
 .bench-none { color: var(--faint); font-size: 0.72rem; }
 .bench-cell.age7 .bench-none { color: inherit; }
 .bench-days { font-variant-numeric: tabular-nums; }
-.mini {
-  display: inline-block;
-  padding: 0 3px;
-  border-radius: 3px;
-  font-size: 0.68rem;
-  line-height: 16px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.mini.age0 { background: var(--age0); }
-.mini.age1 { background: var(--age1); }
-.mini.age2 { background: var(--age2); }
-.mini.age3 { background: var(--age3); }
-.mini.age4 { background: var(--age4); }
-.mini.age5 { background: var(--age5); }
-.mini.age6 { background: var(--age6); }
-.mini.age7 { background: var(--age7); color: var(--age7-text); font-weight: 600; }
 .bench-center-line {
   justify-self: center;
   width: 0;
   border-left: 2px dashed var(--line-strong);
 }
-.bench-front {
-  text-align: center;
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin-top: 2px;
-}
-.bench-count { margin-top: 4px; }
 
 /* タブのアイコン。画像は形（アルファ）だけを使い、色は文字色に合わせて塗る（選択中は差し色、ダークでも追従） */
 .tab-icon {

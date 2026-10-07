@@ -81,10 +81,10 @@ function renderBuildings() {
     box.appendChild(btn);
   });
 
-  // 棟が複数ある拠点だけ一括選択を出す（1棟しかない拠点では邪魔になるため）
+  // 棟が多い拠点だけ一括選択を出す（2〜3棟なら1つずつ押しても手間は同じで、行が増えるだけなので出さない）
   const bulk = $("building-bulk");
   bulk.innerHTML = "";
-  if (buildings.length > 1) {
+  if (buildings.length > 3) {
     const all = el("button", "btn chip", "すべて選択");
     all.type = "button";
     all.addEventListener("click", () => {
@@ -147,8 +147,6 @@ function joinedWorkTypes() {
 // ---------- 列マップとヒートマップ（farm-work-log の配置図を移したもの） ----------
 
 const MS_DAY = 24 * 60 * 60 * 1000;
-// 列の中に並べる作業の略字。葉かきと葉面散布がどちらも「葉」になるので、散布は「散」にする
-const WORK_ABBR = { つる下ろし: "つ", トーン処理: "ト", 葉面散布: "散" };
 const SPRAY_WORKS = ["防除", "葉面散布"];
 
 function daysAgo(dateStr) {
@@ -226,11 +224,13 @@ function renderBench() {
   area.innerHTML = "";
   const last = lastDoneByCell();
   const heat = state.heatWork;
-  const allWorks = activeWorkTypes().map((w) => w.作業名).filter((n) => n !== "その他").concat(SPRAY_WORKS);
 
+  // 作業を選ぶまでは色を付けない。以前は列ごとに全作業の略字と日数を並べていたが、
+  // 1列に7〜8個のチップが縦に積まれて読めず、画面がごちゃつくだけだった（2026-10-07 ユーザー指摘）
   $("bench-caption").textContent = heat
-    ? `色＝「${heat}」を最後にやってからの日数。押した列が記録に入ります`
-    : "作業を選ぶと、その作業の経過日数で塗ります。いまは列ごとに全作業の経過（略字＋日数）を出しています。押した列が記録に入ります";
+    ? `色＝「${heat}」を最後にやってからの日数（下が入口側）`
+    : "作業を選ぶと、最後にやってからの日数で色が付きます（下が入口側）";
+  $("age-legend").hidden = !heat;
 
   const buildings = buildingsOfBase(state.masters, state.base).map((b) => b.棟区画名).filter((n) => state.buildings.has(n));
   if (buildings.length === 0) {
@@ -242,13 +242,15 @@ function renderBench() {
     const L = benchLayout(b);
     const head = el("div", "bench-head");
     head.appendChild(el("span", "bench-title", b));
+    const n = [...state.cells].filter((c) => parseCell(c).building === b).length;
+    head.appendChild(el("span", "bench-count", n ? n + "列を選択" : "未選択"));
     area.appendChild(head);
     if (!L) {
       area.appendChild(el("p", "hint", "この棟は列の並びが未登録です（列を選ばずに記録できます）"));
       return;
     }
 
-    // 一括選択。中央通路のある棟は左右半分も選べる
+    // 一括選択。「すべて」を左端に置く（いちばん使うため。2026-10-07 ユーザー）。中央通路のある棟は左右半分も選べる
     const bulk = el("div", "btn-row bench-bulk");
     const selectRange = (from, to, on) => {
       for (let col = from; col <= to; col++) {
@@ -265,11 +267,11 @@ function renderBench() {
       btn.addEventListener("click", fn);
       bulk.appendChild(btn);
     };
-    if (L.centerAfter) {
-      addBulk(`左半分（1〜${L.centerAfter}）`, () => selectRange(1, L.centerAfter, true));
-      addBulk(`右半分（${L.centerAfter + 1}〜${L.cols}）`, () => selectRange(L.centerAfter + 1, L.cols, true));
-    }
     addBulk("すべて", () => selectRange(1, L.cols, true));
+    if (L.centerAfter) {
+      addBulk(`左 1〜${L.centerAfter}`, () => selectRange(1, L.centerAfter, true));
+      addBulk(`右 ${L.centerAfter + 1}〜${L.cols}`, () => selectRange(L.centerAfter + 1, L.cols, true));
+    }
     addBulk("解除", () => selectRange(1, L.cols, false));
     area.appendChild(bulk);
 
@@ -307,16 +309,6 @@ function renderBench() {
           } else {
             cell.appendChild(el("span", "bench-none", "なし"));
           }
-        } else {
-          let any = false;
-          allWorks.forEach((w) => {
-            const date = last.get(token + "|" + w);
-            if (!date) return;
-            const a = ageStep(date);
-            cell.appendChild(el("span", "mini age" + a.step, (WORK_ABBR[w] || w.charAt(0)) + a.text));
-            any = true;
-          });
-          if (!any) cell.appendChild(el("span", "bench-none", "−"));
         }
         cell.addEventListener("click", () => {
           state.cells.has(token) ? state.cells.delete(token) : state.cells.add(token);
@@ -340,10 +332,7 @@ function renderBench() {
     grid.style.gridTemplateColumns = template.join(" ");
     scroll.appendChild(grid);
     area.appendChild(scroll);
-    area.appendChild(el("div", "bench-front", "↓ 手前（入口側）"));
     if (scrolls[b]) scroll.scrollLeft = scrolls[b];
-    const n = [...state.cells].filter((c) => parseCell(c).building === b).length;
-    area.appendChild(el("p", "hint bench-count", n ? `${b}：${n}列を選んでいます` : `${b}：列を選んでいません（選ばずに記録すると、経過には数えません）`));
   });
 }
 

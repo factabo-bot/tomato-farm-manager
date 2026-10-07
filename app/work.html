@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261006k">
+<link rel="stylesheet" href="styles.css?v=20261007a">
 </head>
 <body>
 <header>
@@ -58,7 +58,7 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
          2件になり、あとで作業時間を合計したときに二重に数えてしまうため）。
          ここは記録するボタンではなく、記録済みかどうかの確認と散布画面への入口 -->
     <div class="spray-link">
-      <p class="hint">農薬・葉面散布肥料をまいた日は「散布」画面に記録します。押すと記録済みか確認できます</p>
+      <p class="hint">散布は「散布」画面に記録します。押すと記録済みか確認できます</p>
       <div class="btn-row">
         <button id="check-pest" class="btn chip" type="button">防除</button>
         <button id="check-foliar" class="btn chip" type="button">葉面散布</button>
@@ -73,7 +73,7 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
     <h2>④ 列（押して選ぶ）</h2>
     <p id="bench-caption" class="hint"></p>
     <div id="bench-area"></div>
-    <div class="age-legend" aria-hidden="true">
+    <div id="age-legend" class="age-legend" aria-hidden="true" hidden>
       <span>今日</span>
       <span class="age-chip age0"></span><span class="age-chip age1"></span><span class="age-chip age2"></span><span class="age-chip age3"></span><span class="age-chip age4"></span><span class="age-chip age5"></span><span class="age-chip age6"></span><span class="age-chip age7"></span>
       <span>7日以上</span>
@@ -116,10 +116,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261006k"></script>
-<script src="masters-default.js?v=20261006k"></script>
-<script src="common.js?v=20261006k"></script>
-<script src="work.js?v=20261006k"></script>
+<script src="config.js?v=20261007a"></script>
+<script src="masters-default.js?v=20261007a"></script>
+<script src="common.js?v=20261007a"></script>
+<script src="work.js?v=20261007a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
