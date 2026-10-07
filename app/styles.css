@@ -1045,6 +1045,28 @@ button.age-chip {
 .ages-cell.age5 { background: var(--age5); }
 .ages-cell.age6 { background: var(--age6); }
 .ages-cell.age7 { background: var(--age7); color: var(--age7-text); font-weight: 600; }
+.ages-colno { font-size: 0.8rem; vertical-align: middle; }
+/* 奥／手前に分かれる列。見出しに小さく「奥・手前」、マスは上下2段（上が奥） */
+.ages-pos {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+  font-size: 0.62rem;
+  font-weight: 400;
+  text-align: left;
+}
+.ages-pos span { height: 20px; line-height: 20px; }
+.ages-split { padding: 0 0 4px; }
+.ages-split-row th { padding-bottom: 4px; }
+.ages-split .ages-cell {
+  box-sizing: border-box;
+  height: 20px;
+  line-height: 18px;
+  font-size: 0.75rem;
+}
+.ages-split .ages-cell + .ages-cell { margin-top: 2px; }
 .ages-gap td { height: 4px; padding: 0; }
 .ages-gap.center td { height: 10px; background: linear-gradient(var(--line-strong), var(--line-strong)) center / 100% 2px no-repeat; }
 

@@ -315,6 +315,14 @@ function usageGroup(title, rows, emptyText) {
 // 列幅に収まらない作業名は、語の切れ目で2行にする（任せると「つる下ろ／し」と切れるため）
 const HEAD_BREAK = { つる下ろし: "つる\n下ろし", トーン処理: "トーン\n処理", 葉面散布: "葉面\n散布" };
 
+function ageCell(tag, work, date) {
+  if (!date) return el(tag, "ages-cell none", "−");
+  const a = ageStep(date);
+  const cell = el(tag, "ages-cell age" + a.step, a.text);
+  cell.title = work + "：" + date;
+  return cell;
+}
+
 function renderBenchAges() {
   const list = $("record-list");
   list.innerHTML = "";
@@ -387,24 +395,29 @@ function renderBenchAges() {
       gap.appendChild(td);
       tbody.appendChild(gap);
     }
-    // 手前／奥に分かれる列は、列マップと同じく奥を先（上）に出す
+    // 手前／奥に分かれる列も1行にし、マスの中を上＝奥・下＝手前の2段に割る（列マップと同じ向き）。
+    // 「9 奥」「9 手前」を別の行にすると、列の区切りが見えず読みにくかった（2026-10-07 ユーザー）
     const split = positionsOf(L, col).length > 1;
-    (split ? ["奥", "手前"] : [""]).forEach((pos) => {
-      const tr = el("tr");
-      tr.appendChild(el("th", "ages-rowhead", col + (pos ? " " + pos : "")));
-      works.forEach((w) => {
-        const date = last.get(cellToken(b, col, pos) + "|" + w);
-        if (!date) {
-          tr.appendChild(el("td", "ages-cell none", "−"));
-          return;
-        }
-        const a = ageStep(date);
-        const td = el("td", "ages-cell age" + a.step, a.text);
-        td.title = w + "：" + date;
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
+    const tr = el("tr", split ? "ages-split-row" : "");
+    const th = el("th", "ages-rowhead");
+    th.appendChild(el("span", "ages-colno", String(col)));
+    if (split) {
+      const pos = el("span", "ages-pos");
+      pos.appendChild(el("span", "", "奥"));
+      pos.appendChild(el("span", "", "手前"));
+      th.appendChild(pos);
+    }
+    tr.appendChild(th);
+    works.forEach((w) => {
+      if (!split) {
+        tr.appendChild(ageCell("td", w, last.get(cellToken(b, col, "") + "|" + w)));
+        return;
+      }
+      const td = el("td", "ages-split");
+      ["奥", "手前"].forEach((pos) => td.appendChild(ageCell("div", w, last.get(cellToken(b, col, pos) + "|" + w))));
+      tr.appendChild(td);
     });
+    tbody.appendChild(tr);
   }
   table.appendChild(tbody);
   const scroll = el("div", "ages-scroll");
