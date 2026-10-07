@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261007a">
+<link rel="stylesheet" href="styles.css?v=20261007b">
 </head>
 <body>
 <header>
@@ -37,6 +37,7 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
       <button id="tab-spray" class="tab" type="button">散布記録</button>
       <button id="tab-growth" class="tab" type="button">生育調査</button>
       <button id="tab-usage" class="tab" type="button">使用回数</button>
+      <button id="tab-bench" class="tab" type="button">列の経過</button>
     </div>
   </section>
 
@@ -76,10 +77,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261007a"></script>
-<script src="masters-default.js?v=20261007a"></script>
-<script src="common.js?v=20261007a"></script>
-<script src="history.js?v=20261007a"></script>
+<script src="config.js?v=20261007b"></script>
+<script src="masters-default.js?v=20261007b"></script>
+<script src="common.js?v=20261007b"></script>
+<script src="history.js?v=20261007b"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261007a">
+<link rel="stylesheet" href="styles.css?v=20261007b">
 </head>
 <body>
 <header>
@@ -71,7 +71,6 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
        作業を選ぶとその作業の経過日数で塗り、選んでいなければ列ごとに全作業の経過を並べる -->
   <section>
     <h2>④ 列（押して選ぶ）</h2>
-    <p id="bench-caption" class="hint"></p>
     <div id="bench-area"></div>
     <div id="age-legend" class="age-legend" aria-hidden="true" hidden>
       <span>今日</span>
@@ -116,10 +115,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261007a"></script>
-<script src="masters-default.js?v=20261007a"></script>
-<script src="common.js?v=20261007a"></script>
-<script src="work.js?v=20261007a"></script>
+<script src="config.js?v=20261007b"></script>
+<script src="masters-default.js?v=20261007b"></script>
+<script src="common.js?v=20261007b"></script>
+<script src="work.js?v=20261007b"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

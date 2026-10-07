@@ -145,74 +145,16 @@ function joinedWorkTypes() {
 }
 
 // ---------- 列マップとヒートマップ（farm-work-log の配置図を移したもの） ----------
-
-const MS_DAY = 24 * 60 * 60 * 1000;
-const SPRAY_WORKS = ["防除", "葉面散布"];
-
-function daysAgo(dateStr) {
-  return Math.round((new Date(formatToday() + "T00:00:00") - new Date(dateStr + "T00:00:00")) / MS_DAY);
-}
-
-function splitList(s) {
-  return String(s || "").split(PURPOSE_SEPARATOR).map((x) => x.trim()).filter(Boolean);
-}
+// 経過日数の数え方は履歴画面の「列の経過」と共通なので common.js に置いている
 
 function benchLayout(building) {
-  return BENCH_LAYOUT[state.base + "|" + building] || null;
-}
-
-function positionsOf(L, col) {
-  return (L.splitCols || []).includes(col) ? L.splitPositions : [""];
-}
-
-function cellToken(building, col, pos) {
-  return building + "-" + col + (pos || "");
-}
-
-function parseCell(token) {
-  const m = String(token).match(/^(.*)-(\d+)(.*)$/);
-  return m ? { building: m[1], col: Number(m[2]), pos: m[3] } : { building: "", col: 0, pos: "" };
+  return benchLayoutOf(state.base, building);
 }
 
 // 最後に選んだ作業が外されたとき、残っている作業から色に使うものを選び直す
 function lastHeatableWork() {
   const rest = [...state.workTypes].filter((w) => w !== "その他");
   return rest.length ? rest[rest.length - 1] : null;
-}
-
-// 「列|作業」→ 最後にやった日。列を選んで記録した作業だけを数える（列のない昔の記録は数えない＝2026-10-06 ユーザー判断）。
-// 散布は棟全体に撒くので、散布記録はその棟の全部の列に当てる
-function lastDoneByCell() {
-  const map = new Map();
-  const put = (cell, work, date) => {
-    if (!date) return;
-    const key = cell + "|" + work;
-    if (!map.has(key) || map.get(key) < date) map.set(key, date);
-  };
-  storeRead("work").forEach((r) => {
-    if (r.状態 === "取消" || r.拠点 !== state.base || !r.列) return;
-    const date = recordDate("work", r);
-    splitList(r.列).forEach((cell) => splitList(r.作業分類).forEach((w) => put(cell, w, date)));
-  });
-  storeRead("spray").forEach((r) => {
-    if (r.状態 === "取消" || r.状態 === "予定" || r.拠点 !== state.base) return;
-    const date = recordDate("spray", r);
-    splitList(r["棟・区画"]).forEach((b) => {
-      const L = benchLayout(b);
-      if (!L) return;
-      for (let col = 1; col <= L.cols; col++) {
-        positionsOf(L, col).forEach((pos) => {
-          SPRAY_WORKS.forEach((k) => { if (matchesKubun(r, k)) put(cellToken(b, col, pos), k, date); });
-        });
-      }
-    });
-  });
-  return map;
-}
-
-function ageStep(date) {
-  const days = Math.max(0, daysAgo(date));
-  return { days, step: Math.min(days, 7), text: days >= 7 ? "7+" : String(days) };
 }
 
 function renderBench() {
@@ -222,14 +164,12 @@ function renderBench() {
   const scrolls = {};
   area.querySelectorAll(".bench-scroll").forEach((s) => { scrolls[s.dataset.building] = s.scrollLeft; });
   area.innerHTML = "";
-  const last = lastDoneByCell();
+  const last = lastDoneByCell(state.base);
   const heat = state.heatWork;
 
   // 作業を選ぶまでは色を付けない。以前は列ごとに全作業の略字と日数を並べていたが、
-  // 1列に7〜8個のチップが縦に積まれて読めず、画面がごちゃつくだけだった（2026-10-07 ユーザー指摘）
-  $("bench-caption").textContent = heat
-    ? `色＝「${heat}」を最後にやってからの日数（下が入口側）`
-    : "作業を選ぶと、最後にやってからの日数で色が付きます（下が入口側）";
+  // 1列に7〜8個のチップが縦に積まれて読めず、画面がごちゃつくだけだった（2026-10-07 ユーザー指摘）。
+  // 全作業の経過は履歴の「列の経過」で棟ごとに見る。色の意味の説明文も要らない（同日 ユーザー）
   $("age-legend").hidden = !heat;
 
   const buildings = buildingsOfBase(state.masters, state.base).map((b) => b.棟区画名).filter((n) => state.buildings.has(n));
@@ -368,10 +308,6 @@ function spraysOn(date) {
   return storeRead("spray").filter((r) => recordDate("spray", r) === date && r.状態 !== "取消");
 }
 
-// 散布区分は「防除・葉面散布」のように2つ入ることがあるので部分一致で見る
-function matchesKubun(r, kubun) {
-  return String(r.散布区分 || "").indexOf(kubun) >= 0;
-}
 
 // 散布記録の棟は「1号棟、2号棟」とまとめて入るので、選択中の棟と1つでも重なれば同じ場所とみなす
 function matchesPlace(r) {

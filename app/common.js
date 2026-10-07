@@ -1533,3 +1533,73 @@ function mockGet(action, params) {
 
   return { ok: true };
 }
+
+// ---------- 列マップの経過日数（作業画面の列マップと履歴の「列の経過」で共通） ----------
+
+const MS_DAY = 24 * 60 * 60 * 1000;
+const SPRAY_WORKS = ["防除", "葉面散布"];
+
+function daysAgo(dateStr) {
+  return Math.round((new Date(formatToday() + "T00:00:00") - new Date(dateStr + "T00:00:00")) / MS_DAY);
+}
+
+function splitList(s) {
+  return String(s || "").split(PURPOSE_SEPARATOR).map((x) => x.trim()).filter(Boolean);
+}
+
+function benchLayoutOf(base, building) {
+  return BENCH_LAYOUT[base + "|" + building] || null;
+}
+
+function positionsOf(L, col) {
+  return (L.splitCols || []).includes(col) ? L.splitPositions : [""];
+}
+
+function cellToken(building, col, pos) {
+  return building + "-" + col + (pos || "");
+}
+
+function parseCell(token) {
+  const m = String(token).match(/^(.*)-(\d+)(.*)$/);
+  return m ? { building: m[1], col: Number(m[2]), pos: m[3] } : { building: "", col: 0, pos: "" };
+}
+
+// 「列|作業」→ 最後にやった日。列を選んで記録した作業だけを数える（列のない昔の記録は数えない＝2026-10-06 ユーザー判断）。
+// 散布は棟全体に撒くので、散布記録はその棟の全部の列に当てる
+function lastDoneByCell(base) {
+  const map = new Map();
+  const put = (cell, work, date) => {
+    if (!date) return;
+    const key = cell + "|" + work;
+    if (!map.has(key) || map.get(key) < date) map.set(key, date);
+  };
+  storeRead("work").forEach((r) => {
+    if (r.状態 === "取消" || r.拠点 !== base || !r.列) return;
+    const date = recordDate("work", r);
+    splitList(r.列).forEach((cell) => splitList(r.作業分類).forEach((w) => put(cell, w, date)));
+  });
+  storeRead("spray").forEach((r) => {
+    if (r.状態 === "取消" || r.状態 === "予定" || r.拠点 !== base) return;
+    const date = recordDate("spray", r);
+    splitList(r["棟・区画"]).forEach((b) => {
+      const L = benchLayoutOf(base, b);
+      if (!L) return;
+      for (let col = 1; col <= L.cols; col++) {
+        positionsOf(L, col).forEach((pos) => {
+          SPRAY_WORKS.forEach((k) => { if (matchesKubun(r, k)) put(cellToken(b, col, pos), k, date); });
+        });
+      }
+    });
+  });
+  return map;
+}
+
+function ageStep(date) {
+  const days = Math.max(0, daysAgo(date));
+  return { days, step: Math.min(days, 7), text: days >= 7 ? "7+" : String(days) };
+}
+
+// 散布区分は「防除・葉面散布」のように2つ入ることがあるので部分一致で見る
+function matchesKubun(r, kubun) {
+  return String(r.散布区分 || "").indexOf(kubun) >= 0;
+}

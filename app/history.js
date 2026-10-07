@@ -3,6 +3,7 @@
 const state = {
   masters: null,
   tab: "work",
+  benchBuilding: null, // 「列の経過」で見ている棟
 };
 
 init();
@@ -22,6 +23,7 @@ async function init() {
   $("tab-spray").addEventListener("click", () => switchTab("spray"));
   $("tab-growth").addEventListener("click", () => switchTab("growth"));
   $("tab-usage").addEventListener("click", () => switchTab("usage"));
+  $("tab-bench").addEventListener("click", () => switchTab("bench"));
   $("search").addEventListener("click", load);
   $("from-date").addEventListener("change", load);
   $("to-date").addEventListener("change", load);
@@ -34,8 +36,10 @@ async function init() {
   state.masters = await loadMasters(function (fresh) {
     state.masters = fresh;
     renderBaseFilter();
+    if (state.tab === "bench") load();
   });
   renderBaseFilter();
+  if (state.tab === "bench") load();
 }
 
 // マスタが更新されたときに呼び直されるので、毎回作り直す（選択中の拠点は保つ）
@@ -62,9 +66,14 @@ function switchTab(tab) {
   $("tab-spray").classList.toggle("active", tab === "spray");
   $("tab-growth").classList.toggle("active", tab === "growth");
   $("tab-usage").classList.toggle("active", tab === "usage");
+  $("tab-bench").classList.toggle("active", tab === "bench");
   $("purpose-filter-box").hidden = tab !== "spray";
-  // 使用回数は作の区切りで数えるので、期間の指定は使わない
-  $("period-box").hidden = tab === "usage";
+  // 使用回数は作の区切りで、列の経過は今日から何日かで見るので、期間の指定は使わない
+  $("period-box").hidden = tab === "usage" || tab === "bench";
+  // 列の経過は拠点ごとにしか描けないので、「すべて」のままなら先頭の拠点にしておく
+  if (tab === "bench" && !$("base-filter").value && state.masters) {
+    $("base-filter").value = activeBases(state.masters)[0] || "";
+  }
   load();
 }
 
@@ -109,6 +118,7 @@ async function load() {
     base: $("base-filter").value,
   };
   if (state.tab === "usage") return loadUsage();
+  if (state.tab === "bench") return renderBenchAges();
   const kind = state.tab === "work" ? "work" : state.tab === "growth" ? "growth" : "spray";
 
   // 記録も気象も手元にあるので、まずそれで描き切る（90日以内ならここで終わり）
@@ -295,4 +305,116 @@ function usageGroup(title, rows, emptyText) {
     box.appendChild(row);
   });
   return box;
+}
+
+// ---------- 列の経過タブ ----------
+// 棟を1つ選び、列（ベンチの片側）ごとに全作業の「最後にやってから何日か」を表で並べる。
+// 作業画面の列マップは作業を1つ選んで色を見る形にしたので、全作業をまとめて見るのはここ（2026-10-07 ユーザー）。
+// 数え方は作業画面と同じ lastDoneByCell（列を選んだ作業記録＋散布記録は棟全体、手元にある直近90日）
+
+// 列幅に収まらない作業名は、語の切れ目で2行にする（任せると「つる下ろ／し」と切れるため）
+const HEAD_BREAK = { つる下ろし: "つる\n下ろし", トーン処理: "トーン\n処理", 葉面散布: "葉面\n散布" };
+
+function renderBenchAges() {
+  const list = $("record-list");
+  list.innerHTML = "";
+  $("empty-hint").hidden = true;
+  setStatus("");
+  const base = $("base-filter").value;
+  if (!state.masters) {
+    list.appendChild(el("p", "hint", "読み込み中…"));
+    return;
+  }
+  if (!base) {
+    list.appendChild(el("p", "hint", "拠点を選ぶと、棟ごとの経過が出ます"));
+    return;
+  }
+  const buildings = buildingsOfBase(state.masters, base).map((b) => b.棟区画名).filter((n) => benchLayoutOf(base, n));
+  if (buildings.length === 0) {
+    list.appendChild(el("p", "hint", "この拠点は列の並びが未登録です"));
+    return;
+  }
+  if (!buildings.includes(state.benchBuilding)) state.benchBuilding = buildings[0];
+  const b = state.benchBuilding;
+
+  if (buildings.length > 1) {
+    const row = el("div", "btn-row ages-buildings");
+    buildings.forEach((name) => {
+      const btn = el("button", "btn" + (name === b ? " active" : ""), name);
+      btn.type = "button";
+      btn.addEventListener("click", () => {
+        state.benchBuilding = name;
+        renderBenchAges();
+      });
+      row.appendChild(btn);
+    });
+    list.appendChild(row);
+  }
+
+  const L = benchLayoutOf(base, b);
+  const last = lastDoneByCell(base);
+  // 表の横に並べる作業。この棟で一度でも記録のあるものだけを、マスタの表示順→散布の順に出す
+  const prefix = b + "-";
+  const done = new Set();
+  last.forEach((_, key) => { if (key.startsWith(prefix)) done.add(key.slice(key.indexOf("|") + 1)); });
+  const order = (state.masters.workTypes || [])
+    .filter((w) => String(w.有効フラグ).toUpperCase() === "TRUE")
+    .sort((x, y) => Number(x.表示順) - Number(y.表示順))
+    .map((w) => w.作業名);
+  const works = order.filter((w) => done.has(w) && !SPRAY_WORKS.includes(w))
+    .concat([...done].filter((w) => !order.includes(w) && !SPRAY_WORKS.includes(w)))
+    .concat(SPRAY_WORKS.filter((w) => done.has(w)));
+  if (works.length === 0) {
+    list.appendChild(el("p", "hint", "この棟には、列を選んで記録した作業がまだありません"));
+    return;
+  }
+
+  const table = el("table", "ages-table");
+  const head = el("tr");
+  head.appendChild(el("th", "ages-rowhead", "列"));
+  works.forEach((w) => head.appendChild(el("th", "", HEAD_BREAK[w] || w)));
+  const thead = el("thead");
+  thead.appendChild(head);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  for (let col = 1; col <= L.cols; col++) {
+    // 前の列との間が通路なら隙間を空け、中央通路は線にする（入口から見た並びと同じ区切り）
+    if (col > 1 && (L.centerAfter === col - 1 || (L.aisleAfter || []).includes(col - 1))) {
+      const gap = el("tr", "ages-gap" + (L.centerAfter === col - 1 ? " center" : ""));
+      const td = el("td");
+      td.colSpan = works.length + 1;
+      gap.appendChild(td);
+      tbody.appendChild(gap);
+    }
+    // 手前／奥に分かれる列は、列マップと同じく奥を先（上）に出す
+    const split = positionsOf(L, col).length > 1;
+    (split ? ["奥", "手前"] : [""]).forEach((pos) => {
+      const tr = el("tr");
+      tr.appendChild(el("th", "ages-rowhead", col + (pos ? " " + pos : "")));
+      works.forEach((w) => {
+        const date = last.get(cellToken(b, col, pos) + "|" + w);
+        if (!date) {
+          tr.appendChild(el("td", "ages-cell none", "−"));
+          return;
+        }
+        const a = ageStep(date);
+        const td = el("td", "ages-cell age" + a.step, a.text);
+        td.title = w + "：" + date;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  table.appendChild(tbody);
+  const scroll = el("div", "ages-scroll");
+  scroll.appendChild(table);
+  list.appendChild(scroll);
+
+  const legend = el("div", "age-legend");
+  legend.appendChild(el("span", "", "今日"));
+  for (let i = 0; i <= 7; i++) legend.appendChild(el("span", "age-chip age" + i));
+  legend.appendChild(el("span", "", "7日以上"));
+  list.appendChild(legend);
+  list.appendChild(el("p", "hint", "数字は最後にやってからの日数。列を選んで記録した作業だけを数えます（直近90日）"));
 }

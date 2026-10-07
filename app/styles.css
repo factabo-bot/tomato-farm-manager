@@ -998,6 +998,56 @@ button.age-chip {
   border-left: 2px dashed var(--line-strong);
 }
 
+/* 履歴「列の経過」。行＝列、横＝作業。列番号の欄は横に流しても残す */
+.ages-buildings { margin-bottom: 10px; }
+.ages-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ages-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.ages-table thead th {
+  min-width: 40px;
+  max-width: 52px;
+  padding: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.2;
+  vertical-align: bottom;
+  text-align: center;
+  white-space: pre-line;
+}
+.ages-table .ages-rowhead {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: 0 6px 0 0;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ages-cell {
+  height: 28px;
+  text-align: center;
+  border-radius: 3px;
+}
+.ages-cell.none { color: var(--faint); border: 1px solid var(--line); }
+.ages-cell.age0 { background: var(--age0); }
+.ages-cell.age1 { background: var(--age1); }
+.ages-cell.age2 { background: var(--age2); }
+.ages-cell.age3 { background: var(--age3); }
+.ages-cell.age4 { background: var(--age4); }
+.ages-cell.age5 { background: var(--age5); }
+.ages-cell.age6 { background: var(--age6); }
+.ages-cell.age7 { background: var(--age7); color: var(--age7-text); font-weight: 600; }
+.ages-gap td { height: 4px; padding: 0; }
+.ages-gap.center td { height: 10px; background: linear-gradient(var(--line-strong), var(--line-strong)) center / 100% 2px no-repeat; }
+
 /* タブのアイコン。画像は形（アルファ）だけを使い、色は文字色に合わせて塗る（選択中は差し色、ダークでも追従） */
 .tab-icon {
   display: block;
