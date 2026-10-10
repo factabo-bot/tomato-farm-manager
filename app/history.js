@@ -400,7 +400,7 @@ function renderBenchAges() {
     const split = positionsOf(L, col).length > 1;
     const tr = el("tr", split ? "ages-split-row" : "");
     const th = el("th", "ages-rowhead");
-    th.appendChild(el("span", "ages-colno", String(col)));
+    th.appendChild(el("span", "ages-colno", colLabel(L, col)));
     if (split) {
       const pos = el("span", "ages-pos");
       pos.appendChild(el("span", "", "奥"));
@@ -410,11 +410,11 @@ function renderBenchAges() {
     tr.appendChild(th);
     works.forEach((w) => {
       if (!split) {
-        tr.appendChild(ageCell("td", w, last.get(cellToken(b, col, "") + "|" + w)));
+        tr.appendChild(ageCell("td", w, last.get(cellToken(b, col, "", L) + "|" + w)));
         return;
       }
       const td = el("td", "ages-split");
-      ["奥", "手前"].forEach((pos) => td.appendChild(ageCell("div", w, last.get(cellToken(b, col, pos) + "|" + w))));
+      ["奥", "手前"].forEach((pos) => td.appendChild(ageCell("div", w, last.get(cellToken(b, col, pos, L) + "|" + w))));
       tr.appendChild(td);
     });
     tbody.appendChild(tr);

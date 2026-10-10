@@ -7,3 +7,4 @@ test/_work/
 # GASのデプロイ設定（スクリプトID・配備ID）と作業用フォルダ。公開リポジトリには載せない
 .local.json
 .deploy/
+.deploy-backup/

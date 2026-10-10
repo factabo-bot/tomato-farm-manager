@@ -44,7 +44,7 @@ var TZ = "Asia/Tokyo";
 
 // 配備した版。tools/deploy.py がデプロイ後に ?action=version で読み、新しいコードが動いているか確かめる。
 // コードを変えてデプロイするときは必ず上げる（日付＋英字）
-var GAS_VERSION = "2026-10-06a";
+var GAS_VERSION = "2026-10-10a";
 
 // 気象データの取得地点（千葉市緑区の代表座標。拠点ごとの個別座標は使わず全体で統一）
 var WEATHER_LAT = 35.5605;
@@ -1222,6 +1222,7 @@ function updateRecord_(data) {
     var updated = values[i].slice();
     setIfDefinedByMap_(updated, hm, "拠点", data.base);
     setIfDefinedByMap_(updated, hm, "棟・区画", data.building);
+    setIfDefinedByMap_(updated, hm, "列", data.columns);
     setIfDefinedByMap_(updated, hm, "作業分類", data.workType);
     setIfDefinedByMap_(updated, hm, "作業詳細", data.workDetail);
     setIfDefinedByMap_(updated, hm, "開始時刻", data.startTime);

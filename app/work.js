@@ -195,7 +195,7 @@ function renderBench() {
     const selectRange = (from, to, on) => {
       for (let col = from; col <= to; col++) {
         positionsOf(L, col).forEach((pos) => {
-          const c = cellToken(b, col, pos);
+          const c = cellToken(b, col, pos, L);
           on ? state.cells.add(c) : state.cells.delete(c);
         });
       }
@@ -230,12 +230,12 @@ function renderBench() {
         node.style.gridRow = span ? row + " / span " + span : String(row);
         grid.appendChild(node);
       };
-      at(el("span", "bench-label", String(col)), 1);
+      at(el("span", "bench-label", colLabel(L, col)), 1);
       const split = positionsOf(L, col).length > 1;
       // 上が奥、下が手前
       const order = split ? ["奥", "手前"] : [""];
       order.forEach((pos, i) => {
-        const token = cellToken(b, col, pos);
+        const token = cellToken(b, col, pos, L);
         const cell = el("button", "bench-cell" + (state.cells.has(token) ? " picked" : ""));
         cell.type = "button";
         if (pos) cell.appendChild(el("span", "bench-pos", pos));
@@ -283,7 +283,7 @@ function joinedCells() {
     .map(parseCell)
     .filter((c) => state.buildings.has(c.building))
     .sort((a, b) => order.indexOf(a.building) - order.indexOf(b.building) || a.col - b.col || (a.pos === "奥") - (b.pos === "奥"))
-    .map((c) => cellToken(c.building, c.col, c.pos))
+    .map((c) => cellToken(c.building, c.col, c.pos, benchLayout(c.building)))
     .join(PURPOSE_SEPARATOR);
 }
 

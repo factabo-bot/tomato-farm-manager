@@ -29,6 +29,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCAL = ROOT / ".local.json"
 WORK = ROOT / ".deploy"
 SRC = ROOT / "gas" / "Code.gs"
+# エディタ上のコードの控え。.deploy の中に置くと clasp push でプロジェクトに送られてしまうので外に置く
+BACKUP = ROOT / ".deploy-backup" / "editor_version.gs"
 CLASP = str(pathlib.Path(os.environ["LOCALAPPDATA"]) / "Programs" / "node" / "clasp.cmd")
 
 
@@ -65,6 +67,12 @@ def pull(cfg):
     WORK.mkdir()
     (WORK / ".clasp.json").write_text(json.dumps({"scriptId": cfg["scriptId"], "rootDir": "."}), encoding="utf-8")
     run([CLASP, "pull"], WORK)
+    # 2026-10-06 の復旧で控えを .deploy に置いたまま送り、プロジェクトに editor_version（farm-work-log のコード）が残っていた。
+    # 見つかれば外す。次の push で手元にないファイルはプロジェクトからも消える
+    stray = WORK / "editor_version.js"
+    if stray.exists():
+        stray.unlink()
+        print("プロジェクトに紛れ込んでいた控え editor_version を外す（今回の送信で消える）")
     codes = [p for p in WORK.iterdir() if p.suffix in (".js", ".gs")]
     if len(codes) != 1:
         sys.exit("コードのファイルが1つではありません: " + ", ".join(p.name for p in codes) + "（想定外なので止めます）")
@@ -103,10 +111,12 @@ def main():
     else:
         sha = matches_history(remote)
         if not sha and "--overwrite-editor" in sys.argv:
-            (WORK / "editor_version.gs").write_text(remote, encoding="utf-8")
-            print("エディタ上のコードはどの版とも違うが、--overwrite-editor 指定なので上書きする（元は .deploy/editor_version.gs に控えた）")
+            BACKUP.parent.mkdir(exist_ok=True)
+            BACKUP.write_text(remote, encoding="utf-8")
+            print("エディタ上のコードはどの版とも違うが、--overwrite-editor 指定なので上書きする（元は " + str(BACKUP) + " に控えた）")
         elif not sha:
-            diff_path = WORK / "editor_version.gs"
+            diff_path = BACKUP
+            diff_path.parent.mkdir(exist_ok=True)
             diff_path.write_text(remote, encoding="utf-8")
             sys.exit("エディタ上のコードが git のどの版とも違います。エディタで直接直された可能性があるので止めます。\n"
                      "取り寄せたコード: " + str(diff_path))

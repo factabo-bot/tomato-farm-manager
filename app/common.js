@@ -1555,13 +1555,31 @@ function positionsOf(L, col) {
   return (L.splitCols || []).includes(col) ? L.splitPositions : [""];
 }
 
-function cellToken(building, col, pos) {
-  return building + "-" + col + (pos || "");
+// 列の呼び名。benchLetters の棟はベンチをA〜の記号で呼び、その片側を1・2で表す（1・2列目＝A1・A2、3列目＝B1）。
+// 平川は現場でこの呼び方をしている（2026-10-10 ユーザー）
+function colLabel(L, col) {
+  if (!L || !L.benchLetters) return String(col);
+  return String.fromCharCode(65 + Math.floor((col - 1) / 2)) + ((col - 1) % 2 + 1);
 }
 
+function cellToken(building, col, pos, L) {
+  return building + "-" + colLabel(L, col) + (pos || "");
+}
+
+// 「ハウス-A2」も「2号棟-9手前」も読める。記号付きは列番号に戻す
 function parseCell(token) {
-  const m = String(token).match(/^(.*)-(\d+)(.*)$/);
-  return m ? { building: m[1], col: Number(m[2]), pos: m[3] } : { building: "", col: 0, pos: "" };
+  const m = String(token).match(/^(.*)-([A-Z]?)(\d+)(.*)$/);
+  if (!m) return { building: "", col: 0, pos: "" };
+  const n = Number(m[3]);
+  const col = m[2] ? (m[2].charCodeAt(0) - 65) * 2 + n : n;
+  return { building: m[1], col: col, pos: m[4] };
+}
+
+// 記録に残った列の文字列を、今の呼び名にそろえる（呼び名を変える前の「ハウス-1」も同じ列として数える）
+function normalizeCell(base, token) {
+  const c = parseCell(token);
+  const L = benchLayoutOf(base, c.building);
+  return L && c.col ? cellToken(c.building, c.col, c.pos, L) : token;
 }
 
 // 「列|作業」→ 最後にやった日。列を選んで記録した作業だけを数える（列のない昔の記録は数えない＝2026-10-06 ユーザー判断）。
@@ -1576,7 +1594,7 @@ function lastDoneByCell(base) {
   storeRead("work").forEach((r) => {
     if (r.状態 === "取消" || r.拠点 !== base || !r.列) return;
     const date = recordDate("work", r);
-    splitList(r.列).forEach((cell) => splitList(r.作業分類).forEach((w) => put(cell, w, date)));
+    splitList(r.列).forEach((cell) => splitList(r.作業分類).forEach((w) => put(normalizeCell(base, cell), w, date)));
   });
   storeRead("spray").forEach((r) => {
     if (r.状態 === "取消" || r.状態 === "予定" || r.拠点 !== base) return;
@@ -1586,7 +1604,7 @@ function lastDoneByCell(base) {
       if (!L) return;
       for (let col = 1; col <= L.cols; col++) {
         positionsOf(L, col).forEach((pos) => {
-          SPRAY_WORKS.forEach((k) => { if (matchesKubun(r, k)) put(cellToken(b, col, pos), k, date); });
+          SPRAY_WORKS.forEach((k) => { if (matchesKubun(r, k)) put(cellToken(b, col, pos, L), k, date); });
         });
       }
     });
