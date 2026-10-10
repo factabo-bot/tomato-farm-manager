@@ -4,20 +4,21 @@
 // group で画面上のまとまりを分ける（毎回測る基本／数えるだけ／実測に手間がかかる）
 const NUM_FIELDS = [
   // 草勢と生育バランスの基本。公的資料が共通して挙げる指標
-  { key: "stemDiameter", prevKey: "茎径mm", label: "茎径(mm)", unit: "mm", group: "basic", hint: "生長点15cm下・目安10前後" },
-  { key: "trussDistance", prevKey: "生長点花房距離cm", label: "生長点〜開花花房(cm)", unit: "cm", group: "basic", hint: "目安15前後" },
+  { key: "stemDiameter", prevKey: "茎径mm", label: "茎径(mm)", unit: "mm", group: "basic", hint: "生長点15cm下" },
+  { key: "trussDistance", prevKey: "生長点花房距離cm", label: "生長点〜開花花房(cm)", unit: "cm", group: "basic", hint: "" },
   { key: "plantHeight", prevKey: "草丈cm", label: "草丈(cm)", unit: "cm", group: "basic", hint: "前回差が伸長量" },
 
   // 数えるだけで測定コストがほぼゼロ。摘葉と草勢の持続性の判断に効く
-  { key: "floweringTruss", prevKey: "開花段位", label: "開花段位", unit: "段", group: "count", hint: "7〜10日で1段" },
-  { key: "harvestTruss", prevKey: "収穫段位", label: "収穫段位", unit: "段", group: "count", hint: "開花との差6段が目安" },
-  { key: "leavesBelowTruss", prevKey: "花房下葉数", label: "花房下の葉数", unit: "枚", group: "count", hint: "適正12枚（摘葉の判断）" },
+  { key: "floweringTruss", prevKey: "開花段位", label: "開花段位", unit: "段", group: "count", hint: "" },
+  { key: "harvestTruss", prevKey: "収穫段位", label: "収穫段位", unit: "段", group: "count", hint: "" },
+  { key: "leavesBelowTruss", prevKey: "花房下葉数", label: "花房下の葉数", unit: "枚", group: "count", hint: "" },
   { key: "fruitSet", prevKey: "着果数", label: "着果数", unit: "個", group: "count", hint: "" },
   { key: "leafCount", prevKey: "葉数", label: "葉数", unit: "枚", group: "count", hint: "" },
 
   // ノギス・メジャーが要る項目。時間がある日だけでよい
   { key: "internodeLength", prevKey: "節間長cm", label: "節間長(cm)", unit: "cm", group: "detail", hint: "徒長の判定" },
-  { key: "leafLength", prevKey: "葉長cm", label: "葉長(cm)", unit: "cm", group: "detail", hint: "第1花房直下葉" },
+  { key: "leafLength", prevKey: "葉長cm", label: "葉長(cm)", unit: "cm", group: "detail", hint: "第1花房直下葉・葉柄の付け根から先端" },
+  { key: "leafWidth", prevKey: "葉幅cm", label: "葉幅(cm)", unit: "cm", group: "detail", hint: "同じ葉・小葉を含めた最大幅" },
   { key: "fruitDiameter", prevKey: "果径mm", label: "果径(mm)", unit: "mm", group: "detail", hint: "果実肥大" },
 ];
 
@@ -219,7 +220,8 @@ function numRow(p, prev, f) {
   return row;
 }
 
-// 開花段位と収穫段位の差。岩手県の資料では6段が目安で、草勢が続くかの判断に使う
+// 開花段位と収穫段位の差。草勢が続くかの判断に使う。
+// 岩手県の目安（6段）は大玉の値なので、色分けはせず差だけを出す
 function updateTrussGap(p) {
   const box = document.getElementById("gap-" + p.label);
   if (!box) return;
@@ -230,9 +232,8 @@ function updateTrussGap(p) {
     box.className = "truss-gap";
     return;
   }
-  const gap = f - h;
-  box.textContent = "開花と収穫の差 " + gap + "段（目安6段）";
-  box.className = "truss-gap" + (gap >= 4 && gap <= 8 ? " ok" : " warn");
+  box.textContent = "開花と収穫の差 " + (f - h) + "段";
+  box.className = "truss-gap";
 }
 
 function renderPlants() {

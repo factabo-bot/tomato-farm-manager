@@ -1177,6 +1177,7 @@ function mockSaveGrowth(payload) {
       着果数: keepValue(it.fruitSet),
       葉数: keepValue(it.leafCount),
       葉長cm: keepValue(it.leafLength),
+      葉幅cm: keepValue(it.leafWidth),
       果径mm: keepValue(it.fruitDiameter),
       尻腐れ果数: keepValue(it.blossomEndRot),
       裂果数: keepValue(it.cracking),

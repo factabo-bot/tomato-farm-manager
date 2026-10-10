@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261007c">
+<link rel="stylesheet" href="styles.css?v=20261010a">
 </head>
 <body>
 <header>
@@ -73,14 +73,18 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
     <h2>今日の調査</h2>
     <div id="my-records"></div>
   </section>
+
+  <section>
+    <a href="lai.html" class="btn-secondary">LAI・残す葉の枚数</a>
+  </section>
 </main>
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261007c"></script>
-<script src="masters-default.js?v=20261007c"></script>
-<script src="common.js?v=20261007c"></script>
-<script src="growth.js?v=20261007c"></script>
+<script src="config.js?v=20261010a"></script>
+<script src="masters-default.js?v=20261010a"></script>
+<script src="common.js?v=20261010a"></script>
+<script src="growth.js?v=20261010a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

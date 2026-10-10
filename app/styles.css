@@ -341,13 +341,45 @@ label {
   font-family: inherit;
   cursor: pointer;
 }
-/* 開花段位と収穫段位の差（目安6段から外れたら色を変える） */
+/* 開花段位と収穫段位の差 */
 .truss-gap {
   font-size: 0.8rem;
   padding: 4px 0 0 150px;
 }
-.truss-gap.ok { color: var(--green-text); }
-.truss-gap.warn { color: var(--orange-text); }
+
+/* LAI計算 */
+.lai-result {
+  background: var(--callout);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.lai-result strong { font-size: 1.05rem; }
+.lai-result:empty { display: none; }
+.size-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.size-row .size-name {
+  flex: 0 0 36px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.size-row input { flex: 1 1 0; min-width: 0; min-height: 42px; text-align: right; }
+.size-row .size-x { color: var(--faint); }
+.leaf-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.photo-btn { min-height: 42px; font-size: 0.9rem; margin-top: 4px; }
 
 .visual-row {
   margin-top: 10px;
@@ -637,7 +669,8 @@ textarea {
   margin-left: 8px;
 }
 .item .del,
-.plant-head .del {
+.plant-head .del,
+.size-row .del {
   flex: 0 0 auto;
   margin-left: 8px;
   border: none;

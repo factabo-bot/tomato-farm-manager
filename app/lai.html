@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>LAI計算 - トマト栽培管理</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-clear-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-clear.png">
+<meta name="theme-color" content="#ffffff">
+<script>
+try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="styles.css?v=20261010a">
+</head>
+<body>
+<header>
+  <div class="header-sub">
+    <span id="date-display"></span>
+    <span id="user-info"></span>
+  </div>
+  <nav class="mode-nav">
+    <a href="index.html"><span class="tab-icon ti-home" aria-hidden="true"></span>ホーム</a>
+    <a href="work.html"><span class="tab-icon ti-work" aria-hidden="true"></span>作業</a>
+    <a href="pesticide.html"><span class="tab-icon ti-spray" aria-hidden="true"></span>散布</a>
+    <a href="growth.html" class="current"><span class="tab-icon ti-growth" aria-hidden="true"></span>生育</a>
+    <a href="fertilizer.html"><span class="tab-icon ti-fertilizer" aria-hidden="true"></span>養液</a>
+    <a href="history.html"><span class="tab-icon ti-history" aria-hidden="true"></span>履歴</a>
+  </nav>
+</header>
+
+<main>
+  <section>
+    <h2>LAIと残す葉の枚数</h2>
+    <div class="num-row">
+      <label class="num-label" for="variety">品種</label>
+      <select id="variety" class="num-input" style="flex:1 1 0"></select>
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="coef">係数</label>
+      <input id="coef" class="num-input" type="number" inputmode="decimal" step="0.01">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="density">枝の密度(本/m²)</label>
+      <input id="density" class="num-input" type="number" inputmode="decimal" step="0.1">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="leaf-count">1枝の葉数(枚)</label>
+      <input id="leaf-count" class="num-input" type="number" inputmode="numeric">
+    </div>
+    <div class="group-label">葉の大きさ（葉長 × 葉幅 cm）</div>
+    <div id="size-rows"></div>
+    <button id="add-size" class="btn-toggle" type="button">＋ 葉を追加</button>
+    <div class="num-row" style="margin-top:12px">
+      <label class="num-label" for="target">目標LAI</label>
+      <input id="target" class="num-input" type="number" inputmode="decimal" step="0.1">
+    </div>
+    <div id="lai-result" class="lai-result"></div>
+  </section>
+
+  <section>
+    <h2>係数を決める</h2>
+    <p class="hint">白い模造紙に葉（葉柄ごと）と黒い正方形を並べ、真上から撮る。葉長は葉柄の付け根から先端、葉幅は小葉を含めた最大幅（千葉県マニュアル写真5）。大きめの葉を10枚ほど。</p>
+    <div class="num-row" style="margin-top:10px">
+      <label class="num-label" for="coef-variety">品種</label>
+      <input id="coef-variety" class="num-input" type="text" style="flex:1 1 0;text-align:left">
+    </div>
+    <div class="num-row">
+      <label class="num-label" for="ref-side">黒い正方形の一辺(cm)</label>
+      <input id="ref-side" class="num-input" type="number" inputmode="decimal" step="0.1">
+    </div>
+    <div id="leaf-cards"></div>
+    <button id="add-leaf" class="btn-secondary" type="button">＋ 葉を追加</button>
+    <div id="coef-result" class="lai-result"></div>
+    <button id="save-coef" class="btn-primary" type="button">この係数を保存</button>
+  </section>
+</main>
+
+<input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+<div id="toast" hidden></div>
+
+<script src="config.js?v=20261010a"></script>
+<script src="masters-default.js?v=20261010a"></script>
+<script src="common.js?v=20261010a"></script>
+<script src="lai-calc.js?v=20261010a"></script>
+<script src="lai.js?v=20261010a"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>

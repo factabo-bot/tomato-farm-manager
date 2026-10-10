@@ -12,7 +12,7 @@
 // 表示（自動／ライト／ダーク）を、描画の前に当てる。後から当てると一瞬白く光るため
 try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
-<link rel="stylesheet" href="styles.css?v=20261007c">
+<link rel="stylesheet" href="styles.css?v=20261010a">
 </head>
 <body>
 <header>
@@ -101,10 +101,10 @@ try { var t = localStorage.getItem("tfm_theme"); if (t === "light" || t === "dar
 
 <div id="toast" hidden></div>
 
-<script src="config.js?v=20261007c"></script>
-<script src="masters-default.js?v=20261007c"></script>
-<script src="common.js?v=20261007c"></script>
-<script src="index.js?v=20261007c"></script>
+<script src="config.js?v=20261010a"></script>
+<script src="masters-default.js?v=20261010a"></script>
+<script src="common.js?v=20261010a"></script>
+<script src="index.js?v=20261010a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

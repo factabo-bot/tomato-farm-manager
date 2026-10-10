@@ -44,7 +44,7 @@ var TZ = "Asia/Tokyo";
 
 // 配備した版。tools/deploy.py がデプロイ後に ?action=version で読み、新しいコードが動いているか確かめる。
 // コードを変えてデプロイするときは必ず上げる（日付＋英字）
-var GAS_VERSION = "2026-10-10a";
+var GAS_VERSION = "2026-10-10b";
 
 // 気象データの取得地点（千葉市緑区の代表座標。拠点ごとの個別座標は使わず全体で統一）
 var WEATHER_LAT = 35.5605;
@@ -148,13 +148,14 @@ var GROWTH_HEADERS = [
 // 生育調査明細（子）: 株ごとの測定値。株ラベルを毎回そろえると同じ株の推移を追える。
 // 茎径は測る位置で値が変わるので「生長点から15cm下」に固定する（熊本県の検証で
 // 12〜18cmの範囲なら位置を統一すればばらつきが小さいと報告されている）。
-// 花房下葉数は摘葉の判断（適正12枚）、開花段位と収穫段位の差（6段目安）は
-// 草勢が続くかの判断に使う（いずれも岩手県の資料）
+// 花房下葉数は摘葉の判断、開花段位と収穫段位の差は草勢が続くかの判断に使う。
+// 岩手県の目安（適正12枚・6段）は大玉の値なので、画面には出さず自分の推移で見る。
+// 葉長・葉幅は LAI の計算用（千葉県マニュアルの式4。葉柄の付け根から先端／小葉を含めた最大幅）
 var GROWTH_ITEM_HEADERS = [
   "記録ID", "株ラベル",
   "茎径mm", "生長点花房距離cm", "草丈cm", "節間長cm",
   "開花段位", "収穫段位", "花房下葉数", "着果数", "葉数",
-  "葉長cm", "果径mm",
+  "葉長cm", "葉幅cm", "果径mm",
   "尻腐れ果数", "裂果数", "その他障害果数", "障害果メモ",
   "成長点の形", "葉の角度", "葉の色", "花房", "メモ",
 ];
@@ -814,6 +815,7 @@ function saveGrowth_(data) {
   }
 
   ensureColumns_(SHEET_GROWTH, GROWTH_HEADERS);
+  ensureColumns_(SHEET_GROWTH_ITEMS, GROWTH_ITEM_HEADERS);
   var dup = findByClientId_(SHEET_GROWTH, data.clientId);
   if (dup) return json_({ ok: true, id: dup, duplicate: true });
 
@@ -856,6 +858,7 @@ function saveGrowth_(data) {
       "着果数": keep_(it.fruitSet),
       "葉数": keep_(it.leafCount),
       "葉長cm": keep_(it.leafLength),
+      "葉幅cm": keep_(it.leafWidth),
       "果径mm": keep_(it.fruitDiameter),
       "尻腐れ果数": keep_(it.blossomEndRot),
       "裂果数": keep_(it.cracking),
